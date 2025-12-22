@@ -23,6 +23,21 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set(CMAKE_BUILD_TYPE "Debug" CACHE STRING "Build type" FORCE)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
 endif()
+# -----------------------------------------------------------------------------
+# Backend Enablement Options
+# -----------------------------------------------------------------------------
+set(ENABLE_NULL_BACKEND    ON CACHE BOOL "Enable Null backend" FORCE)
+set(ENABLE_PLUTOVG         ON CACHE BOOL "Enable PlutoVG backend" FORCE)
+set(ENABLE_CAIRO           ON CACHE BOOL "Enable Cairo backend" FORCE)
+set(ENABLE_BLEND2D         ON CACHE BOOL "Enable Blend2D backend" FORCE)
+set(ENABLE_SKIA            ON CACHE BOOL "Enable Skia backend" FORCE)
+set(ENABLE_THORVG          ON CACHE BOOL "Enable ThorVG backend" FORCE)
+set(ENABLE_AGG             OFF CACHE BOOL "Enable AGG backend" FORCE)
+set(ENABLE_QT              OFF CACHE BOOL "Enable Qt Raster backend" FORCE)
+set(ENABLE_AMANITHVG       ON CACHE BOOL "Enable AmanithVG SRE backend" FORCE)
+set(ENABLE_RAQOTE          OFF CACHE BOOL "Enable Raqote backend" FORCE)
+set(ENABLE_VELLO_CPU       OFF CACHE BOOL "Enable vello_cpu backend" FORCE)
+
 
 # -----------------------------------------------------------------------------
 # FetchContent for dependency management
@@ -108,15 +123,44 @@ endif()
 if(ENABLE_SKIA)
     FetchContent_Declare(
         skia_binaries
-        URL https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-macOS-Release-arm64.zip
+        URL https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-Windows-Release-x64.zip
     )
     FetchContent_MakeAvailable(skia_binaries)
 
     add_library(skia STATIC IMPORTED)
-    set_target_properties(skia PROPERTIES
-        IMPORTED_LOCATION "${skia_binaries_SOURCE_DIR}/out/Release-arm64/libskia.a"
-        INTERFACE_INCLUDE_DIRECTORIES "${skia_binaries_SOURCE_DIR}"
-    )
+    if(MSVC)
+        set_target_properties(skia PROPERTIES
+            IMPORTED_LOCATION "${skia_binaries_SOURCE_DIR}/out/Release-x64/skia.lib"
+            INTERFACE_INCLUDE_DIRECTORIES "${skia_binaries_SOURCE_DIR}"
+        )
+        target_link_libraries(skia INTERFACE 
+            user32.lib gdi32.lib opengl32.lib ole32.lib oleaut32.lib uuid.lib advapi32.lib
+            usp10.lib FontSub.lib msimg32.lib
+            "${skia_binaries_SOURCE_DIR}/out/Release-x64/skia.lib"
+            "${skia_binaries_SOURCE_DIR}/out/Release-x64/harfbuzz.lib"
+            "${skia_binaries_SOURCE_DIR}/out/Release-x64/icu.lib"
+            "${skia_binaries_SOURCE_DIR}/out/Release-x64/libpng.lib"
+            "${skia_binaries_SOURCE_DIR}/out/Release-x64/libjpeg.lib"
+            "${skia_binaries_SOURCE_DIR}/out/Release-x64/zlib.lib" 
+        )
+        # Ensure symbols are pulled from zlib
+        target_link_options(skia INTERFACE 
+            "/WHOLEARCHIVE:${skia_binaries_SOURCE_DIR}/out/Release-x64/zlib.lib"
+            "/ALTERNATENAME:inflateInit2_=Cr_z_inflateInit2_"
+            "/ALTERNATENAME:inflateEnd=Cr_z_inflateEnd"
+            "/ALTERNATENAME:inflateReset=Cr_z_inflateReset"
+            "/ALTERNATENAME:inflate=Cr_z_inflate"
+        )
+    else()
+        set_target_properties(skia PROPERTIES
+            IMPORTED_LOCATION "${skia_binaries_SOURCE_DIR}/out/Release-x64/libskia.a"
+            INTERFACE_INCLUDE_DIRECTORIES "${skia_binaries_SOURCE_DIR}"
+        )
+    endif()
+
+    if(MSVC)
+        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    endif()
 
     if(APPLE)
         find_library(CORE_FOUNDATION CoreFoundation)
@@ -245,6 +289,8 @@ if(ENABLE_THORVG)
         ${thorvg_SOURCE_DIR}/src/loaders/raw
     )
     
+    target_compile_definitions(thorvg PUBLIC TVG_STATIC)
+    
     # Suppress warnings in third-party code
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(thorvg PRIVATE -w)
@@ -264,6 +310,7 @@ if(ENABLE_AMANITHVG)
         amanithvg_sdk
         GIT_REPOSITORY https://github.com/Mazatech/amanithvg-sdk.git
         GIT_TAG        master
+        GIT_SHALLOW    ON
     )
     FetchContent_MakeAvailable(amanithvg_sdk)
 
@@ -425,19 +472,6 @@ if(ENABLE_QT)
         set(ENABLE_QT OFF CACHE BOOL "" FORCE)
     endif()
 endif()
-# Blueprint Reference: Chapter 7, §7.2.5 — Build-Time Enablement
-# -----------------------------------------------------------------------------
-option(ENABLE_NULL_BACKEND    "Enable Null/Debug backend for testing" ON)
-option(ENABLE_PLUTOVG         "Enable PlutoVG backend" OFF)
-option(ENABLE_CAIRO           "Enable Cairo backend" OFF)
-option(ENABLE_BLEND2D         "Enable Blend2D backend" OFF)
-option(ENABLE_SKIA            "Enable Skia backend" OFF)
-option(ENABLE_THORVG          "Enable ThorVG backend" OFF)
-option(ENABLE_AGG             "Enable AGG backend" OFF)
-option(ENABLE_QT              "Enable Qt Raster backend" OFF)
-option(ENABLE_AMANITHVG       "Enable AmanithVG SRE backend" OFF)
-option(ENABLE_RAQOTE          "Enable Raqote backend (Rust)" OFF)
-option(ENABLE_VELLO_CPU       "Enable vello_cpu backend (Rust)" OFF)
 
 # -----------------------------------------------------------------------------
 # Compiler Warnings
@@ -618,13 +652,35 @@ target_link_libraries(vgcpu-benchmark PRIVATE
     vgcpu_reporting
 )
 
-if(LOCAL_CAIRO_DLL)
-    add_custom_command(TARGET vgcpu-benchmark POST_BUILD
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${LOCAL_CAIRO_DLL}"
-        $<TARGET_FILE_DIR:vgcpu-benchmark>
-        COMMENT "Copying Cairo DLL to output directory"
-    )
+if(ENABLE_SKIA AND MSVC)
+    target_link_libraries(vgcpu-benchmark PRIVATE "${skia_binaries_SOURCE_DIR}/out/Release-x64/zlib.lib")
+endif()
+
+# Handle DLL deployment for Windows
+if(MSVC)
+    # Cairo DLL
+    set(LOCAL_CAIRO_DLL "${LOCAL_CAIRO_ROOT}/lib/x64/cairo.dll")
+    if(EXISTS "${LOCAL_CAIRO_DLL}")
+        add_custom_command(TARGET vgcpu-benchmark POST_BUILD
+            COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${LOCAL_CAIRO_DLL}"
+            $<TARGET_FILE_DIR:vgcpu-benchmark>
+            COMMENT "Copying Cairo DLL to output directory"
+        )
+    endif()
+
+    # AmanithVG DLL
+    if(ENABLE_AMANITHVG)
+        set(AMANITH_DLL "${amanithvg_sdk_SOURCE_DIR}/lib/windows/x86_64/sre/standalone/libAmanithVG.dll")
+        if(EXISTS "${AMANITH_DLL}")
+            add_custom_command(TARGET vgcpu-benchmark POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${AMANITH_DLL}"
+                $<TARGET_FILE_DIR:vgcpu-benchmark>
+                COMMENT "Copying AmanithVG DLL to output directory"
+            )
+        endif()
+    endif()
 endif()
 
 # -----------------------------------------------------------------------------
