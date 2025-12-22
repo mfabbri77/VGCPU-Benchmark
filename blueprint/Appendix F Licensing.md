@@ -1,3 +1,5 @@
+<!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
+
 # Appendix F — Licensing, Copyright, and IP Policy
 
 ## Purpose

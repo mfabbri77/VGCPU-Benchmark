@@ -1,3 +1,5 @@
+<!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
+
 # Chapter 13 — Risk Management and Rollback Strategy
 
 ## Purpose

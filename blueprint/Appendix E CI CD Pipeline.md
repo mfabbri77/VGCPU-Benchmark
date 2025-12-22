@@ -1,3 +1,5 @@
+<!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
+
 # Appendix E — CI/CD Pipeline Specification (stages, gates, approvals, artifacts)
 
 ## Purpose

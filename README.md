@@ -35,3 +35,5 @@ For detailed architectural documents, please refer to the [blueprint](./blueprin
 
 ## License
 MIT License (see [LICENSE](./LICENSE)).
+
+Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)

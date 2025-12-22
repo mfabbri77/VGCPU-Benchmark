@@ -1,3 +1,5 @@
+<!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
+
 # Backend Integration: Anti-Grain Geometry (AGG)
 
 ## Overview

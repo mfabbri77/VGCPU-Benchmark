@@ -1,3 +1,5 @@
+<!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
+
 # Chapter 8 — Runtime Behavior (Key Flows, Error Handling)
 
 ## Purpose

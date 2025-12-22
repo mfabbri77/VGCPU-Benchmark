@@ -1,3 +1,5 @@
+<!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
+
 # Appendix B — Testing Strategy (unit/integration/system/acceptance; automation)
 
 ## Purpose

@@ -1,3 +1,5 @@
+<!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
+
 # Chapter 6 — Interfaces (APIs, Events, Integrations)
 
 ## Purpose
