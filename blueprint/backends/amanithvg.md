@@ -2,47 +2,80 @@
 
 # Backend Integration: AmanithVG SRE
 
-## Overview
-AmanithVG SRE is a proprietary (evaluated as free) implementation of the OpenVG 1.1 standard. It is a high-performance software rasterizer.
+## 1. Version and Dependencies
 
-## CPU-Only Configuration
+*   **Version**: SRE (Software Rendering Engine) from latest SDK
+*   **Source Repository**: `https://github.com/Mazatech/amanithvg-sdk`
+*   **Commit Hash**: Latest stable on master
+*   **License**: Proprietary / Evaluation (Check license file in SDK)
 
-AmanithVG SRE is intrinsically CPU-only.
+## 2. CMake Integration
 
-### Surface Initialization
-OpenVG relies on EGL for surface creation, but AmanithVG provides a custom EGL implementation or a direct interface.
+Since AmanithVG is distributed as an SDK with precompiled static libraries and headers, `FetchContent` can be used to pull the SDK, but linking must point to the correct architecture folder.
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+    amanithvg
+    GIT_REPOSITORY https://github.com/Mazatech/amanithvg-sdk.git
+    GIT_TAG        master
+)
+FetchContent_MakeAvailable(amanithvg)
+
+# Define wrapper target
+add_library(amanithvg_lib STATIC IMPORTED)
+
+# Logic to select correct lib based on CMAKE_SYSTEM_PROCESSOR (x86_64, arm64) 
+# and CMAKE_SYSTEM_NAME (Linux, Windows, Darwin)
+set(AVG_LIB_PATH "${amanithvg_SOURCE_DIR}/lib/platform/...") 
+
+set_target_properties(amanithvg_lib PROPERTIES
+    IMPORTED_LOCATION "${AVG_LIB_PATH}/libAmanithVG.a"
+    INTERFACE_INCLUDE_DIRECTORIES "${amanithvg_SOURCE_DIR}/include"
+)
+```
+
+## 3. Initialization (CPU-Only)
+
+AmanithVG SRE allows rendering to client memory without a full EGL context if using the proprietary extensions, or via a simplified EGL emulation provided by the SDK.
 
 ```cpp
 #include <VG/openvg.h>
 #include <VG/vgu.h>
-// AmanithVG specific header for surface creation might be needed, 
-// usually it mimics EGL or provides "vgPrivSurfaceCreateMZT".
 
-// Standard OpenVG setup:
-// 1. Get Display, Initialize, Choose Config (standard EGL dance).
-// 2. Create Window Surface (or Pbuffer).
-// 3. Make Current.
+// AmanithVG specific: Initialize SRE without GL context
+// (Pseudocode based on SDK examples for software rasterizers)
 
-// Checking AmanithVG SDK specifically for "SRE" (Software Rendering Engine):
-// It often supports writing to a client pointer memory buffer via 
-// "vgPrivMakeCurrentMZT" or similar extensions if EGL is bypassed.
+// 1. Initialize Surface Parameters
+void* buffer_ptr = buffer.data();
+VGint width = ...;
+VGint height = ...;
+VGImageFormat format = VG_sRGBA_8888_PRE;
+
+// 2. Create Context & Surface
+// Use "vgPrivSurfaceCreateMZT" or platform-agnostic helper provided in `src/` of SDK
+vgPrivMakeCurrentMZT(NULL, buffer_ptr, width, height, stride, format);
+
+// 3. Set Defaults
+vgSeti(VG_RENDERING_QUALITY, VG_RENDERING_QUALITY_BETTER);
+vgSeti(VG_BLEND_MODE, VG_BLEND_SRC_OVER);
 ```
 
-## Build Instructions
-1.  **SDK**: Must be cloned from `github.com/Mazatech/amanithvg-sdk`.
-2.  **License**: Ensure the evaluation license key is properly handled/configured if required by the code.
-3.  **Link**: Link against the SRE library libraries (`libAmanithVG.a`).
+## 4. Feature Mapping
 
-## Mapping Concepts
-
-| Benchmark IR | OpenVG API |
+| IR Feature | OpenVG API |
 |---|---|
-| `Path` | `VGPath` handles. `vgAppendPathData` |
-| `Paint` | `VGPaint` handles. `vgSetPaint` |
-| `Matrix` | `vgLoadMatrix`, `vgMultMatrix` |
-| `Fill` | `vgDrawPath(path, VG_FILL_PATH)` |
-| `Stroke` | `vgDrawPath(path, VG_STROKE_PATH)` |
+| **Path** | `VGPath path = vgCreatePath(...)` |
+| **Move/Line/Curve** | `vguLine`, `vguRect`, or `vgAppendPathData` |
+| **Fill (Solid)** | `VGPaint paint = vgCreatePaint()`; `vgSetColor(paint, rgba)` |
+| **Fill (Gradient)** | `vgSetPaint(paint, VG_FILL_PATH)`; `vgSetParameterfv(paint, VG_PAINT_COLOR_RAMP_STOPS, ...)` |
+| **Fill Rule** | `vgSeti(VG_FILL_RULE, VG_EVEN_ODD / VG_NON_ZERO)` |
+| **Stroke** | `vgDrawPath(path, VG_STROKE_PATH)` |
+| **Stroke Config** | `vgSetf(VG_STROKE_LINE_WIDTH, w)`; `vgSeti(VG_STROKE_CAP_STYLE, ...)` |
+| **Transforms** | `vgLoadMatrix`, `vgMultMatrix` (OpenVG uses global matrix state) |
 
-## Notes
-*   **Context**: OpenVG is state-machine based (like OpenGL).
-*   **Paths**: `VGPath` objects are opaque handles.
+## 5. Notes
+
+*   **Context Safety**: OpenVG uses global context state. Parallel rendering requires strictly separate contexts per thread.
+*   **Allocations**: OpenVG handles (Paths, Paints) are opaque resources and MUST be destroyed (`vgDestroyPath`) to avoid leaks.

@@ -2,62 +2,91 @@
 
 # Backend Integration: Skia
 
-## Overview
-Skia is a complete 2D graphic library for drawing Text, Geometries, and Images. It is the graphics engine for Chrome, Chrome OS, Android, Flutter, and Firefox.
+## 1. Version and Dependencies
 
-## CPU-Only Configuration
+*   **Version**: Milestone 116 (m116)
+*   **Repository**: `https://skia.googlesource.com/skia.git`
+*   **Commit Tag**: `chrome/m116`
+*   **License**: BSD-3-Clause
 
-### Surface Creation
-To ensure CPU-only rendering (software rasterization):
-1.  **Do not** initialize a backend context (like GrContext for OpenGL/Vulkan).
-2.  Use `SkSurface::MakeRaster` or `SkSurface::MakeRasterDirect`.
+## 2. CMake Integration
+
+Building Skia from source via CMake is difficult because it uses GN.
+Recommended strategy: **Pre-build script** invoked by CMake, or `ExternalProject_Add`.
+
+```cmake
+# Pseudo-code for ExternalProject
+ExternalProject_Add(
+    skia_build
+    GIT_REPOSITORY https://skia.googlesource.com/skia.git
+    GIT_TAG        chrome/m116
+    CONFIGURE_COMMAND bin/gn gen out/Release --args=...
+    BUILD_COMMAND ninja -C out/Release skia
+    INSTALL_COMMAND ""
+)
+
+# Link
+add_library(skia_lib STATIC IMPORTED)
+set_property(TARGET skia_lib PROPERTY IMPORTED_LOCATION "${BINARY_DIR}/out/Release/libskia.a")
+```
+
+**Minimal GN Args (CPU only):**
+```bash
+is_official_build=true
+skia_use_system_expat=false
+skia_use_system_libjpeg_turbo=false
+skia_use_system_libpng=false
+skia_use_system_libwebp=false
+skia_use_system_zlib=false
+skia_use_gl=false
+skia_use_vulkan=false
+skia_enable_Pdf=false
+skia_enable_skottie=false
+```
+
+## 3. Initialization (CPU-Only)
+
+Use `SkSurface::MakeRasterDirect` to wrap our benchmark buffer.
 
 ```cpp
-// Example: Creating a CPU-backed surface wrapping an existing buffer
-SkImageInfo info = SkImageInfo::MakeN32Premul(width, height);
-// OR specific format:
-// SkImageInfo info = SkImageInfo::Make(width, height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+#include "include/core/SkSurface.h"
+#include "include/core/SkCanvas.h"
 
-// If we own the memory:
-std::vector<uint8_t> buffer(width * height * 4);
-sk_sp<SkSurface> surface = SkSurface::MakeRasterDirect(info, buffer.data(), width * 4);
+// 1. Info
+// Skia prefers Premul. If our IR is straight alpha, we must account for it, 
+// but standard vector rendering is usually premul compositing anyway.
+SkImageInfo info = SkImageInfo::Make(
+    width, height, 
+    kBGRA_8888_SkColorType, // or kRGBA...
+    kPremul_SkAlphaType
+);
 
-// If we want Skia to manage memory:
-sk_sp<SkSurface> surface = SkSurface::MakeRaster(info);
+// 2. Surface
+// buffer.data() must match the info.minRowBytes() usually (width * 4)
+sk_sp<SkSurface> surface = SkSurface::MakeRasterDirect(
+    info, 
+    buffer.data(), 
+    width * 4
+);
+
+// 3. Canvas
+SkCanvas* canvas = surface->getCanvas();
 ```
 
-### Build Instructions (CMake Integration)
-Skia uses GN (Generate Ninja) for its build system, which is hard to integrate directly into CMake. We recommend:
-1.  **Prebuilding** Skia binaries using a script.
-2.  **Linking** standard static libraries: `libskia.a` (or .lib).
+## 4. Feature Mapping
 
-**Recommended GN Args (`m116`)**:
-```bash
-is_official_build = true
-skia_use_system_expat = false
-skia_use_system_icu = false
-skia_use_system_libjpeg_turbo = false
-skia_use_system_libpng = false
-skia_use_system_libwebp = false
-skia_use_system_zlib = false
-skia_use_gl = false 
-skia_use_vulkan = false
-skia_use_metal = false
-skia_enable_pdf = false
-skia_enable_skottie = false
-skia_enable_sksl = false # If no GPU, SkSL heavily reduced
-```
-
-## Mapping Concepts
-
-| Benchmark IR | Skia C++ API |
+| IR Feature | Skia API |
 |---|---|
-| `Path` | `SkPath` |
-| `Paint` | `SkPaint` |
-| `Matrix` | `SkMatrix` |
-| `FillPath` | `canvas->drawPath(path, paint)` |
-| `SetFill` | `paint.setStyle(SkPaint::kFill_Style)` |
-| `SetStroke` | `paint.setStyle(SkPaint::kStroke_Style); paint.setStrokeWidth(...)` |
+| **Path** | `SkPath` |
+| **Move/Line/Curve** | `path.moveTo`, `path.cubicTo`, `path.close` |
+| **Fill (Solid)** | `SkPaint p; p.setColor(...)` + `canvas->drawPath(path, p)` |
+| **Fill (Gradient)** | `SkGradientShader::MakeLinear(...)` -> `p.setShader(...)` |
+| **Fill Rule** | `path.setFillType(SkPathFillType::kWinding / kEvenOdd)` |
+| **Stroke** | `p.setStyle(SkPaint::kStroke_Style); canvas->drawPath(...)` |
+| **Stroke Config** | `p.setStrokeWidth`, `p.setStrokeCap`, `p.setStrokeJoin`, `SkDashPathEffect` |
+| **Transforms** | `canvas->setMatrix(SkMatrix)` |
 
-## Notes
-*   **Premultiplication**: Skia is heavily optimized for Premultiplied Alpha. `SkImageInfo::MakeN32Premul` is the standard. If our IR provides non-premul, we must convert/premultiply before or during paint setup.
+## 5. Notes
+
+*   **Thread Safety**: `SkSurface` and `SkCanvas` are not thread safe. Use separate instances. `SkPath` and `SkPaint` are efficient copy-on-write value types.
+*   **Globals**: `SkGraphics::Init()` is no longer strictly required in recent versions but good practice to check if font manager or other globals are needed (we ignore fonts).

@@ -2,55 +2,72 @@
 
 # Backend Integration: ThorVG
 
-## Overview
-ThorVG is a platform-independent, portable library for vector graphics scenes and basic animation (Lottie). It is optimized for small binary size and high performance on embedded systems.
+## 1. Version and Dependencies
 
-## CPU-Only Configuration
+*   **Version**: v1.0-pre34 (Latest Release Dec 2025)
+*   **Repository**: `https://github.com/thorvg/thorvg`
+*   **Dependencies**: None (for SW engine).
+*   **License**: MIT
 
-### Surface Creation
-ThorVG provides a specific canvas for software (CPU) rasterization: `tvg::SwCanvas`.
+## 2. CMake Integration
+
+ThorVG uses CMake and supports FetchContent.
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+    thorvg
+    GIT_REPOSITORY https://github.com/thorvg/thorvg.git
+    GIT_TAG        v0.15.5 # Update to latest tag v1.0-pre34 if avaiable
+)
+
+# Configuration options to minimize build
+set(TVG_ENGINES "SW" CACHE STRING "" FORCE)
+set(TVG_LOADERS "" CACHE STRING "" FORCE) # Disable SVG/Lottie loaders if we use C++ API directly
+set(TVG_BUILD_EXAMPLES OFF CACHE BOOL "" FORCE)
+
+FetchContent_MakeAvailable(thorvg)
+
+target_link_libraries(my_adapter PRIVATE thorvg)
+```
+
+## 3. Initialization (CPU-Only)
+
+ThorVG SW engine writes directly to memory.
 
 ```cpp
 #include <thorvg.h>
 
-// 1. Initialize Engine
-tvg::Initializer::init(tvg::CanvasEngine::Sw, 0);
+// 1. Engine Init
+// Call once per process or handle via Reference Checking
+if (tvg::Initializer::init(tvg::CanvasEngine::Sw, 1) != tvg::Result::Success) {
+    // Error
+}
 
-// 2. Create Canvas
+// 2. Wrap Buffer
 auto canvas = tvg::SwCanvas::gen();
-
-// 3. Set Target Buffer
-// ThorVG writes directly to this buffer. format is typically ARGB8888.
+// target(buffer, stride, w, h, colorspace)
 canvas->target((uint32_t*)buffer.data(), width, width, height, tvg::SwCanvas::ARGB8888);
 
-// 4. Render
-canvas->push(shape);
-canvas->draw();
-canvas->sync(); // Rasterization happens here
+// 3. Clear
+canvas->clear(0, 0, 0, 0); // Optional if new buffer
 ```
 
-### Build Instructions
-ThorVG provides a CMake build system.
-*   **Static Linking**: `DISABLE_SHARED_LIBS=ON` (or standard BUILD_SHARED_LIBS=OFF)
-*   **Loaders**: Disable loaders we don't need (SVG, Lottie are core, but JPG/PNG might be optional) to minimize deps.
-*   **Engines**: Enable only `SW` engine.
+## 4. Feature Mapping
 
-```cmake
-# CMake Options
-set(TVG_ENGINES "SW")
-set(TVG_BUILD_EXAMPLES OFF)
-```
-
-## Mapping Concepts
-
-| Benchmark IR | ThorVG C++ API |
+| IR Feature | ThorVG API |
 |---|---|
-| `Path` | `tvg::Shape` (appendPath, moveTo, lineTo...) |
-| `Paint` | `tvg::Shape->fill(r, g, b, a)` or `tvg::LinearGradient` |
-| `Matrix` | `tvg::Shape->transform(...)` |
-| `FillPath` | `canvas->push(shape)` (shape has Default fill) |
-| `Stroke` | `tvg::Shape->strokeWidth(...)`, `tvg::Shape->strokeColor(...)` |
+| **Path** | `tvg::Shape` (acts as both path and paint container) |
+| **Move/Line/Curve** | `shape->moveTo`, `shape->lineTo`, `shape->cubicTo` |
+| **Fill (Solid)** | `shape->fill(r, g, b, a)` |
+| **Fill (Gradient)** | `tvg::LinearGradient` -> `shape->fill(grad)` |
+| **Fill Rule** | `shape->fill(tvg::FillRule::NonZero / EvenOdd)` |
+| **Stroke** | `shape->strokeWidth(...)`, `shape->strokeFill(...)` |
+| **Stroke Config** | `shape->strokeCap(...)`, `shape->strokeJoin(...)`, `shape->strokeDash(...)` |
+| **Transforms** | `shape->transform(matrix)` |
 
-## Notes
-*   **Coordinates**: ThorVG uses float coordinates.
-*   **Sync**: `canvas->draw()` queues commands; `canvas->sync()` executes them. Timing measurements MUST encompass the `sync()` call.
+## 5. Notes
+
+*   **Sync**: Drawing commands are queued. `canvas->sync()` is the rasterization trigger. **Measurement must include sync()**.
+*   **Object Semantics**: In ThorVG, a `Shape` bundles geometry and styling. This differs from Skia/Cairo where Paint is separate. The adapter might need to manage pools of `Shape` objects or reset them frequently.

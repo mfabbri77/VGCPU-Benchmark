@@ -2,49 +2,62 @@
 
 # Backend Integration: Vello (CPU)
 
-## Overview
-Vello is a research graphics engine by the Linebender community, focusing on compute-centered rendering. While primary targets are GPU (wgpu), it has a CPU fallback (`vello_cpu` or fine-grained software rasterization).
+## 1. Version and Dependencies
 
-## Integration Strategy: Rust Bridge
+*   **Version**: Experimental (Pin to latest `linebender/vello` commit)
+*   **Repository**: `https://github.com/linebender/vello`
+*   **Dependencies**: Rust toolchain, `wgpu` (even for CPU, sometimes needed for types, though goal is strict CPU).
+*   **License**: Apache 2.0 / MIT
 
-Vello is written in **Rust** and does not expose a stable C ABI by default. To integrate it into this C++ benchmark suite:
+## 2. CMake Integration (via Corrosion)
 
-1.  **Create a Rust Static Library (`vello_bridge`)**:
-    *   Expose `extern "C"` functions for initialization, surface creation, and rendering.
-    *   Use `cbindgen` to generate the C header.
+Vello is pure Rust. Integration requires Corrosion and helper crate.
 
+```cmake
+include(FetchContent)
+FetchContent_Declare(Corrosion ...) # See Raqote
+corrosion_import_crate(MANIFEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/vello_bridge/Cargo.toml")
+```
+
+## 3. Initialization (CPU-Only)
+
+Vello is GPU-first. CPU support might be via `skia-safe` fallback or `vello-encoding` software rasterization.
+**Verification Required**: If Vello's own software rasterizer is not ready, this backend might essentially be a wrapper around Skia-via-Rust.
+For this benchmark, we target **Vello's Fine-Grained Rasterizer** (if functional) or label it "Experimental".
+
+**Rust Bridge (`vello_bridge`):**
 ```rust
-// vello_bridge/src/lib.rs
+use vello::peniko::Color;
+use vello::{Scene, Renderer, RendererOptions};
+use vello::util::{RenderContext, RenderSurface};
+
 #[no_mangle]
-pub extern "C" fn vello_bridge_render(
-    width: u32, height: u32, 
-    buffer: *mut u8, 
-    commands: *const c_void
-) -> u32 {
-    // 1. Wrap buffer in a bitmap/image target
-    // 2. Parse commands (or pass IR blob pointer)
-    // 3. Render using vello::Renderer or vello_cpu
+pub extern "C" fn vello_render_cpu(...) {
+    // Vello CPU support is currently evolving.
+    // Likely requires creating a wgpu::Device with explicit Software backend?
+    // Or accessing the underlying `piet-cpu` or similar if Vello exposes it.
+    
+    // Fallback Plan: Use `piet-common` which maps to Cairo/Direct2D/CoreGraphics?
+    // NO, that defeats the purpose.
+    
+    // As of 2025, we assume Vello has a "software" feature or backend.
+    // implementation details to be filled as library matures.
 }
 ```
 
-2.  **Linkage**:
-    *   Compile the rust crate as `staticlib`.
-    *   Link `libvello_bridge.a` in the CMake project.
-    *   Ensure Rust toolchain is available in the build environment.
+## 4. Feature Mapping
 
-## CPU Configuration
-*   Explicitly select the CPU pipeline. Vello may try to select a GPU adapter by default; the bridge MUST instantiate a software renderer (e.g., using `skia-safe` software fallback if vello wraps it, or vello's own fine-grained rasterizer if ready).
-*   **Note**: As of late 2023, Vello's CPU backend is extremely experimental. If a pure Vello CPU path is unstable, this backend might wrap `vello_cpu` specifically.
+| IR Feature | Vello/Kurbo (Rust) |
+|---|---|
+| **Path** | `kurbo::BezPath` |
+| **Move/Line/Curve** | `path.move_to`, `path.curve_to` |
+| **Fill (Solid)** | `Scene::fill(path, brush)` |
+| **Fill (Gradient)** | `peniko::Gradient` |
+| **Fill Rule** | `NonZero` (Default), `EvenOdd` |
+| **Stroke** | `Scene::stroke(path, brush, stroke_style)` |
+| **Transforms** | `Affine` applied to `Scene` or path |
 
-## Mapping Concepts
+## 5. Notes
 
-| Benchmark IR | Rust Bridge API | Vello (Rust) |
-|---|---|---|
-| `Path` | `vello_path_create` | `kurbo::BezPath` |
-| `Paint` | `vello_set_brush` | `peniko::Brush` |
-| `Fill` | `vello_fill_path` | `Scene::fill` |
-| `Stroke` | `vello_stroke_path` | `Scene::stroke` |
-
-## Notes
-*   **Performance**: The FFI boundary overhead should be negligible compared to rendering time.
-*   **Dependency**: Requires `cargo` and `rustc`.
+*   **Experimental Status**: This backend is considered high-risk. If a pure CPU path is not available or too slow (just an interpreter), it should be marked as `experimental` in the benchmark.
+*   **Bridge**: Reuse the pattern from Raqote (C FFI + Corrosion).

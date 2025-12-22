@@ -2,53 +2,79 @@
 
 # Backend Integration: Blend2D
 
-## Overview
-Blend2D is a high-performance 2D vector graphics engine written in C++. It features a JIT compiler to generate optimized rasterization pipelines at runtime.
+## 1. Version and Dependencies
 
-## CPU-Only Configuration
+*   **Version**: 0.21.2 (Latest Stable)
+*   **Repository**: `https://github.com/blend2d/blend2d`
+*   **Dependencies**: `asmjit` (automatically handled by Blend2D's CMake if nested)
+*   **License**: Zlib
 
-### Surface Creation
-Blend2D's main image class `BLImage` is inherently a CPU raster buffer.
+## 2. CMake Integration
 
-```cpp
-// 1. Create Image
-BLImage img(width, height, BL_FORMAT_PRGB32); // Premultiplied RGB 32-bit
-
-// 2. Attached Context
-BLContext ctx(img);
-
-// 3. Render
-ctx.setFillStyle(BLRgba32(0xFF0000FF));
-ctx.fillCircle(100, 100, 50);
-
-// 4. Access Pixel Data
-BLImageData data;
-img.getData(&data); 
-// data.pixelData points to raw bytes
-// data.stride is row stride
-```
-
-### Build Instructions
-Blend2D uses CMake natively, making it trivial to integrate via `FetchContent` or `git submodule`.
+Blend2D supports CMake natively.
 
 ```cmake
-# CMakeList.txt
-set(BLEND2D_STATIC ON)
-set(BLEND2D_NO_JIT OFF) # Keep JIT ON for performance
-add_subdirectory(blend2d)
-target_link_libraries(my_bench blend2d::blend2d)
+include(FetchContent)
+
+# 1. AsmJit (Required Dependency)
+FetchContent_Declare(
+    asmjit
+    GIT_REPOSITORY https://github.com/asmjit/asmjit.git
+    GIT_TAG        master # Or aligned version
+)
+FetchContent_MakeAvailable(asmjit)
+
+# 2. Blend2D
+FetchContent_Declare(
+    blend2d
+    GIT_REPOSITORY https://github.com/blend2d/blend2d.git
+    GIT_TAG        v0.21.2 # Pin to stable release
+)
+set(BLEND2D_STATIC ON CACHE BOOL "" FORCE)
+set(BLEND2D_TEST OFF CACHE BOOL "" FORCE)
+set(BLEND2D_NO_JIT OFF CACHE BOOL "" FORCE) # JIT is CPU-only, permitted
+FetchContent_MakeAvailable(blend2d)
+
+# Link
+target_link_libraries(my_adapter PRIVATE blend2d::blend2d)
 ```
 
-## Mapping Concepts
+## 3. Initialization (CPU-Only)
 
-| Benchmark IR | Blend2D C++ API |
+Blend2D is primarily a CPU rasterizer. `BLImage` provides the pixel buffer.
+
+```cpp
+#include <blend2d.h>
+
+// 1. Setup Buffer
+// We can wrap existing memory or let BLImage allocate.
+BLImage img;
+img.createFromData(width, height, BL_FORMAT_PRGB32, buffer.data(), stride);
+
+// 2. Attach Context
+BLContext ctx(img);
+
+// 3. Threading Policy
+// Set to 0 to force single-threaded for strict comparison, 
+// or N to benchmark multi-core scaling.
+ctx.setThreadCount(1); 
+```
+
+## 4. Feature Mapping
+
+| IR Feature | Blend2D API |
 |---|---|
-| `Path` | `BLPath` |
-| `Paint` | `BLVar` (can hold Color, Gradient) or `ctx.setFillStyle` directly |
-| `Matrix` | `BLMatrix2D` |
-| `Clear` | `ctx.clearAll()` |
-| `Save` / `Restore` | `ctx.save()` / `ctx.restore()` |
+| **Path** | `BLPath` |
+| **Move/Line/Curve** | `path.moveTo`, `path.lineTo`, `path.cubicTo` |
+| **Fill (Solid)** | `ctx.setFillStyle(BLRgba32(r,g,b,a))` |
+| **Fill (Gradient)** | `BLGradient` (Linear/Radial types) -> `ctx.setFillStyle(gradient)` |
+| **Fill Rule** | `ctx.setFillRule(BL_FILL_RULE_NON_ZERO / EVEN_ODD)` |
+| **Stroke** | `ctx.strokePath(path)` |
+| **Stroke Config** | `ctx.setStrokeWidth`, `ctx.setStrokeCaps`, `ctx.setStrokeJoin` |
+| **Transforms** | `ctx.setMatrix`, `ctx.transform` |
 
-## Notes
-*   **Threading**: Blend2D can use multiple threads for rendering. For fair "single-threaded" comparisons, we should configure the thread pool to 0 or 1 thread if exposed, though defaults are usually fine for simple scenes.
-*   **JIT**: The JIT is a CPU feature, not GPU. It should remain enabled as it is the core differentiator of Blend2D's architecture.
+## 5. Notes
+
+*   **JIT**: Blend2D's JIT compiles rasterization pipelines. This is valid "CPU" work.
+*   **Precision**: High quality by default.
+*   **Async**: Ensure all work is synchronous (default behavior) or flush if using threaded rendering.

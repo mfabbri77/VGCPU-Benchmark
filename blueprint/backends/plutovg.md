@@ -2,15 +2,36 @@
 
 # Backend Integration: PlutoVG
 
-## Overview
-PlutoVG is a standalone C vector graphics library. It is lightweight, has no dependencies, and is easy to embed.
+## 1. Version and Dependencies
 
-## CPU-Only Configuration
+*   **Version**: v1.3.2 (Dec 2025)
+*   **Repository**: `https://github.com/sammycage/plutovg`
+*   **Dependencies**: None (Standalone)
+*   **License**: MIT
 
-### Surface Creation
-PlutoVG supports creating a surface from an existing data buffer.
+## 2. CMake Integration
 
-```c
+PlutoVG is designed to be trivially embedded.
+
+```cmake
+include(FetchContent)
+
+FetchContent_Declare(
+    plutovg
+    GIT_REPOSITORY https://github.com/sammycage/plutovg.git
+    GIT_TAG        v1.3.2
+)
+FetchContent_MakeAvailable(plutovg)
+
+# Link
+target_link_libraries(my_adapter PRIVATE plutovg)
+```
+
+## 3. Initialization (CPU-Only)
+
+PlutoVG rasterizes to a memory buffer.
+
+```cpp
 #include <plutovg.h>
 
 // 1. Create Surface
@@ -18,33 +39,29 @@ plutovg_surface_t* surface = plutovg_surface_create_for_data(
     buffer.data(),
     width,
     height,
-    width * 4 // stride
+    width * 4 // Stride (assuming packed ARGB)
 );
 
-// 2. Create Content
+// 2. Create Context
 plutovg_t* pluto = plutovg_create(surface);
 
-// 3. Draw
-plutovg_set_source_rgb(pluto, 1, 0, 0);
-plutovg_rect(pluto, 10, 10, 100, 100);
-plutovg_fill(pluto);
+// 3. Clear
+// Use operator Clear or draw a rectangle.
 ```
 
-### Build Instructions
-PlutoVG is usually a single-header or few-source-files library.
-*   **Integration**: Add `plutovg/source` to `include_directories` and sources to `add_library`.
-*   **Defines**: None specific required for basic usage.
+## 4. Feature Mapping
 
-## Mapping Concepts
-
-| Benchmark IR | PlutoVG C API |
+| IR Feature | PlutoVG API |
 |---|---|
-| `Path` | `plutovg_move_to`, `plutovg_line_to`... |
-| `Paint` | `plutovg_set_source_rgba`, `plutovg_set_source_linear_gradient` |
-| `Matrix` | `plutovg_matrix_t`, `plutovg_set_matrix` |
-| `Fill (NonZero)` | `plutovg_fill` (Default is NonZero) |
-| `Fill (EvenOdd)` | `plutovg_set_fill_rule(pluto, PLUTOVG_FILL_RULE_EVEN_ODD); plutovg_fill(...)` |
+| **Path** | `plutovg_move_to`, `plutovg_line_to`... |
+| **Fill (Solid)** | `plutovg_set_source_rgba`; `plutovg_fill` |
+| **Fill (Gradient)** | `plutovg_set_source_linear_gradient`... |
+| **Fill Rule** | `plutovg_set_fill_rule(pluto, PLUTOVG_FILL_RULE_NON_ZERO / EVEN_ODD)` |
+| **Stroke** | `plutovg_stroke` |
+| **Stroke Config** | `plutovg_set_line_width`, `plutovg_set_line_cap`, `plutovg_set_line_join` |
+| **Transforms** | `plutovg_matrix_init`, `plutovg_set_matrix` |
 
-## Notes
-*   **Stroking**: PlutoVG supports standard caps/joins/miter.
-*   **Memory**: Ensure the lifecycle of the data buffer exceeds the lifecycle of the `plutovg_surface_t`.
+## 5. Notes
+
+*   **Simplicity**: PlutoVG is very concise.
+*   **Thread Safety**: Contexts are not thread-safe.

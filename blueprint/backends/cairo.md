@@ -2,19 +2,45 @@
 
 # Backend Integration: Cairo
 
-## Overview
-Cairo is a 2D graphics library with support for multiple output devices. It is the longest-standing open-source vector graphics library, used by GTK and Firefox.
+## 1. Version and Dependencies
 
-## CPU-Only Configuration
+*   **Version**: 1.18.2 (Stable 2024)
+*   **Repository**: `https://gitlab.freedesktop.org/cairo/cairo.git`
+*   **Dependencies**: Pixman (Required, > 0.40.0), Freetype/Fontconfig (often pulled in but unused for us), Zlib, PNG.
+*   **License**: LGPL-2.1 / MPL-1.1
 
-### Surface Creation
-Use the **Image Surface** backend (`cairo_image_surface`) which renders to a memory buffer on the CPU.
+## 2. CMake Integration
+
+Cairo is historically built with Autotools/Meson, but CMake support exists in forks or via explicit commands. For this benchmark, we recommend using system libraries if available (consistent on Linux) or a `FetchContent` wrapper for Meson. However, `vcpkg` or `conan` is often busiest for Cairo. 
+
+**Recommended Approach: PkgConfig / FindPackage on Linux, Vcpkg on Windows/Mac.**
+
+```cmake
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(CAIRO REQUIRED cairo>=1.18.0)
+
+# If not found, use FetchContent with a CMake-friendly mirror or Meson wrapper?
+# Simpler: Assume system cairo or provide a managed build script.
+# Below implies linking against system lib or prebuilt.
+
+add_library(cairo_adapter INTERFACE)
+target_include_directories(cairo_adapter INTERFACE ${CAIRO_INCLUDE_DIRS})
+target_link_libraries(cairo_adapter INTERFACE ${CAIRO_LIBRARIES})
+```
+
+## 3. Initialization (CPU-Only)
+
+Cairo Image Surface (`CAIRO_FORMAT_ARGB32`) is the standard software rasterizer.
 
 ```cpp
-#include <cairo/cairo.h>
+#include <cairo.h>
 
-// 1. Create Surface from Data
+// 1. Wrap Buffer
+// Stride alignment is critical. Cairo requires specific stride aligment (usually 4 bytes, but safe to ask).
 int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, width);
+// NOTE: If our harness buffer stride != cairo stride, we must account for it or copy.
+// The benchmark should prefer allocating with cairo stride or copy-free compatible padding.
+
 cairo_surface_t* surface = cairo_image_surface_create_for_data(
     buffer.data(),
     CAIRO_FORMAT_ARGB32,
@@ -26,28 +52,23 @@ cairo_surface_t* surface = cairo_image_surface_create_for_data(
 // 2. Create Context
 cairo_t* cr = cairo_create(surface);
 
-// 3. Render
-cairo_set_source_rgba(cr, 1, 0, 0, 1);
-cairo_rectangle(cr, 10, 10, 100, 100);
-cairo_fill(cr);
+// 3. Defaults
+cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
 ```
 
-### Build Instructions
-Cairo has a complex dependency tree (pixman, png, zlib, fontconfig, freetype).
-*   **Minimization**: For this benchmark, we can disable PDF, SVG, PS, X11, Win32, Quartz surfaces if dynamic dispatch allows, but `cairo` usually builds them all.
-*   **Pixman**: Is the low-level pixel manipulation library used by Cairo. It MUST be compiled with SIMD optimizations (SSE2/NEON) for fair performance.
+## 4. Feature Mapping
 
-## Mapping Concepts
-
-| Benchmark IR | Cairo C API |
+| IR Feature | Cairo API |
 |---|---|
-| `Path` | `cairo_new_path`, `cairo_move_to`, `cairo_line_to`... |
-| `Paint` | `cairo_set_source_rgba` or `cairo_pattern_create_linear` |
-| `Matrix` | `cairo_matrix_t`, `cairo_transform` |
-| `FillPath` | `cairo_fill` (or `cairo_fill_preserve`) |
-| `StrokePath` | `cairo_stroke` |
-| `Save`/`Restore` | `cairo_save` / `cairo_restore` |
+| **Path** | `cairo_new_path`, `cairo_move_to`, `cairo_line_to`... |
+| **Fill (Solid)** | `cairo_set_source_rgba`; `cairo_fill` |
+| **Fill (Gradient)** | `cairo_pattern_create_linear/radial` -> `cairo_set_source` |
+| **Fill Rule** | `cairo_set_fill_rule(cr, CAIRO_FILL_RULE_WINDING / EVEN_ODD)` |
+| **Stroke** | `cairo_stroke(cr)` |
+| **Stroke Config** | `cairo_set_line_width`, `cairo_set_line_cap`, `cairo_set_line_join`, `cairo_set_dash` |
+| **Transforms** | `cairo_matrix_init`, `cairo_transform` |
 
-## Notes
-*   **Winding Rules**: Cairo supports NonZero (`CAIRO_FILL_RULE_WINDING`) and EvenOdd.
-*   **State**: Cairo paints are part of the context state (`cairo_set_source`), whereas in our IR paints might be separate objects. The adapter must invoke `cairo_set_source` before every draw if the paint changes.
+## 5. Notes
+
+*   **Stateful**: Cairo is a state machine. The adapter must sync generic IR state (paint, transform) into the Cairo context before every operation.
+*   **Pixman**: Ensure Pixman is compiled with SIMD (SSE2/AVX/NEON) for representative performance.
