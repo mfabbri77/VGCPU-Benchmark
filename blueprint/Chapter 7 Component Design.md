@@ -136,6 +136,7 @@ This chapter specifies the internal module decomposition and the responsibilitie
   1. Enforce CPU-only surfaces/paths.
   2. Implement IR-to-backend mapping consistent with the IR semantic contract.
   3. Expose capabilities and backend metadata.
+  4. **NOT** resize or clear the output buffer; the harness pre-sizes the buffer and the IR `kClear` command handles clearing.
 * Adapters **MUST NOT** perform statistics aggregation or report writing.
 * Adapters **SHOULD** avoid allocations during replay; unavoidable allocations **MUST** be documented and optionally measured.
 

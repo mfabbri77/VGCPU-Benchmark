@@ -123,9 +123,11 @@ If isolation mode is `process`:
    * manifest I/O,
    * backend initialization,
    * surface creation/destruction,
+   * **output buffer allocation/resizing** (buffer MUST be pre-sized by harness before measurement loop),
    * report serialization or file I/O,
    * allocation-heavy setup that can be performed once per case.
-3. Any backend-specific state resets required between iterations **MUST** either:
+3. **Buffer clearing semantics**: The `kClear` opcode in the IR stream is the authoritative method for clearing the output buffer. Adapters **MUST NOT** perform additional `memset`/`fill` operations on the buffer before rendering. The harness guarantees the buffer is sized correctly; buffer contents before `kClear` are undefined.
+4. Any backend-specific state resets required between iterations **MUST** either:
 
    * be part of the `Render` contract and therefore included in the timed region for all backends, or
    * be performed outside the timed region consistently and documented as a measurement policy decision.

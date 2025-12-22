@@ -50,18 +50,6 @@
       "description": "Linear gradients test"
     },
     {
-      "scene_id": "fills/gradients_linear",
-      "ir_path": "fills/gradients_linear.irbin",
-      "scene_hash": "522178e4",
-      "ir_version": "1.0.0",
-      "default_width": 800,
-      "default_height": 600,
-      "required_features": {
-        "needs_nonzero": true
-      },
-      "description": "Linear gradients test"
-    },
-    {
       "scene_id": "strokes/strokes_curves",
       "ir_path": "strokes/strokes_curves.irbin",
       "scene_hash": "9dcc483d",
