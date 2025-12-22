@@ -92,9 +92,10 @@ All steps in this workplan **MUST** follow **ALL** the conventions defined in th
 ## Phase 4: Diversity & Rust Bridge
 **Goal**: Integrate remaining C++ backends and Rust-based engines.
 
-- [ ] **Step 4.1: ThorVG & AmanithVG**
+- [ ] **Step 4.1: ThorVG, AmanithVG & Qt**
+    - [x] Integrate AmanithVG (SDK path).
     - [ ] Integrate ThorVG (SW Engine).
-    - [ ] Integrate AmanithVG (SDK path).
+    - [ ] Integrate Qt (SW Engine).
     - [ ] Implement adapters.
 
 - [ ] **Step 4.2: Rust Bridge Infrastructure**

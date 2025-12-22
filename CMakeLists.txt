@@ -391,7 +391,21 @@ if(ENABLE_CAIRO)
 endif()
 
 # -----------------------------------------------------------------------------
-# Backend Enable Options
+# Qt (System library via find_package)
+# Blueprint Reference: backends/qt.md
+# NOTE: Qt6 cannot be FetchContent'd per Qt documentation. Requires system install.
+# Install via: brew install qt (macOS) or apt install qt6-base-dev (Linux)
+# -----------------------------------------------------------------------------
+if(ENABLE_QT)
+    find_package(Qt6 COMPONENTS Gui QUIET)
+    if(Qt6Gui_FOUND)
+        message(STATUS "Qt6 Gui found (Version: ${Qt6Gui_VERSION})")
+    else()
+        message(WARNING "Qt6 Gui not found. Qt backend will be disabled.")
+        message(STATUS "  Install Qt6: brew install qt (macOS) or apt install qt6-base-dev (Linux)")
+        set(ENABLE_QT OFF CACHE BOOL "" FORCE)
+    endif()
+endif()
 # Blueprint Reference: Chapter 7, §7.2.5 — Build-Time Enablement
 # -----------------------------------------------------------------------------
 option(ENABLE_NULL_BACKEND    "Enable Null/Debug backend for testing" ON)
@@ -482,6 +496,11 @@ if(ENABLE_THORVG)
     target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_THORVG)
 endif()
 
+if(ENABLE_QT)
+    list(APPEND ADAPTER_SOURCES src/adapters/qt/qt_adapter.cpp)
+    target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_QT)
+endif()
+
 if(ENABLE_AMANITHVG)
     list(APPEND ADAPTER_SOURCES src/adapters/amanithvg/amanithvg_adapter.cpp)
     target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_AMANITHVG)
@@ -515,6 +534,10 @@ endif()
 if(ENABLE_THORVG)
     target_link_libraries(vgcpu_adapters PUBLIC thorvg)
     target_include_directories(vgcpu_adapters PUBLIC ${thorvg_SOURCE_DIR}/inc)
+endif()
+
+if(ENABLE_QT)
+    target_link_libraries(vgcpu_adapters PUBLIC Qt6::Gui)
 endif()
 
 if(ENABLE_AMANITHVG)

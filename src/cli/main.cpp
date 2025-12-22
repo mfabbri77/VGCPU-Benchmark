@@ -40,6 +40,10 @@
 #include "adapters/thorvg/thorvg_adapter.h"
 #endif
 
+#ifdef VGCPU_ENABLE_QT
+#include "adapters/qt/qt_adapter.h"
+#endif
+
 #ifdef VGCPU_ENABLE_AMANITHVG
 #include "adapters/amanithvg/amanithvg_adapter.h"
 #endif
@@ -346,6 +350,10 @@ int main(int argc, char* argv[]) {
 
 #ifdef VGCPU_ENABLE_THORVG
     RegisterThorVGAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_QT
+    RegisterQtAdapter();
 #endif
 
 #ifdef VGCPU_ENABLE_AMANITHVG
