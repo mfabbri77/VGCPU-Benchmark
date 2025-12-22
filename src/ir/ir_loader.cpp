@@ -88,16 +88,67 @@ bool ParsePaintSection(const uint8_t* data, size_t len, std::vector<Paint>& pain
     len -= 2;
 
     for (uint16_t i = 0; i < count; ++i) {
-        if (len < 5)
-            return false;  // type(1) + color(4)
+        if (len < 1)
+            return false;  // type(1)
 
         Paint paint;
         paint.type = static_cast<PaintType>(data[0]);
-        paint.color = ReadLE<uint32_t>(data + 1);
-        paints.push_back(paint);
+        data += 1;
+        len -= 1;
 
-        data += 5;
-        len -= 5;
+        if (paint.type == PaintType::kSolid) {
+            if (len < 4)
+                return false;
+            paint.color = ReadLE<uint32_t>(data);
+            data += 4;
+            len -= 4;
+        } else if (paint.type == PaintType::kLinear) {
+            if (len < 18)
+                return false;  // 4*float(16) + stop_count(2)
+            paint.linear_start_x = ReadLE<float>(data);
+            paint.linear_start_y = ReadLE<float>(data + 4);
+            paint.linear_end_x = ReadLE<float>(data + 8);
+            paint.linear_end_y = ReadLE<float>(data + 12);
+            uint16_t stop_count = ReadLE<uint16_t>(data + 16);
+            data += 18;
+            len -= 18;
+
+            for (uint16_t s = 0; s < stop_count; ++s) {
+                if (len < 8)
+                    return false;
+                GradientStop stop;
+                stop.offset = ReadLE<float>(data);
+                stop.color = ReadLE<uint32_t>(data + 4);
+                paint.stops.push_back(stop);
+                data += 8;
+                len -= 8;
+            }
+        } else if (paint.type == PaintType::kRadial) {
+            if (len < 14)
+                return false;  // 3*float(12) + stop_count(2)
+            paint.radial_center_x = ReadLE<float>(data);
+            paint.radial_center_y = ReadLE<float>(data + 4);
+            paint.radial_radius = ReadLE<float>(data + 8);
+            uint16_t stop_count = ReadLE<uint16_t>(data + 12);
+            data += 14;
+            len -= 14;
+
+            for (uint16_t s = 0; s < stop_count; ++s) {
+                if (len < 8)
+                    return false;
+                GradientStop stop;
+                stop.offset = ReadLE<float>(data);
+                stop.color = ReadLE<uint32_t>(data + 4);
+                paint.stops.push_back(stop);
+                data += 8;
+                len -= 8;
+            }
+        } else {
+            // Unknown paint type
+            return false;
+        }
+
+        paints.push_back(std::move(paint));
     }
 
     return true;

@@ -28,6 +28,10 @@
 #include "adapters/cairo/cairo_adapter.h"
 #endif
 
+#ifdef VGCPU_ENABLE_BLEND2D
+#include "adapters/blend2d/blend2d_adapter.h"
+#endif
+
 using namespace vgcpu;
 
 namespace {
@@ -290,6 +294,10 @@ int main(int argc, char* argv[]) {
 
 #ifdef VGCPU_ENABLE_CAIRO
     RegisterCairoAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_BLEND2D
+    RegisterBlend2DAdapter();
 #endif
 
     // Initialize scene registry from manifest

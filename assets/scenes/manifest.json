@@ -11,7 +11,7 @@
       "required_features": {
         "needs_nonzero": true
       },
-      "description": "Basic solid fill scene with rectangles and circles"
+      "description": "Basic solid fill scene"
     },
     {
       "scene_id": "fills/nested_rects",
@@ -23,7 +23,7 @@
       "required_features": {
         "needs_nonzero": true
       },
-      "description": "Performance test with 20 nested rectangles"
+      "description": "Nested rects performance test"
     },
     {
       "scene_id": "fills/spiral_circles",
@@ -35,7 +35,31 @@
       "required_features": {
         "needs_nonzero": true
       },
-      "description": "50 circles in a spiral pattern with rainbow colors"
+      "description": "Spiral circles test"
+    },
+    {
+      "scene_id": "fills/gradients_linear",
+      "ir_path": "fills/gradients_linear.irbin",
+      "scene_hash": "522178e4",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true
+      },
+      "description": "Linear gradients test"
+    },
+    {
+      "scene_id": "strokes/strokes_curves",
+      "ir_path": "strokes/strokes_curves.irbin",
+      "scene_hash": "9dcc483d",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_stroke": true
+      },
+      "description": "Stroking curves and shapes"
     }
   ]
 }

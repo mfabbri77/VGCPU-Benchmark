@@ -70,10 +70,10 @@ All steps in this workplan **MUST** follow **ALL** the conventions defined in th
 ## Phase 3: High-Performance Backends
 **Goal**: Integrate the heavyweights (Blend2D, Skia) and refine measurement precision.
 
-- [ ] **Step 3.1: Blend2D Integration**
-    - [ ] Integrate Blend2D + AsmJit (v0.21.2).
-    - [ ] Implement `Blend2DAdapter`.
-    - [ ] Verify JIT is functional/enabled (CPU-only).
+- [x] **Step 3.1: Blend2D Integration** ✅
+    - [x] Integrate Blend2D + AsmJit (v0.21.2).
+    - [x] Implement `Blend2DAdapter`.
+    - [x] Verify JIT is functional/enabled (CPU-only).
 
 - [ ] **Step 3.2: Skia Integration**
     - [ ] Setup build infrastructure for Skia (m116/GN or prebuilt).

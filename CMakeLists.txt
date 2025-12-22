@@ -56,6 +56,55 @@ endif()
 # Cairo (System library via PkgConfig)
 # Blueprint Reference: backends/cairo.md
 # -----------------------------------------------------------------------------
+# -----------------------------------------------------------------------------
+# Blend2D & AsmJit (FetchContent)
+# Blueprint Reference: backends/blend2d.md
+# -----------------------------------------------------------------------------
+if(ENABLE_BLEND2D)
+    # AsmJit (Required by Blend2D)
+    FetchContent_Declare(
+        asmjit
+        GIT_REPOSITORY https://github.com/asmjit/asmjit.git
+        GIT_TAG        master
+    )
+    # Blend2D
+    FetchContent_Declare(
+        blend2d
+        GIT_REPOSITORY https://github.com/blend2d/blend2d.git
+        GIT_TAG        master
+    )
+
+    # Prevent GNUInstallDirs recursion
+    set(CMAKE_INSTALL_LIBDIR "lib" CACHE PATH "")
+    set(CMAKE_INSTALL_BINDIR "bin" CACHE PATH "")
+    set(CMAKE_INSTALL_INCLUDEDIR "include" CACHE PATH "")
+
+    set(ASMJIT_STATIC ON CACHE BOOL "" FORCE)
+    set(ASMJIT_INSTALL OFF CACHE BOOL "" FORCE)
+    set(BLEND2D_STATIC ON CACHE BOOL "" FORCE)
+    set(BLEND2D_INSTALL OFF CACHE BOOL "" FORCE)
+    set(BLEND2D_NO_JIT OFF CACHE BOOL "" FORCE)
+    set(BLEND2D_EXTERNAL_ASMJIT OFF CACHE BOOL "" FORCE) # Use source directly
+
+    # Populate asmjit manually
+    FetchContent_GetProperties(asmjit)
+    if(NOT asmjit_POPULATED)
+        FetchContent_Populate(asmjit)
+    endif()
+
+    # Point Blend2D to asmjit source
+    set(ASMJIT_DIR "${asmjit_SOURCE_DIR}" CACHE PATH "" FORCE)
+
+    # Now build Blend2D (which will add_subdirectory asmjit)
+    FetchContent_MakeAvailable(blend2d)
+    
+    message(STATUS "Blend2D & AsmJit fetched from GitHub")
+endif()
+
+# -----------------------------------------------------------------------------
+# Cairo (System library via PkgConfig)
+# Blueprint Reference: backends/cairo.md
+# -----------------------------------------------------------------------------
 if(ENABLE_CAIRO)
     # 1. Try PkgConfig (standard on Linux/macOS)
     find_package(PkgConfig QUIET)
@@ -200,6 +249,11 @@ if(ENABLE_CAIRO)
     target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_CAIRO)
 endif()
 
+if(ENABLE_BLEND2D)
+    list(APPEND ADAPTER_SOURCES src/adapters/blend2d/blend2d_adapter.cpp)
+    target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_BLEND2D)
+endif()
+
 add_library(vgcpu_adapters STATIC
     src/adapters/adapter_registry.cpp
     ${ADAPTER_SOURCES}
@@ -214,6 +268,11 @@ endif()
 
 if(ENABLE_CAIRO)
     target_link_libraries(vgcpu_adapters PUBLIC PkgConfig::CAIRO)
+endif()
+
+if(ENABLE_BLEND2D)
+    target_link_libraries(vgcpu_adapters PUBLIC blend2d)
+    target_include_directories(vgcpu_adapters PUBLIC ${blend2d_SOURCE_DIR})
 endif()
 
 # -----------------------------------------------------------------------------
