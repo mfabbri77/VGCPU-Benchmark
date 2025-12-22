@@ -37,7 +37,7 @@ set_target_properties(amanithvg_lib PROPERTIES
     IMPORTED_LOCATION "${AVG_LIB_PATH}/libAmanithVG.a"
     INTERFACE_INCLUDE_DIRECTORIES "${amanithvg_SOURCE_DIR}/include"
     # CRITICAL: Define SRE engine mode for headers
-    INTERFACE_COMPILE_DEFINITIONS "AMANITHVG_SRE=1" 
+    INTERFACE_COMPILE_DEFINITIONS "AM_SRE=1" 
 )
 ```
 
@@ -60,13 +60,25 @@ VGint height = ...;
 // Verify stride alignment (usually 4 bytes for 32-bit formats).
 VGImageFormat format = VG_sRGBA_8888_PRE;
 
-// 2. Create Context & Surface
-// The SDK provides a helper `vgPrivSurfaceCreateMZT` or similar in `src/extensions`.
-// If not available, use the provided `vg_lite` or SRE specific initialization header.
-// Standard OpenVG 1.1 doesn't define "headless surface creation" without EGL.
-// For the SRE backend, look for:
-// vgPrivMakeCurrentMZT(void *surface_pixels, VGint surface_width, VGint surface_height, VGint surface_stride, VGImageFormat surface_format);
-vgPrivMakeCurrentMZT(buffer_ptr, width, height, stride, format);
+// 2. Wrap Buffer
+// AmanithVG SRE provides proprietary extensions for headless initialization.
+// Requires global library initialization first.
+vgInitializeMZT();
+
+// Create a context
+void* context = vgPrivContextCreateMZT(nullptr);
+
+// Create a surface by wrapping a raw pixel buffer
+// Parameters: width, height, linearColorSpace, alphaPremultiplied, pixels, alphaMaskPixels
+void* surface = vgPrivSurfaceCreateByPointerMZT(
+    width, height, 
+    VG_FALSE,  // sRGB color space
+    VG_TRUE,   // alpha premultiplied
+    buffer_ptr, 
+    nullptr);
+
+// Bind context and surface
+vgPrivMakeCurrentMZT(context, surface);
 
 // 3. Set Defaults
 vgSeti(VG_RENDERING_QUALITY, VG_RENDERING_QUALITY_BETTER);

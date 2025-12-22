@@ -6,7 +6,7 @@
 
 ## 1. Version and Dependencies
 
-*   **Version**: v1.0-pre34 (Latest Release Dec 2025)
+*   **Version**: 0.15.16 (Release Oct 2025)
 *   **Repository**: `https://github.com/thorvg/thorvg`
 *   **Dependencies**: None (for SW engine).
 *   **License**: MIT
