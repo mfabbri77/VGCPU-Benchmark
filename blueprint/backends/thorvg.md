@@ -19,7 +19,7 @@ include(FetchContent)
 FetchContent_Declare(
     thorvg
     GIT_REPOSITORY https://github.com/thorvg/thorvg.git
-    GIT_TAG        v0.15.5 # Update to latest tag v1.0-pre34 if avaiable
+    GIT_TAG        v0.15.16 # Stable Release (Oct 2025)
 )
 
 # Configuration options to minimize build

@@ -25,23 +25,34 @@ Vello is GPU-first. CPU support might be via `skia-safe` fallback or `vello-enco
 **Verification Required**: If Vello's own software rasterizer is not ready, this backend might essentially be a wrapper around Skia-via-Rust.
 For this benchmark, we target **Vello's Fine-Grained Rasterizer** (if functional) or label it "Experimental".
 
-**Rust Bridge (`vello_bridge`):**
+**Rust Bridge (`vello_bridge/src/lib.rs`):**
 ```rust
 use vello::peniko::Color;
-use vello::{Scene, Renderer, RendererOptions};
+use vello::{Scene, Renderer, RendererOptions, RenderParams};
 use vello::util::{RenderContext, RenderSurface};
+use wgpu::{Device, Queue, TextureFormat};
+
+// Vello is complex to bridge via C because it relies on wgpu async structs.
+// For this benchmark, we assume a synchronous wrapper that instantiates a 
+// single-threaded wgpu::Instance backed by CPU (if available) or simply passes 
+// the Display List to a Rust function that handles the full render pass.
 
 #[no_mangle]
-pub extern "C" fn vello_render_cpu(...) {
-    // Vello CPU support is currently evolving.
-    // Likely requires creating a wgpu::Device with explicit Software backend?
-    // Or accessing the underlying `piet-cpu` or similar if Vello exposes it.
+pub extern "C" fn vello_render_cpu(
+    width: u32, height: u32,
+    out_buf: *mut u32,
+    // Pass serialized IR or minimal commands here?
+    // Better: Helper functions to build Scene
+) {
+    // 1. Setup Vello Context (expensive, should be persistent in real app)
+    // 2. Build Scene
+    let mut scene = Scene::new();
+    // ... populate scene ...
     
-    // Fallback Plan: Use `piet-common` which maps to Cairo/Direct2D/CoreGraphics?
-    // NO, that defeats the purpose.
-    
-    // As of 2025, we assume Vello has a "software" feature or backend.
-    // implementation details to be filled as library matures.
+    // 3. Render
+    // This requires setting up wgpu with a "Software" backend (e.g., Lavapipe or explicit CPU fallback).
+    // As of 2025, Vello might have a direct software rasterizer.
+    // If NOT: This backend effectively benchmarks wgpu-on-cpu.
 }
 ```
 

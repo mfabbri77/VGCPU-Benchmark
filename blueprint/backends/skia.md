@@ -26,12 +26,19 @@ ExternalProject_Add(
 )
 
 # Link
+# Link
 add_library(skia_lib STATIC IMPORTED)
 set_property(TARGET skia_lib PROPERTY IMPORTED_LOCATION "${BINARY_DIR}/out/Release/libskia.a")
+
+# ALTERNATIVE: Use pre-built binaries (skia-binaries)
+# If building from source is too heavy, fetch a release from a trusted provider.
+# set(SKIA_PREBUILT_URL "https://github.com/skia-binaries/skia-binaries/releases/...")
+
 ```
 
 **Minimal GN Args (CPU only):**
 ```bash
+# Concrete GN Args for Static CPU-Only Linux Build
 is_official_build=true
 skia_use_system_expat=false
 skia_use_system_libjpeg_turbo=false
@@ -40,8 +47,12 @@ skia_use_system_libwebp=false
 skia_use_system_zlib=false
 skia_use_gl=false
 skia_use_vulkan=false
-skia_enable_Pdf=false
+skia_use_metal=false
+skia_enable_pdf=false
 skia_enable_skottie=false
+skia_enable_gpu=false
+skia_enable_fontmgr_empty=true
+extra_cflags=["-DSK_FORCE_RASTER_PIPELINE_BLITTER"]
 ```
 
 ## 3. Initialization (CPU-Only)

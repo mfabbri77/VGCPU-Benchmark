@@ -23,16 +23,19 @@ FetchContent_Declare(
 )
 FetchContent_MakeAvailable(amanithvg)
 
+# Logic to select correct lib based on CMAKE_SYSTEM_PROCESSOR (x86_64, arm64) 
+# and CMAKE_SYSTEM_NAME (Linux, Windows, Darwin).
+# The SDK typically provides precompiled static libs in `lib/platform/...`.
+set(AVG_LIB_PATH "${amanithvg_SOURCE_DIR}/lib/${AVG_PLATFORM_DIR}") 
+
 # Define wrapper target
 add_library(amanithvg_lib STATIC IMPORTED)
-
-# Logic to select correct lib based on CMAKE_SYSTEM_PROCESSOR (x86_64, arm64) 
-# and CMAKE_SYSTEM_NAME (Linux, Windows, Darwin)
-set(AVG_LIB_PATH "${amanithvg_SOURCE_DIR}/lib/platform/...") 
 
 set_target_properties(amanithvg_lib PROPERTIES
     IMPORTED_LOCATION "${AVG_LIB_PATH}/libAmanithVG.a"
     INTERFACE_INCLUDE_DIRECTORIES "${amanithvg_SOURCE_DIR}/include"
+    # CRITICAL: Define SRE engine mode for headers
+    INTERFACE_COMPILE_DEFINITIONS "AMANITHVG_SRE=1" 
 )
 ```
 
@@ -51,15 +54,23 @@ AmanithVG SRE allows rendering to client memory without a full EGL context if us
 void* buffer_ptr = buffer.data();
 VGint width = ...;
 VGint height = ...;
+// AmanithVG SRE typically supports VG_sRGBA_8888_PRE natively.
+// Verify stride alignment (usually 4 bytes for 32-bit formats).
 VGImageFormat format = VG_sRGBA_8888_PRE;
 
 // 2. Create Context & Surface
-// Use "vgPrivSurfaceCreateMZT" or platform-agnostic helper provided in `src/` of SDK
-vgPrivMakeCurrentMZT(NULL, buffer_ptr, width, height, stride, format);
+// The SDK provides a helper `vgPrivSurfaceCreateMZT` or similar in `src/extensions`.
+// If not available, use the provided `vg_lite` or SRE specific initialization header.
+// Standard OpenVG 1.1 doesn't define "headless surface creation" without EGL.
+// For the SRE backend, look for:
+// vgPrivMakeCurrentMZT(void *surface_pixels, VGint surface_width, VGint surface_height, VGint surface_stride, VGImageFormat surface_format);
+vgPrivMakeCurrentMZT(buffer_ptr, width, height, stride, format);
 
 // 3. Set Defaults
 vgSeti(VG_RENDERING_QUALITY, VG_RENDERING_QUALITY_BETTER);
 vgSeti(VG_BLEND_MODE, VG_BLEND_SRC_OVER);
+// Reset matrices to Identity
+vgLoadIdentity();
 ```
 
 ## 4. Feature Mapping

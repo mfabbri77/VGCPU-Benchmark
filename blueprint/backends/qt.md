@@ -59,3 +59,4 @@ painter.eraseRect(0, 0, width, height); // Clear
 
 *   **Initialization Cost**: `QGuiApplication` requires a one-time setup. This MUST be done in the adapter global init, NOT per benchmark iteration.
 *   **QPA Plugin**: Run with `QT_QPA_PLATFORM=offscreen` env var to avoid X11/Wayland dependencies on CI.
+    *   **Code Enforcement**: `qputenv("QT_QPA_PLATFORM", "offscreen");` before `QGuiApplication`.

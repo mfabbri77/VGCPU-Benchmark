@@ -37,29 +37,74 @@ target_link_libraries(raqote_adapter PRIVATE raqote_bridge)
 
 Raqote is CPU-only by definition.
 
-**Rust Side (`lib.rs`):**
+**Rust Bridge (`rust_bridge/src/lib.rs`):**
+
 ```rust
+use raqote::{DrawTarget, SolidSource, Source, DrawOptions, PathBuilder, Transform};
+use std::slice;
+
+#[repr(C)]
+pub struct RqtSurface {
+    dt: DrawTarget,
+}
+
 #[no_mangle]
-pub extern "C" fn raqote_render(
-    width: i32, height: i32, 
-    buffer: *mut u32
-) {
-    let mut dt = DrawTarget::new(width, height);
-    // ... replay commands ...
-    // Copy out
-    let data = dt.get_data(); // slice of u32
-    unsafe {
-        std::ptr::copy_nonoverlapping(data.as_ptr(), buffer, data.len());
+pub extern "C" fn rqt_create(width: i32, height: i32) -> *mut RqtSurface {
+    let dt = DrawTarget::new(width, height);
+    Box::into_raw(Box::new(RqtSurface { dt }))
+}
+
+#[no_mangle]
+pub extern "C" fn rqt_destroy(ptr: *mut RqtSurface) {
+    if !ptr.is_null() {
+        unsafe { let _ = Box::from_raw(ptr); }
     }
+}
+
+#[no_mangle]
+pub extern "C" fn rqt_clear(ptr: *mut RqtSurface, r: u8, g: u8, b: u8, a: u8) {
+    let surf = unsafe { &mut *ptr };
+    let color = SolidSource::from_rgba8(r, g, b, a);
+    surf.dt.clear(color);
+}
+
+#[no_mangle]
+pub extern "C" fn rqt_get_pixels(ptr: *mut RqtSurface, out_buf: *mut u32) {
+    let surf = unsafe { &mut *ptr };
+    let data = surf.dt.get_data();
+    unsafe {
+        std::ptr::copy_nonoverlapping(data.as_ptr(), out_buf, data.len());
+    }
+}
+
+// Example primitive (expand for full IR mapping)
+#[no_mangle]
+pub extern "C" fn rqt_fill_rect(ptr: *mut RqtSurface, x: f32, y: f32, w: f32, h: f32, r: u8, g: u8, b: u8, a: u8) {
+    let surf = unsafe { &mut *ptr };
+    let mut pb = PathBuilder::new();
+    pb.rect(x, y, w, h);
+    let path = pb.finish();
+    let src = Source::Solid(SolidSource::from_rgba8(r, g, b, a));
+    surf.dt.fill(&path, &src, &DrawOptions::default());
 }
 ```
 
 **C++ Side:**
 ```cpp
-extern "C" void raqote_render(int w, int h, uint32_t* buf);
+struct RqtSurface;
+extern "C" {
+    RqtSurface* rqt_create(int w, int h);
+    void rqt_destroy(RqtSurface* s);
+    void rqt_clear(RqtSurface* s, uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+    void rqt_get_pixels(RqtSurface* s, uint32_t* buf);
+    void rqt_fill_rect(RqtSurface* s, float x, float y, float w, float h, ...);
+}
 
 // Adapter Render() implementation:
-raqote_render(width, height, (uint32_t*)buffer.data());
+auto* surf = rqt_create(width, height);
+// ... replay IR commands calling rqt_xxxx ...
+rqt_get_pixels(surf, (uint32_t*)buffer.data());
+rqt_destroy(surf);
 ```
 
 ## 4. Feature Mapping

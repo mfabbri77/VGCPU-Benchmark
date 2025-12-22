@@ -31,6 +31,7 @@ target_include_directories(agg_interface INTERFACE
 )
 # Source files must be added if the repo doesn't expose a clean target
 # Typically we need src/*.cpp
+# NOTE: Verify the `agg` repo structure. Some forks put sources in `src/` and others in root.
 file(GLOB AGG_SOURCES ${agg_SOURCE_DIR}/src/*.cpp)
 add_library(agg_lib STATIC ${AGG_SOURCES})
 target_link_libraries(agg_lib PUBLIC agg_interface)

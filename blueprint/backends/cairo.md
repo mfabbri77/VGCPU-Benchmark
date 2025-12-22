@@ -17,15 +17,18 @@ Cairo is historically built with Autotools/Meson, but CMake support exists in fo
 
 ```cmake
 find_package(PkgConfig REQUIRED)
-pkg_check_modules(CAIRO REQUIRED cairo>=1.18.0)
+pkg_check_modules(CAIRO REQUIRED cairo>=1.16.0)
 
-# If not found, use FetchContent with a CMake-friendly mirror or Meson wrapper?
-# Simpler: Assume system cairo or provide a managed build script.
-# Below implies linking against system lib or prebuilt.
-
-add_library(cairo_adapter INTERFACE)
-target_include_directories(cairo_adapter INTERFACE ${CAIRO_INCLUDE_DIRS})
-target_link_libraries(cairo_adapter INTERFACE ${CAIRO_LIBRARIES})
+if (CAIRO_FOUND)
+    add_library(cairo_adapter INTERFACE)
+    target_include_directories(cairo_adapter INTERFACE ${CAIRO_INCLUDE_DIRS})
+    target_link_libraries(cairo_adapter INTERFACE ${CAIRO_LIBRARIES})
+else()
+    message(WARNING "System Cairo not found. Falling back to simple FetchContent (Experimental)")
+    # Note: Cairo build is complex. In a real scenario, use vcpkg.
+    # For now, fail or require user intervention if system lib is missing.
+    message(FATAL_ERROR "Please install libcairo2-dev (Linux) or use vcpkg (Windows/Mac).")
+endif()
 ```
 
 ## 3. Initialization (CPU-Only)
