@@ -40,6 +40,14 @@
 #include "adapters/thorvg/thorvg_adapter.h"
 #endif
 
+#ifdef VGCPU_ENABLE_AGG
+#include "adapters/agg/agg_adapter.h"
+#endif
+
+#ifdef VGCPU_ENABLE_AGG
+#include "adapters/agg/agg_adapter.h"
+#endif
+
 #ifdef VGCPU_ENABLE_QT
 #include "adapters/qt/qt_adapter.h"
 #endif
@@ -358,6 +366,14 @@ int main(int argc, char* argv[]) {
 
 #ifdef VGCPU_ENABLE_THORVG
     RegisterThorVGAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_AGG
+    vgcpu::adapters::agg_backend::RegisterAggAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_AGG
+#include "adapters/agg/agg_adapter.h"
 #endif
 
 #ifdef VGCPU_ENABLE_QT

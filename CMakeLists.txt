@@ -32,11 +32,11 @@ set(ENABLE_CAIRO           ON CACHE BOOL "Enable Cairo backend" FORCE)
 set(ENABLE_BLEND2D         ON CACHE BOOL "Enable Blend2D backend" FORCE)
 set(ENABLE_SKIA            ON CACHE BOOL "Enable Skia backend" FORCE)
 set(ENABLE_THORVG          ON CACHE BOOL "Enable ThorVG backend" FORCE)
-set(ENABLE_AGG             OFF CACHE BOOL "Enable AGG backend" FORCE)
-set(ENABLE_QT              OFF CACHE BOOL "Enable Qt Raster backend" FORCE)
+set(ENABLE_AGG             ON CACHE BOOL "Enable AGG backend" FORCE)
+set(ENABLE_QT              ON CACHE BOOL "Enable Qt Raster backend" FORCE)
 set(ENABLE_AMANITHVG       ON CACHE BOOL "Enable AmanithVG SRE backend" FORCE)
-set(ENABLE_RAQOTE          OFF CACHE BOOL "Enable Raqote backend" FORCE)
-set(ENABLE_VELLO_CPU       OFF CACHE BOOL "Enable vello_cpu backend" FORCE)
+set(ENABLE_RAQOTE          ON CACHE BOOL "Enable Raqote backend" FORCE)
+set(ENABLE_VELLO_CPU       ON CACHE BOOL "Enable vello_cpu backend" FORCE)
 
 
 # -----------------------------------------------------------------------------
@@ -119,46 +119,60 @@ endif()
 # -----------------------------------------------------------------------------
 # Skia (Prebuilt binaries from Aseprite m124)
 # Blueprint Reference: backends/skia.md
+# Supports: Windows x64, Linux x64, macOS x64/arm64
 # -----------------------------------------------------------------------------
 if(ENABLE_SKIA)
+    # Determine platform-specific URL for Skia prebuilt binaries
+    if(WIN32)
+        set(SKIA_URL "https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-Windows-Release-x64.zip")
+        set(SKIA_OUT_DIR "out/Release-x64")
+        set(SKIA_LIB_NAME "skia.lib")
+    elseif(APPLE)
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+            set(SKIA_URL "https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-macOS-Release-arm64.zip")
+            set(SKIA_OUT_DIR "out/Release-arm64")
+        else()
+            set(SKIA_URL "https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-macOS-Release-x64.zip")
+            set(SKIA_OUT_DIR "out/Release-x64")
+        endif()
+        set(SKIA_LIB_NAME "libskia.a")
+    else()  # Linux
+        set(SKIA_URL "https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-Linux-Release-x64.zip")
+        set(SKIA_OUT_DIR "out/Release-x64")
+        set(SKIA_LIB_NAME "libskia.a")
+    endif()
+
     FetchContent_Declare(
         skia_binaries
-        URL https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-Windows-Release-x64.zip
+        URL ${SKIA_URL}
     )
     FetchContent_MakeAvailable(skia_binaries)
 
     add_library(skia STATIC IMPORTED)
+    set_target_properties(skia PROPERTIES
+        IMPORTED_LOCATION "${skia_binaries_SOURCE_DIR}/${SKIA_OUT_DIR}/${SKIA_LIB_NAME}"
+        INTERFACE_INCLUDE_DIRECTORIES "${skia_binaries_SOURCE_DIR}"
+    )
+
     if(MSVC)
-        set_target_properties(skia PROPERTIES
-            IMPORTED_LOCATION "${skia_binaries_SOURCE_DIR}/out/Release-x64/skia.lib"
-            INTERFACE_INCLUDE_DIRECTORIES "${skia_binaries_SOURCE_DIR}"
-        )
         target_link_libraries(skia INTERFACE 
             user32.lib gdi32.lib opengl32.lib ole32.lib oleaut32.lib uuid.lib advapi32.lib
             usp10.lib FontSub.lib msimg32.lib
-            "${skia_binaries_SOURCE_DIR}/out/Release-x64/skia.lib"
-            "${skia_binaries_SOURCE_DIR}/out/Release-x64/harfbuzz.lib"
-            "${skia_binaries_SOURCE_DIR}/out/Release-x64/icu.lib"
-            "${skia_binaries_SOURCE_DIR}/out/Release-x64/libpng.lib"
-            "${skia_binaries_SOURCE_DIR}/out/Release-x64/libjpeg.lib"
-            "${skia_binaries_SOURCE_DIR}/out/Release-x64/zlib.lib" 
+            "${skia_binaries_SOURCE_DIR}/${SKIA_OUT_DIR}/skia.lib"
+            "${skia_binaries_SOURCE_DIR}/${SKIA_OUT_DIR}/harfbuzz.lib"
+            "${skia_binaries_SOURCE_DIR}/${SKIA_OUT_DIR}/icu.lib"
+            "${skia_binaries_SOURCE_DIR}/${SKIA_OUT_DIR}/libpng.lib"
+            "${skia_binaries_SOURCE_DIR}/${SKIA_OUT_DIR}/libjpeg.lib"
+            "${skia_binaries_SOURCE_DIR}/${SKIA_OUT_DIR}/zlib.lib" 
         )
         # Ensure symbols are pulled from zlib
         target_link_options(skia INTERFACE 
-            "/WHOLEARCHIVE:${skia_binaries_SOURCE_DIR}/out/Release-x64/zlib.lib"
+            "/WHOLEARCHIVE:${skia_binaries_SOURCE_DIR}/${SKIA_OUT_DIR}/zlib.lib"
             "/ALTERNATENAME:inflateInit2_=Cr_z_inflateInit2_"
             "/ALTERNATENAME:inflateEnd=Cr_z_inflateEnd"
             "/ALTERNATENAME:inflateReset=Cr_z_inflateReset"
             "/ALTERNATENAME:inflate=Cr_z_inflate"
         )
-    else()
-        set_target_properties(skia PROPERTIES
-            IMPORTED_LOCATION "${skia_binaries_SOURCE_DIR}/out/Release-x64/libskia.a"
-            INTERFACE_INCLUDE_DIRECTORIES "${skia_binaries_SOURCE_DIR}"
-        )
-    endif()
-
-    if(MSVC)
         set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 
@@ -179,7 +193,54 @@ if(ENABLE_SKIA)
         )
     endif()
 
-    message(STATUS "Skia fetched (Prebuilt m124)")
+    if(UNIX AND NOT APPLE)  # Linux
+        find_package(Fontconfig REQUIRED)
+        find_package(Freetype REQUIRED)
+        find_package(ZLIB REQUIRED)
+        
+        target_link_libraries(skia INTERFACE 
+            Fontconfig::Fontconfig
+            Freetype::Freetype
+            ZLIB::ZLIB
+            GL
+            dl
+        )
+    endif()
+
+    message(STATUS "Skia fetched (Prebuilt m124 - ${CMAKE_SYSTEM_NAME})")
+endif()
+
+# -----------------------------------------------------------------------------
+# Anti-Grain Geometry (AGG)
+# Blueprint Reference: backends/agg.md
+# -----------------------------------------------------------------------------
+if(ENABLE_AGG)
+    FetchContent_Declare(
+        agg
+        GIT_REPOSITORY https://github.com/ghaerr/agg-2.6.git
+        GIT_TAG        master
+    )
+    FetchContent_MakeAvailable(agg)
+
+    if(NOT TARGET agg)
+        file(GLOB AGG_SOURCES 
+            "${agg_SOURCE_DIR}/agg-src/src/*.cpp"
+            "${agg_SOURCE_DIR}/agg-src/src/ctrl/*.cpp" 
+        )
+        add_library(agg STATIC ${AGG_SOURCES})
+        target_include_directories(agg PUBLIC 
+            "${agg_SOURCE_DIR}/agg-src/include"
+            "${agg_SOURCE_DIR}/agg-src/font_freetype"
+        )
+        find_package(Freetype REQUIRED)
+        target_link_libraries(agg PUBLIC Freetype::Freetype)
+        
+        target_compile_definitions(agg PUBLIC 
+            AGG_BMP_READ_SUPPORT
+            AGG_BMP_WRITE_SUPPORT
+        )
+    endif()
+    message(STATUS "AGG 2.6 fetched from GitHub")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -294,11 +355,26 @@ if(ENABLE_THORVG)
     # Suppress warnings in third-party code
     if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
         target_compile_options(thorvg PRIVATE -w)
+        
+        # Blueprint Reference: Chapter 10, §10.1 — SIMD Optimization
+        # Add SIMD flags for Linux x64 to fix AVX inlining errors
+        if(UNIX AND NOT APPLE AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64")
+            target_compile_options(thorvg PRIVATE -mavx -msse4.1)
+        endif()
     elseif(MSVC)
         target_compile_options(thorvg PRIVATE /w)
     endif()
+
+    # Blueprint Reference: Appendix D, §D.1 — Language Standards
+    # ThorVG uses 'identity' in a way that conflicts with std::identity in C++20.
+    # We downgrade it to C++17 to avoid this conflict since we are building it as a separate target.
+    set_target_properties(thorvg PROPERTIES
+        CXX_STANDARD 17
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
     
-    message(STATUS "ThorVG built from source (v0.15.16, SW engine only)")
+    message(STATUS "ThorVG built from source (v0.15.16, SW engine only, C++17)")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -549,6 +625,11 @@ if(ENABLE_THORVG)
     target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_THORVG)
 endif()
 
+if(ENABLE_AGG)
+    list(APPEND ADAPTER_SOURCES src/adapters/agg/agg_adapter.cpp)
+    target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_AGG)
+endif()
+
 if(ENABLE_QT)
     list(APPEND ADAPTER_SOURCES src/adapters/qt/qt_adapter.cpp)
     target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_QT)
@@ -597,6 +678,10 @@ endif()
 if(ENABLE_THORVG)
     target_link_libraries(vgcpu_adapters PUBLIC thorvg)
     target_include_directories(vgcpu_adapters PUBLIC ${thorvg_SOURCE_DIR}/inc)
+endif()
+
+if(ENABLE_AGG)
+    target_link_libraries(vgcpu_adapters PUBLIC agg)
 endif()
 
 if(ENABLE_QT)

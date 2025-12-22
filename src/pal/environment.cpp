@@ -22,6 +22,7 @@
 #elif defined(__linux__)
 #include <sys/sysinfo.h>
 #include <sys/utsname.h>
+#include <unistd.h>
 
 #include <fstream>
 #endif
