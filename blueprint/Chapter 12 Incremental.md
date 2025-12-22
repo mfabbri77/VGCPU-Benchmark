@@ -195,6 +195,27 @@ This chapter defines an incremental delivery plan that produces a usable benchma
    * fixed output formats.
 2. Preset definitions **MUST** be versioned and included in metadata for reproducibility.
 
+## 12.5 Atomic Step Development Workflow
+
+1. Each step within each phase **MUST** be treated atomically to the greatest extent possible, minimising the practice of implementing multiple steps simultaneously.
+2. The development workflow for each step **MUST** follow this sequence:
+
+   1. **Implement**: Write the code required for the step, adhering to coding standards (Appendix D).
+   2. **Test**: Verify correctness through unit tests, integration tests, or manual validation as appropriate.
+   3. **Remove Temporary Debug Code**: Ensure all temporary debug code (as defined in Appendix D, Section D.11) is removed prior to committing.
+   4. **Update WORKPLAN.md**: Mark the step as complete and add any relevant notes or observations.
+   5. **Commit and Synchronise**: Commit the changes to the Git repository with a descriptive commit message and synchronise (push) to the remote repository.
+
+3. A step **SHALL NOT** be considered complete until all five sub-steps are fulfilled.
+4. This atomic approach ensures:
+
+   * Clear progress tracking and accountability,
+   * Reduced risk of orphaned debug code in the codebase,
+   * Easier rollback if issues are discovered,
+   * Clean, incremental commit history.
+
+5. If a step cannot be implemented atomically due to inherent dependencies, the developer **MUST** document the deviation and ensure all dependent code is tested together before committing.
+
 ## Acceptance Criteria
 
 1. The plan defines milestones that each produce a runnable, testable deliverable with clear acceptance criteria.

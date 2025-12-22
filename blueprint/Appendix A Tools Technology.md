@@ -75,19 +75,22 @@ Options (non-normative):
 
 ## A.7 Dependency Management Approach
 
-## A.7 Dependency Management Approach
-
 ### A.7.1 Pinned Versions Table
 
 The project **MUST** defaults to the following versions for reproducible baselines (overridable by CMake options for testing newer builds):
 
 | Library | Version / Commit | Notes |
 |---|---|---|
+| **AmanithVG SRE** | `6.0.0` (or latest stable) | Commercial license; CPU-only SRE variant |
 | **Blend2D** | `beta-1` (or latest stable) | Static link preferred |
 | **Skia** | `m116` (chrome/116 branch) | Use minimal build flags (no GPU, no PDF, no text) |
 | **ThorVG** | `v0.11.2` | |
-| **Cairo** | `1.17.8` | |
 | **Vello** | `v0.0.1` (or shader-set equivalent) | Requires Rust toolchain integration |
+| **Raqote** | `v0.8.2` (or latest stable) | Requires Rust toolchain integration |
+| **PlutoVG** | `v0.0.6` (or latest stable) | Lightweight; header-only option available |
+| **Qt (QPainter)** | `6.5 LTS` | Use minimal Qt modules (QtGui only) |
+| **AGG** | `2.5` (or `2.6` fork) | Header-only; may require minor patches |
+| **Cairo** | `1.17.8` | |
 | **Google Benchmark** | `v1.8.3` | |
 
 ### A.7.2 Integration

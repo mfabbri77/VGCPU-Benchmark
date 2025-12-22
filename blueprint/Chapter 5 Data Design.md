@@ -218,7 +218,7 @@ Used in `SetStroke` opcode:
 * Bits 2-3: **Join** (0=Miter, 1=Round, 2=Bevel)
 * Bits 4-7: Reserved (0)
 
-### 5.3.6 Stroke Parameters Representation
+### 5.3.7 Stroke Parameters Representation
 
 A stroke parameter record **MUST** include:
 

@@ -88,7 +88,7 @@ For each case with `EXECUTE` (or `FALLBACK`) decision:
 
 **Deterministic ordering**
 
-* Case execution order **MUST** be deterministic by default (see Assumption 27).
+* Case execution order **MUST** be deterministic by default (see Chapter 3, §3.2.1 Technical Assumptions).
 
 ### 8.2.6 Case Execution Flow (Multi-Process Isolation Mode)
 

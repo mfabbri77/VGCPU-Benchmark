@@ -104,6 +104,91 @@ This appendix defines coding standards and conventions for implementing the benc
    * what invariants enable performance.
 3. Any deviation from IR semantic contract in adapters **MUST** be documented and reflected in metadata.
 
+## D.11 Temporary Debug Code Management
+
+1. During development, temporary debug code **MUST** follow a structured pattern to ensure traceability and prevent accidental inclusion in release builds.
+2. All temporary debug code **MUST** be enclosed in preprocessor conditionals (`DEBUG` for C/C++, or equivalent mechanisms for other languages) and clearly marked with standardized comments.
+3. The required format for C/C++ is:
+
+   ```cpp
+   // DEBUG STUFF TO BE REMOVED ONCE THE BUG IS FIXED:
+   // <brief debug description>
+   #ifdef DEBUG
+   // {start debug block}
+   <actual debug code>
+   // {end debug block}
+   #endif
+   ```
+
+4. For other languages, an equivalent pattern **MUST** be used:
+
+   * **Python**:
+     ```python
+     # DEBUG STUFF TO BE REMOVED ONCE THE BUG IS FIXED:
+     # <brief debug description>
+     if DEBUG:
+         # {start debug block}
+         <actual debug code>
+         # {end debug block}
+     ```
+
+   * **Rust**:
+     ```rust
+     // DEBUG STUFF TO BE REMOVED ONCE THE BUG IS FIXED:
+     // <brief debug description>
+     #[cfg(debug_assertions)]
+     // {start debug block}
+     <actual debug code>
+     // {end debug block}
+     ```
+
+5. Temporary debug code **MUST** be removed before the associated step or feature is committed to the repository.
+6. CI pipelines **SHOULD** include checks that scan for `DEBUG STUFF TO BE REMOVED` markers in non-debug builds to prevent accidental inclusion.
+
+## D.12 Blueprint Traceability
+
+1. For every feature implemented in the codebase, the source file **MUST** include a comment clearly referencing the corresponding blueprint chapter and section.
+2. The traceability comment **MUST** appear at the location where the feature is implemented (e.g., at the function, class, or module level) and **MUST** use the following format:
+
+   ```cpp
+   // Blueprint Reference: Chapter X, §X.Y.Z — <Brief Feature Name>
+   ```
+
+3. Examples of valid traceability comments:
+
+   ```cpp
+   // Blueprint Reference: Chapter 5, §5.3.2 — IR Binary Layout (File Header)
+   struct IrHeader { ... };
+
+   // Blueprint Reference: Chapter 6, §6.2.1 — Adapter Interface (IBackendAdapter)
+   class IBackendAdapter { ... };
+
+   // Blueprint Reference: Chapter 8, §8.3 — Timed vs Untimed Boundaries
+   void Harness::measureTimedSection() { ... }
+   ```
+
+4. For other languages, an equivalent format **MUST** be used:
+
+   * **Python**:
+     ```python
+     # Blueprint Reference: Chapter X, §X.Y.Z — <Brief Feature Name>
+     ```
+
+   * **Rust**:
+     ```rust
+     // Blueprint Reference: Chapter X, §X.Y.Z — <Brief Feature Name>
+     ```
+
+5. This traceability requirement ensures:
+
+   * Clear mapping between specifications and implementation,
+   * Ease of verification during code review,
+   * Simplified auditing of feature completeness,
+   * Improved onboarding for new contributors.
+
+6. When a feature spans multiple blueprint sections, all relevant references **MUST** be listed.
+7. Modifications to existing features **MUST** update the blueprint reference if the corresponding specification has changed.
+
 ## Acceptance Criteria
 
 1. The appendix defines enforceable conventions for formatting, naming, module boundaries, error handling, determinism, and timed-loop performance hygiene.

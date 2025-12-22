@@ -2,6 +2,16 @@
 
 This document outlines the incremental development plan for the Vector Graphics CPU Benchmark suite.
 
+## Development Conventions
+
+All steps in this workplan **MUST** follow **ALL** the conventions defined in the Blueprint, in particular:
+
+1. **Atomic Step Workflow** (Blueprint §12.5): Each step must be completed atomically following the sequence: Implement → Test → Remove Debug Code → Update WORKPLAN.md → Commit and Push.
+2. **Temporary Debug Code** (Blueprint §D.11): Any debug code added during development must use the standardised marker format and be removed before committing.
+3. **Blueprint Traceability** (Blueprint §D.12): All implemented features must include source code comments referencing the corresponding Blueprint chapter/section.
+
+---
+
 ## Phase 1: Foundation & Infrastructure
 **Goal**: Establish the repository structure, build system, and core interfaces.
 
