@@ -1,0 +1,6 @@
+[workspace]
+resolver = "2"
+members = ["raqote_ffi", "vello_ffi"]
+
+[workspace.dependencies]
+raqote = "0.8"

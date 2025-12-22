@@ -320,6 +320,30 @@ if(ENABLE_AMANITHVG)
 endif()
 
 # -----------------------------------------------------------------------------
+# Corrosion (Rust-CMake Bridge)
+# Blueprint Reference: backends/raqote.md, backends/vello.md
+# -----------------------------------------------------------------------------
+if(ENABLE_RAQOTE OR ENABLE_VELLO_CPU)
+    FetchContent_Declare(
+        Corrosion
+        GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
+        GIT_TAG v0.5.0
+    )
+    FetchContent_MakeAvailable(Corrosion)
+    message(STATUS "Corrosion (Rust-CMake bridge) fetched")
+endif()
+
+if(ENABLE_RAQOTE)
+    corrosion_import_crate(MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust_bridge/raqote_ffi/Cargo.toml")
+    message(STATUS "Raqote FFI crate imported via Corrosion")
+endif()
+
+if(ENABLE_VELLO_CPU)
+    corrosion_import_crate(MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust_bridge/vello_ffi/Cargo.toml")
+    message(STATUS "Vello FFI crate imported via Corrosion")
+endif()
+
+# -----------------------------------------------------------------------------
 # Cairo (System library via PkgConfig)
 # Blueprint Reference: backends/cairo.md
 # -----------------------------------------------------------------------------
@@ -506,6 +530,11 @@ if(ENABLE_AMANITHVG)
     target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_AMANITHVG)
 endif()
 
+if(ENABLE_RAQOTE)
+    list(APPEND ADAPTER_SOURCES src/adapters/raqote/raqote_adapter.cpp)
+    target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_RAQOTE)
+endif()
+
 add_library(vgcpu_adapters STATIC
     src/adapters/adapter_registry.cpp
     ${ADAPTER_SOURCES}
@@ -542,6 +571,10 @@ endif()
 
 if(ENABLE_AMANITHVG)
     target_link_libraries(vgcpu_adapters PUBLIC amanithvg)
+endif()
+
+if(ENABLE_RAQOTE)
+    target_link_libraries(vgcpu_adapters PUBLIC raqote_ffi)
 endif()
 
 # -----------------------------------------------------------------------------

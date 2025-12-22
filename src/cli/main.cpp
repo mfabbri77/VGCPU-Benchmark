@@ -48,6 +48,10 @@
 #include "adapters/amanithvg/amanithvg_adapter.h"
 #endif
 
+#ifdef VGCPU_ENABLE_RAQOTE
+#include "adapters/raqote/raqote_adapter.h"
+#endif
+
 using namespace vgcpu;
 
 namespace {
@@ -358,6 +362,10 @@ int main(int argc, char* argv[]) {
 
 #ifdef VGCPU_ENABLE_AMANITHVG
     RegisterAmanithVGAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_RAQOTE
+    RegisterRaqoteAdapter();
 #endif
 
     // Initialize scene registry from manifest
