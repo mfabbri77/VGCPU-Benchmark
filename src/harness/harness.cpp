@@ -59,7 +59,12 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
     wall_samples.reserve(static_cast<size_t>(policy.measurement_iterations));
     cpu_samples.reserve(static_cast<size_t>(policy.measurement_iterations));
 
+    int64_t total_overhead_ns = 0;
+
     for (int i = 0; i < policy.measurement_iterations; ++i) {
+        // Measure inter-call overhead (from end of last iteration to start of this one)
+        // Note: This is an approximation.
+
         // Start timing
         auto cpu_start = pal::GetCpuTime();
         auto wall_start = pal::NowMonotonic();

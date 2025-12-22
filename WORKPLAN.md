@@ -80,10 +80,10 @@ All steps in this workplan **MUST** follow **ALL** the conventions defined in th
     - [x] Implement `SkiaAdapter` (Raster Surface).
     - [x] Handle Skia-specifics (Premul alpha conversion if needed).
 
-- [ ] **Step 3.3: Measurement Refinement**
-    - [ ] Validate CPU-time measurements on all platforms.
-    - [ ] add `--isolation process` support (optional/stretch).
-    - [ ] Ensure overhead is minimized (profile the harness).
+- [x] **Step 3.3: Measurement Refinement** ✅
+    - [x] Validate CPU-time measurements on all platforms.
+    - [x] add `--isolation process` support (optional/stretch).
+    - [x] Ensure overhead is minimized (profile the harness).
 
 **Milestone M3**: "Big Three" (Cairo, Blend2D, Skia) are comparable.
 

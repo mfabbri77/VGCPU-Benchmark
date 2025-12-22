@@ -114,6 +114,8 @@ std::optional<CliOptions> CliParser::Parse(int argc, char* argv[]) {
             options.format = argv[++i];
         } else if (arg == "--fail-fast") {
             options.fail_fast = true;
+        } else if (arg == "--timer" || arg == "--validate-timer") {
+            options.validate_timer = true;
         } else if (arg == "--help" || arg == "-h") {
             options.help = true;
         } else {

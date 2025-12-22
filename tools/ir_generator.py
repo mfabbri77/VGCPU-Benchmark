@@ -456,6 +456,22 @@ def create_strokes_curves_scene() -> Tuple[bytes, dict]:
         "required_features": {"needs_stroke": True}
     }
 
+def create_noop_scene() -> Tuple[bytes, dict]:
+    builder = IrBuilder(800, 600)
+    
+    # 10,000 pairs of Save/Restore.
+    # These are effectively no-ops for rendering but stress the command dispatcher.
+    # 2 bytes per op * 2 ops * 10000 = 40KB of commands.
+    for _ in range(10000):
+        builder.save().restore()
+        
+    return builder.build(), {
+        "scene_id": "validation/noop",
+        "description": "10k No-Op Commands for Overhead Measurement",
+        "default_width": 800, "default_height": 600,
+        "required_features": {}
+    }
+
 def main():
     scenes_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     scenes_dir = os.path.join(scenes_dir, 'assets', 'scenes')
@@ -465,7 +481,9 @@ def main():
         (create_nested_rects_scene, 'fills/nested_rects.irbin'),
         (create_spiral_circles_scene, 'fills/spiral_circles.irbin'),
         (create_gradients_linear_scene, 'fills/gradients_linear.irbin'),
+        (create_gradients_linear_scene, 'fills/gradients_linear.irbin'),
         (create_strokes_curves_scene, 'strokes/strokes_curves.irbin'),
+        (create_noop_scene, 'validation/noop.irbin'),
     ]
     
     manifest_entries = []

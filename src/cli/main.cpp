@@ -107,8 +107,36 @@ int HandleMetadata(const CliOptions& options) {
 /// Blueprint Reference: Chapter 6, §6.1.1 — validate subcommand
 int HandleValidate(const CliOptions& options) {
     (void)options;
-    std::cout << "Validation not yet implemented (no manifest loaded).\n";
-    std::cout << "Built-in test scene: OK\n";
+    if (options.validate_timer) {
+        std::cout << "Validating CPU timer accuracy...\n";
+        auto wall_start = pal::NowMonotonic();
+        auto cpu_start = pal::GetCpuTime();
+
+        // Busy wait for 100ms
+        while (pal::Elapsed(wall_start, pal::NowMonotonic()) < std::chrono::milliseconds(100)) {
+            // Spin
+        }
+
+        auto wall_end = pal::NowMonotonic();
+        auto cpu_end = pal::GetCpuTime();
+
+        auto wall_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(wall_end - wall_start).count();
+        auto cpu_ms =
+            std::chrono::duration_cast<std::chrono::milliseconds>(cpu_end - cpu_start).count();
+
+        std::cout << "  Wall Time: " << wall_ms << " ms\n";
+        std::cout << "  CPU Time:  " << cpu_ms << " ms\n";
+
+        if (std::abs(wall_ms - cpu_ms) < 20) {
+            std::cout << "  Status: OK (Within 20ms tolerance)\n";
+        } else {
+            std::cout << "  Status: WARNING (Discrepancy detected)\n";
+        }
+    } else {
+        std::cout << "Validation not yet implemented (no manifest loaded).\n";
+        std::cout << "Built-in test scene: OK\n";
+    }
     return 0;
 }
 

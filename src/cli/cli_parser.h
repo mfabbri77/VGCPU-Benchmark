@@ -47,6 +47,7 @@ struct CliOptions {
     // Flags
     bool fail_fast = false;
     bool help = false;
+    bool validate_timer = false;
 };
 
 /// CLI argument parser.
