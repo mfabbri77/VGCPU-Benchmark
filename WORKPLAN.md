@@ -15,28 +15,28 @@ All steps in this workplan **MUST** follow **ALL** the conventions defined in th
 ## Phase 1: Foundation & Infrastructure
 **Goal**: Establish the repository structure, build system, and core interfaces.
 
-- [ ] **Step 1.1: Repository Setup**
-    - [ ] Initialize Git repository.
-    - [ ] Setup `CMakeLists.txt` root with `FetchContent` capabilities.
-    - [ ] Create directory structure: `src/{cli,harness,ir,pal,adapters,assets}`.
-    - [ ] Define `.clang-format` and `.gitignore`.
+- [x] **Step 1.1: Repository Setup** ✅
+    - [x] Initialize Git repository.
+    - [x] Setup `CMakeLists.txt` root with `FetchContent` capabilities.
+    - [x] Create directory structure: `src/{cli,harness,ir,pal,adapters,assets}`.
+    - [x] Define `.clang-format` and `.gitignore`.
 
-- [ ] **Step 1.2: Core Interfaces & PAL**
-    - [ ] Implement `pal` module: Monotonic timer, CPU timer (Linux/Windows/Mac).
-    - [ ] Define `IBackendAdapter` abstract interface (C++).
-    - [ ] Define `CapabilitySet` and `Status` structs.
+- [x] **Step 1.2: Core Interfaces & PAL** ✅
+    - [x] Implement `pal` module: Monotonic timer, CPU timer (Linux/Windows/Mac).
+    - [x] Define `IBackendAdapter` abstract interface (C++).
+    - [x] Define `CapabilitySet` and `Status` structs.
 
-- [ ] **Step 1.3: IR Runtime (Basic)**
-    - [ ] Implement `ir` module headers: `Instruction`, `Command` structs.
-    - [ ] Implement `IrLoader` (Mock/Placeholder initially, then binary parser).
-    - [ ] Implement `Scene` and `PreparedScene` classes.
+- [x] **Step 1.3: IR Runtime (Basic)** ✅
+    - [x] Implement `ir` module headers: `Instruction`, `Command` structs.
+    - [x] Implement `IrLoader` (Mock/Placeholder initially, then binary parser).
+    - [x] Implement `Scene` and `PreparedScene` classes.
 
-- [ ] **Step 1.4: CLI & Harness Skeleton**
-    - [ ] Implement `cli` argument parsing (generic flags).
-    - [ ] Implement `harness` loop (warmup, measure, report stub).
-    - [ ] Register a "Null" or "Debug" backend for testing the harness flow.
+- [x] **Step 1.4: CLI & Harness Skeleton** ✅
+    - [x] Implement `cli` argument parsing (generic flags).
+    - [x] Implement `harness` loop (warmup, measure, report stub).
+    - [x] Register a "Null" or "Debug" backend for testing the harness flow.
 
-**Milestone M1**: CLI runs, loads a dummy scene, runs a loop on a Null backend, and prints timing.
+**Milestone M1**: CLI runs, loads a dummy scene, runs a loop on a Null backend, and prints timing. ✅
 
 ---
 
