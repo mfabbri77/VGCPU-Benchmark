@@ -75,10 +75,10 @@ All steps in this workplan **MUST** follow **ALL** the conventions defined in th
     - [x] Implement `Blend2DAdapter`.
     - [x] Verify JIT is functional/enabled (CPU-only).
 
-- [ ] **Step 3.2: Skia Integration**
-    - [ ] Setup build infrastructure for Skia (m116/GN or prebuilt).
-    - [ ] Implement `SkiaAdapter` (Raster Surface).
-    - [ ] Handle Skia-specifics (Premul alpha conversion if needed).
+- [x] **Step 3.2: Skia Integration** ✅
+    - [x] Setup build infrastructure for Skia (m124/Prebuilt).
+    - [x] Implement `SkiaAdapter` (Raster Surface).
+    - [x] Handle Skia-specifics (Premul alpha conversion if needed).
 
 - [ ] **Step 3.3: Measurement Refinement**
     - [ ] Validate CPU-time measurements on all platforms.

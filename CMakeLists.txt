@@ -102,6 +102,43 @@ if(ENABLE_BLEND2D)
 endif()
 
 # -----------------------------------------------------------------------------
+# Skia (Prebuilt binaries from Aseprite m124)
+# Blueprint Reference: backends/skia.md
+# -----------------------------------------------------------------------------
+if(ENABLE_SKIA)
+    FetchContent_Declare(
+        skia_binaries
+        URL https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-macOS-Release-arm64.zip
+    )
+    FetchContent_MakeAvailable(skia_binaries)
+
+    add_library(skia STATIC IMPORTED)
+    set_target_properties(skia PROPERTIES
+        IMPORTED_LOCATION "${skia_binaries_SOURCE_DIR}/out/Release-arm64/libskia.a"
+        INTERFACE_INCLUDE_DIRECTORIES "${skia_binaries_SOURCE_DIR}"
+    )
+
+    if(APPLE)
+        find_library(CORE_FOUNDATION CoreFoundation)
+        find_library(CORE_GRAPHICS CoreGraphics)
+        find_library(CORE_TEXT CoreText)
+        find_library(CORE_SERVICES CoreServices)
+        
+        find_package(ZLIB REQUIRED)
+
+        target_link_libraries(skia INTERFACE 
+            ${CORE_FOUNDATION} 
+            ${CORE_GRAPHICS} 
+            ${CORE_TEXT} 
+            ${CORE_SERVICES}
+            ZLIB::ZLIB
+        )
+    endif()
+
+    message(STATUS "Skia fetched (Prebuilt m124)")
+endif()
+
+# -----------------------------------------------------------------------------
 # Cairo (System library via PkgConfig)
 # Blueprint Reference: backends/cairo.md
 # -----------------------------------------------------------------------------
@@ -254,6 +291,11 @@ if(ENABLE_BLEND2D)
     target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_BLEND2D)
 endif()
 
+if(ENABLE_SKIA)
+    list(APPEND ADAPTER_SOURCES src/adapters/skia/skia_adapter.cpp)
+    target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_SKIA)
+endif()
+
 add_library(vgcpu_adapters STATIC
     src/adapters/adapter_registry.cpp
     ${ADAPTER_SOURCES}
@@ -273,6 +315,10 @@ endif()
 if(ENABLE_BLEND2D)
     target_link_libraries(vgcpu_adapters PUBLIC blend2d)
     target_include_directories(vgcpu_adapters PUBLIC ${blend2d_SOURCE_DIR})
+endif()
+
+if(ENABLE_SKIA)
+    target_link_libraries(vgcpu_adapters PUBLIC skia)
 endif()
 
 # -----------------------------------------------------------------------------

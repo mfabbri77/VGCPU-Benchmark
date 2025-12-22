@@ -32,6 +32,10 @@
 #include "adapters/blend2d/blend2d_adapter.h"
 #endif
 
+#ifdef VGCPU_ENABLE_SKIA
+#include "adapters/skia/skia_adapter.h"
+#endif
+
 using namespace vgcpu;
 
 namespace {
@@ -298,6 +302,10 @@ int main(int argc, char* argv[]) {
 
 #ifdef VGCPU_ENABLE_BLEND2D
     RegisterBlend2DAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_SKIA
+    RegisterSkiaAdapter();
 #endif
 
     // Initialize scene registry from manifest
