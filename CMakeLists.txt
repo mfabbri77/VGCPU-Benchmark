@@ -31,6 +31,34 @@ endif()
 include(FetchContent)
 
 # -----------------------------------------------------------------------------
+# PlutoVG (FetchContent)
+# Blueprint Reference: backends/plutovg.md
+# -----------------------------------------------------------------------------
+if(ENABLE_PLUTOVG)
+    FetchContent_Declare(
+        plutovg
+        GIT_REPOSITORY https://github.com/sammycage/plutovg.git
+        GIT_TAG        v1.3.2
+    )
+    FetchContent_MakeAvailable(plutovg)
+    message(STATUS "PlutoVG fetched from GitHub (v1.3.2)")
+endif()
+
+# -----------------------------------------------------------------------------
+# Cairo (System library via PkgConfig)
+# Blueprint Reference: backends/cairo.md
+# -----------------------------------------------------------------------------
+if(ENABLE_CAIRO)
+    find_package(PkgConfig REQUIRED)
+    pkg_check_modules(CAIRO IMPORTED_TARGET cairo>=1.16.0)
+    if(CAIRO_FOUND)
+        message(STATUS "Cairo found: ${CAIRO_VERSION}")
+    else()
+        message(FATAL_ERROR "Cairo not found. Install libcairo2-dev (Linux) or use Homebrew (macOS).")
+    endif()
+endif()
+
+# -----------------------------------------------------------------------------
 # Backend Enable Options
 # Blueprint Reference: Chapter 7, §7.2.5 — Build-Time Enablement
 # -----------------------------------------------------------------------------
@@ -87,7 +115,15 @@ if(ENABLE_NULL_BACKEND)
     target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_NULL_BACKEND)
 endif()
 
-# Future backends will be added here conditionally
+if(ENABLE_PLUTOVG)
+    list(APPEND ADAPTER_SOURCES src/adapters/plutovg/plutovg_adapter.cpp)
+    target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_PLUTOVG)
+endif()
+
+if(ENABLE_CAIRO)
+    list(APPEND ADAPTER_SOURCES src/adapters/cairo/cairo_adapter.cpp)
+    target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_CAIRO)
+endif()
 
 add_library(vgcpu_adapters STATIC
     src/adapters/adapter_registry.cpp
@@ -95,6 +131,15 @@ add_library(vgcpu_adapters STATIC
 )
 
 target_link_libraries(vgcpu_adapters PUBLIC vgcpu_core)
+
+# Link backend libraries
+if(ENABLE_PLUTOVG)
+    target_link_libraries(vgcpu_adapters PUBLIC plutovg)
+endif()
+
+if(ENABLE_CAIRO)
+    target_link_libraries(vgcpu_adapters PUBLIC PkgConfig::CAIRO)
+endif()
 
 # -----------------------------------------------------------------------------
 # Harness Library

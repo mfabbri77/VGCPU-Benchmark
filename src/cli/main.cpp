@@ -19,6 +19,14 @@
 #include "adapters/null/null_adapter.h"
 #endif
 
+#ifdef VGCPU_ENABLE_PLUTOVG
+#include "adapters/plutovg/plutovg_adapter.h"
+#endif
+
+#ifdef VGCPU_ENABLE_CAIRO
+#include "adapters/cairo/cairo_adapter.h"
+#endif
+
 using namespace vgcpu;
 
 namespace {
@@ -165,6 +173,14 @@ int main(int argc, char* argv[]) {
     // Register built-in adapters
 #ifdef VGCPU_ENABLE_NULL_BACKEND
     RegisterNullAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_PLUTOVG
+    RegisterPlutoVGAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_CAIRO
+    RegisterCairoAdapter();
 #endif
 
     auto options = CliParser::Parse(argc, argv);

@@ -43,20 +43,20 @@ All steps in this workplan **MUST** follow **ALL** the conventions defined in th
 ## Phase 2: First Integrations & Scene Management
 **Goal**: Get real pixels rendered on a simple backend and establish the scene pipeline.
 
-- [ ] **Step 2.1: PlutoVG Backend (The "Simple" Pilot)**
-    - [ ] Integrate PlutoVG via `FetchContent` (v1.3.2).
-    - [ ] Implement `PlutoAdapter`.
-    - [ ] Verify basic shapes rendering.
+- [x] **Step 2.1: PlutoVG Backend (The "Simple" Pilot)** ✅
+    - [x] Integrate PlutoVG via `FetchContent` (v1.3.2).
+    - [x] Implement `PlutoVGAdapter`.
+    - [x] Verify basic shapes rendering.
 
 - [ ] **Step 2.2: IR Binary Format & Asset Pipeline**
     - [ ] Finalize IR Binary spec (Chapter 5) in code (`ir_format.h`).
     - [ ] Write a simple "SVG-to-IR" compiler (python or cpp) or hand-craft binary IR samples.
     - [ ] Create `assets/scenes` directory with initial test scenes (rects, circles).
 
-- [ ] **Step 2.3: Cairo Backend (The "Reference")**
-    - [ ] Integrate Cairo (System or PkgConfig).
-    - [ ] Implement `CairoAdapter`.
-    - [ ] Validate visual output against PlutoVG (manual check).
+- [x] **Step 2.3: Cairo Backend (The "Reference")** ✅
+    - [x] Integrate Cairo (System or PkgConfig).
+    - [x] Implement `CairoAdapter`.
+    - [x] Validate visual output against PlutoVG (manual check).
 
 - [ ] **Step 2.4: Scene Registry & Capability Filtering**
     - [ ] Implement `assets` module: JSON manifest parsing.
