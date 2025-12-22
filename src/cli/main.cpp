@@ -4,6 +4,7 @@
 // Blueprint Reference: Chapter 7, §7.2.1 — Module cli (main entry point)
 
 #include "adapters/adapter_registry.h"
+#include "assets/scene_registry.h"
 #include "cli/cli_parser.h"
 #include "harness/harness.h"
 #include "ir/ir_loader.h"
@@ -31,6 +32,20 @@ using namespace vgcpu;
 
 namespace {
 
+// Default assets directory relative to executable
+const std::filesystem::path kDefaultAssetsDir = "assets/scenes";
+const std::filesystem::path kDefaultManifest = "assets/scenes/manifest.json";
+
+/// Initialize the SceneRegistry from manifest if available.
+void InitSceneRegistry() {
+    if (std::filesystem::exists(kDefaultManifest)) {
+        auto status = SceneRegistry::Instance().LoadManifest(kDefaultManifest, kDefaultAssetsDir);
+        if (status.failed()) {
+            std::cerr << "Warning: Failed to load scene manifest: " << status.message << "\n";
+        }
+    }
+}
+
 /// Handle the 'list' command.
 /// Blueprint Reference: Chapter 6, §6.1.1 — list subcommand
 int HandleList(const CliOptions& options) {
@@ -42,7 +57,18 @@ int HandleList(const CliOptions& options) {
     }
     std::cout << "\nAvailable Scenes:\n";
     std::cout << "  - test/simple_rect (built-in test scene)\n";
-    // TODO: Load from scene manifest
+
+    auto& scene_registry = SceneRegistry::Instance();
+    for (const auto& scene_id : scene_registry.GetSceneIds()) {
+        auto info = scene_registry.GetSceneInfo(scene_id);
+        if (info) {
+            std::cout << "  - " << scene_id;
+            if (!info->description.empty()) {
+                std::cout << " (" << info->description << ")";
+            }
+            std::cout << "\n";
+        }
+    }
     return 0;
 }
 
@@ -98,7 +124,25 @@ int HandleRun(const CliOptions& options) {
     // Load scene(s)
     std::vector<PreparedScene> scenes;
 
-    if (!options.scenes.empty()) {
+    // Support --all-scenes to load from registry
+    if (options.all_scenes) {
+        auto& scene_reg = SceneRegistry::Instance();
+        for (const auto& scene_id : scene_reg.GetSceneIds()) {
+            auto path = scene_reg.GetScenePath(scene_id);
+            if (path && std::filesystem::exists(*path)) {
+                auto bytes = ir::IrLoader::LoadFromFile(*path);
+                if (bytes) {
+                    auto result = ir::IrLoader::Prepare(*bytes, scene_id);
+                    if (result.ok()) {
+                        scenes.push_back(std::move(result.value()));
+                    }
+                }
+            }
+        }
+        if (!scenes.empty()) {
+            std::cout << "Loaded " << scenes.size() << " scenes from manifest\n";
+        }
+    } else if (!options.scenes.empty()) {
         // Load scenes from file paths or asset IDs
         for (const auto& scene_arg : options.scenes) {
             std::filesystem::path scene_path(scene_arg);
@@ -121,10 +165,11 @@ int HandleRun(const CliOptions& options) {
                 scenes.push_back(std::move(result.value()));
                 std::cout << "Loaded scene: " << scene_arg << "\n";
             } else {
-                // Try assets/scenes/<id>.irbin
-                auto asset_path = std::filesystem::path("assets/scenes") / (scene_arg + ".irbin");
-                if (std::filesystem::exists(asset_path)) {
-                    auto bytes = ir::IrLoader::LoadFromFile(asset_path);
+                // Try from scene registry
+                auto& scene_reg = SceneRegistry::Instance();
+                auto path = scene_reg.GetScenePath(scene_arg);
+                if (path && std::filesystem::exists(*path)) {
+                    auto bytes = ir::IrLoader::LoadFromFile(*path);
                     if (bytes) {
                         auto result = ir::IrLoader::Prepare(*bytes, scene_arg);
                         if (result.ok()) {
@@ -133,7 +178,21 @@ int HandleRun(const CliOptions& options) {
                         }
                     }
                 } else {
-                    std::cerr << "Warning: Scene not found: " << scene_arg << "\n";
+                    // Try assets/scenes/<id>.irbin
+                    auto asset_path =
+                        std::filesystem::path("assets/scenes") / (scene_arg + ".irbin");
+                    if (std::filesystem::exists(asset_path)) {
+                        auto bytes = ir::IrLoader::LoadFromFile(asset_path);
+                        if (bytes) {
+                            auto result = ir::IrLoader::Prepare(*bytes, scene_arg);
+                            if (result.ok()) {
+                                scenes.push_back(std::move(result.value()));
+                                std::cout << "Loaded scene: " << scene_arg << "\n";
+                            }
+                        }
+                    } else {
+                        std::cerr << "Warning: Scene not found: " << scene_arg << "\n";
+                    }
                 }
             }
         }
@@ -231,6 +290,9 @@ int main(int argc, char* argv[]) {
 #ifdef VGCPU_ENABLE_CAIRO
     RegisterCairoAdapter();
 #endif
+
+    // Initialize scene registry from manifest
+    InitSceneRegistry();
 
     auto options = CliParser::Parse(argc, argv);
     if (!options) {

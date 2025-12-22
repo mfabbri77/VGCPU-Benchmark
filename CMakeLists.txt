@@ -30,6 +30,14 @@ endif()
 # -----------------------------------------------------------------------------
 include(FetchContent)
 
+# nlohmann/json for manifest parsing
+FetchContent_Declare(
+    nlohmann_json
+    GIT_REPOSITORY https://github.com/nlohmann/json.git
+    GIT_TAG        v3.11.3
+)
+FetchContent_MakeAvailable(nlohmann_json)
+
 # -----------------------------------------------------------------------------
 # PlutoVG (FetchContent)
 # Blueprint Reference: backends/plutovg.md
@@ -91,7 +99,7 @@ elseif(MSVC)
 endif()
 
 # -----------------------------------------------------------------------------
-# Core Library (common types, PAL, IR)
+# Core Library (common types, PAL, IR, Assets)
 # -----------------------------------------------------------------------------
 add_library(vgcpu_core STATIC
     src/common/status.cpp
@@ -99,11 +107,14 @@ add_library(vgcpu_core STATIC
     src/pal/environment.cpp
     src/ir/ir_loader.cpp
     src/ir/prepared_scene.cpp
+    src/assets/scene_registry.cpp
 )
 
 target_include_directories(vgcpu_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
 )
+
+target_link_libraries(vgcpu_core PUBLIC nlohmann_json::nlohmann_json)
 
 # -----------------------------------------------------------------------------
 # Adapter Library

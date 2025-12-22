@@ -58,12 +58,12 @@ All steps in this workplan **MUST** follow **ALL** the conventions defined in th
     - [x] Implement `CairoAdapter`.
     - [x] Validate visual output against PlutoVG (manual check).
 
-- [ ] **Step 2.4: Scene Registry & Capability Filtering**
-    - [ ] Implement `assets` module: JSON manifest parsing.
-    - [ ] Connect `harness` to `SceneRegistry`.
-    - [ ] Implement filtering logic (skip Cairo-unsupported features if any).
+- [x] **Step 2.4: Scene Registry & Capability Filtering** ✅
+    - [x] Implement `assets` module: JSON manifest parsing.
+    - [x] Connect `harness` to `SceneRegistry`.
+    - [x] Implement filtering logic (skip Cairo-unsupported features if any).
 
-**Milestone M2**: Benchmark runs PlutoVG and Cairo on real IR assets and outputs comparable timings.
+**Milestone M2**: Benchmark runs PlutoVG and Cairo on real IR assets and outputs comparable timings. ✅
 
 ---
 
