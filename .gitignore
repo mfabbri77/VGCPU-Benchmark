@@ -62,3 +62,7 @@ compile_commands.json
 .Trashes
 ehthumbs.db
 Thumbs.db
+
+# Benchmark outputs
+results.json
+results.csv
