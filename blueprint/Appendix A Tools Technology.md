@@ -77,29 +77,45 @@ Options (non-normative):
 
 ### A.7.1 Pinned Versions Table
 
-The project **MUST** defaults to the following versions for reproducible baselines (overridable by CMake options for testing newer builds):
+The project **MUST** default to the following versions for reproducible baselines (overridable by CMake options for testing newer builds):
 
-| Library | Version / Commit | Notes |
-|---|---|---|
-| **AmanithVG SRE** | `6.0.0` (or latest stable) | Commercial license; CPU-only SRE variant |
-| **Blend2D** | `beta-1` (or latest stable) | Static link preferred |
-| **Skia** | `m116` (chrome/116 branch) | Use minimal build flags (no GPU, no PDF, no text) |
-| **ThorVG** | `v0.11.2` | |
-| **Vello** | `v0.0.1` (or shader-set equivalent) | Requires Rust toolchain integration |
-| **Raqote** | `v0.8.2` (or latest stable) | Requires Rust toolchain integration |
-| **PlutoVG** | `v0.0.6` (or latest stable) | Lightweight; header-only option available |
-| **Qt (QPainter)** | `6.5 LTS` | Use minimal Qt modules (QtGui only) |
-| **AGG** | `2.5` (or `2.6` fork) | Header-only; may require minor patches |
-| **Cairo** | `1.17.8` | |
-| **Google Benchmark** | `v1.8.3` | |
+| Library | Version / Commit | Linking | Notes |
+|---|---|---|---|
+| **AmanithVG SRE** | `6.0.0` (or latest stable) | Dynamic | Commercial license; CPU-only SRE variant |
+| **Blend2D** | `0.21.2` (or latest stable) | Dynamic | `BLEND2D_STATIC=OFF`; multi-threaded optional |
+| **Skia (CPU Raster)** | `m116` (chrome/116 branch) | Dynamic | `is_component_build=true`; Clang recommended |
+| **ThorVG SW** | `v0.15.16` | Dynamic | SW engine only (via Meson or Conan) |
+| **vello_cpu** | `v0.0.1` (or latest) | Dynamic | Rust `cdylib` via Corrosion |
+| **Raqote** | `v0.8.5` (or latest stable) | Dynamic | Rust `cdylib` via Corrosion |
+| **PlutoVG** | `v1.3.2` (or latest stable) | Dynamic | Default shared library build |
+| **Qt Raster Engine** | `6.8 LTS` | Dynamic | Qt default; LGPL compliant |
+| **AGG** | `2.7.0` | Dynamic | Use Debian packaging approach (see notes) |
+| **Cairo (Image Surface)** | `1.18.2` | Dynamic | System library via pkg-config |
+| **Google Benchmark** | `v1.8.3` | Static | Benchmark harness only |
 
-### A.7.2 Integration
+### A.7.2 Library Linking Policy
 
-1. The project **SHOULD** use CMake `FetchContent` or `git submodule` to managing these versions.
+1. The project **MUST** prefer **dynamic linking** for all rendering backend libraries to:
+   * reduce binary size,
+   * enable independent library updates,
+   * simplify license compliance (especially LGPL).
+
+2. **Rust libraries** (Raqote, vello_cpu) **MUST** be built as `cdylib` crates with C FFI wrappers via Corrosion.
+
+3. **AGG shared library**: The upstream AGG project does not provide a native shared library build. The project **SHOULD** follow the Debian packaging approach:
+   * Debian provides `libagg2` as a shared library (version 2.7.0 in sid)
+   * Reference: Debian Salsa `science-team/agg` repository
+   * Build with `-fPIC` and link as `SHARED` in CMake
+
+4. **Skia**: Use `is_component_build=true` GN argument. Note: Skia does not guarantee ABI stability, but this is acceptable as we pin to a specific version.
+
+### A.7.3 Integration
+
+1. The project **SHOULD** use CMake `FetchContent` or `git submodule` to manage these versions.
 2. The project **MUST** allow system-installed dependencies if versions are pinned and recorded.
 3. The build system **MUST** emit dependency pin records into build artifacts and run metadata.
 
-**Rationale**: Ensures reproducibility while accommodating platform-specific packaging realities.
+**Rationale**: Dynamic linking reduces binary size, simplifies updates, and ensures license compliance while maintaining reproducibility through version pinning.
 
 ## A.8 Packaging and Release Tooling
 

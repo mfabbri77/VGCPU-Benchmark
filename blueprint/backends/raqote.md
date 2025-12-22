@@ -2,12 +2,15 @@
 
 # Backend Integration: Raqote
 
+> **CPU-Only**: Raqote is a pure Rust CPU software renderer designed for speed and simplicity. No GPU variant exists.
+
 ## 1. Version and Dependencies
 
 *   **Version**: 0.8.5
 *   **Source**: Crates.io / GitHub `https://github.com/jrmuizel/raqote`
 *   **Dependencies**: Rust toolchain (cargo, rustc), `font-kit` (optional, can be disabled).
 *   **License**: MIT / Apache 2.0
+*   **Rendering**: Pure CPU software rasterization (f32 precision)
 
 ## 2. CMake Integration (via Corrosion)
 

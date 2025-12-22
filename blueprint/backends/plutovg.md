@@ -2,12 +2,15 @@
 
 # Backend Integration: PlutoVG
 
+> **CPU-Only**: PlutoVG is a tiny, standalone CPU-only 2D vector graphics library with no external dependencies.
+
 ## 1. Version and Dependencies
 
 *   **Version**: v1.3.2 (Dec 2025)
 *   **Repository**: `https://github.com/sammycage/plutovg`
 *   **Dependencies**: None (Standalone)
 *   **License**: MIT
+*   **Rendering**: Pure CPU software rasterization
 
 ## 2. CMake Integration
 
@@ -64,4 +67,4 @@ plutovg_t* pluto = plutovg_create(surface);
 ## 5. Notes
 
 *   **Simplicity**: PlutoVG is very concise.
-*   **Thread Safety**: Contexts are not thread-safe.
+*   **Thread Safety**: v1.2.0+ added thread-safety via atomic reference counting and mutex primitives (Win32/C11/pthreads).

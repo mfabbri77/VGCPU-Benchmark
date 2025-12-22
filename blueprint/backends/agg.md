@@ -2,12 +2,15 @@
 
 # Backend Integration: Anti-Grain Geometry (AGG)
 
+> **CPU-Only**: AGG is a pure CPU software rendering library with no GPU variant. All rendering is performed entirely in software.
+
 ## 1. Version and Dependencies
 
 *   **Version**: 2.6
 *   **Source Repository**: `https://github.com/ghaerr/agg-2.6`
 *   **Commit Hash**: `e8c0757` (or latest stable on master)
 *   **License**: Modified BSD (3-clause) / AGG License (permissive)
+*   **Rendering**: Pure CPU software rasterization to memory buffer
 
 ## 2. CMake Integration
 

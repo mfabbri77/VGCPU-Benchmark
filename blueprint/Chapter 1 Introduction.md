@@ -93,14 +93,14 @@ The suite **MUST** provide adapters for the following backends, each configured 
 
 1. AmanithVG SRE
 2. Blend2D
-3. Skia
-4. ThorVG
-5. Vello CPU
+3. Skia (CPU Raster)
+4. ThorVG SW
+5. vello_cpu
 6. Raqote
 7. PlutoVG
-8. Qt QPainter
+8. Qt Raster Engine
 9. Anti-Grain Geometry (AGG)
-10. Cairo
+10. Cairo (Image Surface)
 
 ### 1.5.2 CPU-Only Guarantee Requirements
 

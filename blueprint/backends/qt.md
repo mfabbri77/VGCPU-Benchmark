@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
 
-# Backend Integration: Qt QPainter
+# Backend Integration: Qt Raster Engine
+
+> **CPU-Only**: This backend uses Qt's raster paint engine with `QImage` for pure CPU software rasterization. `QPixmap` (which may use GPU) is NOT used.
 
 ## 1. Version and Dependencies
 
@@ -8,6 +10,7 @@
 *   **Distribution**: System packages or Official Installer
 *   **Modules**: `Qt6::Gui` (Essential), `Qt6::Core`. `Qt6::Widgets` NOT needed.
 *   **License**: LGPLv3 / GPLv2 / Commercial
+*   **Rendering**: Pure CPU software rasterization via Qt's raster paint engine
 
 ## 2. CMake Integration
 

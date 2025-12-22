@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
 
-# Backend Integration: Cairo
+# Backend Integration: Cairo (Image Surface)
+
+> **CPU-Only**: This backend uses `cairo_image_surface_create` for pure CPU software rasterization via the Pixman library. For optimal performance, ensure Pixman is compiled with SIMD support (SSE2/AVX/NEON).
 
 ## 1. Version and Dependencies
 
@@ -8,6 +10,7 @@
 *   **Repository**: `https://gitlab.freedesktop.org/cairo/cairo.git`
 *   **Dependencies**: Pixman (Required, > 0.40.0), Freetype/Fontconfig (often pulled in but unused for us), Zlib, PNG.
 *   **License**: LGPL-2.1 / MPL-1.1
+*   **Rendering**: Pure CPU software rasterization via Pixman
 
 ## 2. CMake Integration
 

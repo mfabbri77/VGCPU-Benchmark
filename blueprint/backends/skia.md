@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
 
-# Backend Integration: Skia
+# Backend Integration: Skia (CPU Raster)
+
+> **CPU-Only**: This backend uses Skia's `SkRasterPipeline` software rasterizer. GPU backends (OpenGL, Vulkan, Metal) are NOT in scope for this benchmark. For optimal CPU performance, **Clang is the recommended compiler**.
 
 ## 1. Version and Dependencies
 
@@ -8,6 +10,7 @@
 *   **Repository**: `https://skia.googlesource.com/skia.git`
 *   **Commit Tag**: `chrome/m116`
 *   **License**: BSD-3-Clause
+*   **Rendering**: Pure CPU software rasterization via `SkSurface::MakeRasterDirect`
 
 ## 2. CMake Integration
 

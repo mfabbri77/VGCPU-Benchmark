@@ -1,6 +1,8 @@
 <!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
 
-# Backend Integration: ThorVG
+# Backend Integration: ThorVG SW
+
+> **CPU-Only**: This backend uses ThorVG's SW (Software) engine for pure CPU/SIMD rasterization. GPU backends (GL, WGL, WGPU) are NOT in scope for this benchmark.
 
 ## 1. Version and Dependencies
 
@@ -8,6 +10,7 @@
 *   **Repository**: `https://github.com/thorvg/thorvg`
 *   **Dependencies**: None (for SW engine).
 *   **License**: MIT
+*   **Rendering**: Pure CPU software rasterization with SIMD optimization
 
 ## 2. CMake Integration
 

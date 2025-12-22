@@ -2,6 +2,8 @@
 
 # Backend Integration: AmanithVG SRE
 
+> **CPU-Only**: This backend uses AmanithVG SRE (Software Rendering Engine), the pure CPU variant. The GLE (OpenGL-based) variant is NOT in scope for this benchmark.
+
 ## 1. Version and Dependencies
 
 *   **Version**: SRE (Software Rendering Engine) from latest SDK
@@ -88,5 +90,10 @@ vgLoadIdentity();
 
 ## 5. Notes
 
-*   **Context Safety**: OpenVG uses global context state. Parallel rendering requires strictly separate contexts per thread.
+*   **Thread Safety**: AmanithVG SRE is **thread-safe** — all exposed functions can be called from multiple threads simultaneously. Implementation uses:
+    - Win32 native calls on Windows
+    - pthreads (POSIX Threads) on macOS, Linux, Android, QNX
+    - NSLock/NSThread on iOS
+*   **Thread Limit**: Maximum concurrent threads retrievable via `vgConfigGetMZT(VG_CONFIG_MAX_CURRENT_THREADS_MZT)`
 *   **Allocations**: OpenVG handles (Paths, Paints) are opaque resources and MUST be destroyed (`vgDestroyPath`) to avoid leaks.
+*   **Precision**: Uses 32-bit single precision floating point (IEEE 754-1985) and fixed-point for rasterization (configurable 10.6/11.5/12.4 format).

@@ -120,14 +120,14 @@ This chapter specifies the internal module decomposition and the responsibilitie
 
    * AmanithVG SRE
    * Blend2D
-   * Skia
-   * ThorVG
-   * Vello CPU
+   * Skia (CPU Raster)
+   * ThorVG SW
+   * vello_cpu
    * Raqote
    * PlutoVG
-   * Qt QPainter
+   * Qt Raster Engine
    * AGG
-   * Cairo
+   * Cairo (Image Surface)
 
 **Ownership and Constraints**
 

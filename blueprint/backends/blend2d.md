@@ -2,12 +2,15 @@
 
 # Backend Integration: Blend2D
 
+> **CPU-Only**: Blend2D is a pure CPU 2D vector graphics engine with built-in JIT compiler and optional multi-threaded rendering.
+
 ## 1. Version and Dependencies
 
 *   **Version**: 0.21.2 (Latest Stable)
 *   **Repository**: `https://github.com/blend2d/blend2d`
 *   **Dependencies**: `asmjit` (automatically handled by Blend2D's CMake if nested)
 *   **License**: Zlib
+*   **Rendering**: Pure CPU software rasterization with JIT-compiled pipelines (AVX2/AVX-512 optimized)
 
 ## 2. CMake Integration
 
@@ -75,6 +78,11 @@ ctx.setThreadCount(1);
 
 ## 5. Notes
 
-*   **JIT**: Blend2D's JIT compiles rasterization pipelines. This is valid "CPU" work.
+*   **JIT**: Blend2D's JIT compiles rasterization pipelines at runtime, optimizing for host CPU features (SSE2/AVX2/AVX-512). This is valid "CPU" work.
+*   **Multi-Threading**: Blend2D supports asynchronous multi-threaded rendering via `BLContextCreateInfo::threadCount`:
+    - `threadCount = 0` or `1`: Single-threaded, synchronous (default) — **recommended for fair benchmarking**
+    - `threadCount = N`: Multi-threaded with N worker threads, uses "banding" approach (scanline batches)
+    - 2-4 threads optimal for most workloads including 4K framebuffers
+*   **Thread Safety**: Objects use atomic reference counting and copy-on-write semantics for safe sharing across threads.
 *   **Precision**: High quality by default.
 *   **Async**: Ensure all work is synchronous (default behavior) or flush if using threaded rendering.

@@ -1,13 +1,17 @@
 <!-- Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com) -->
 
-# Backend Integration: Vello (CPU)
+# Backend Integration: vello_cpu
+
+> **CPU-Only**: This backend uses the `vello_cpu` crate, the pure CPU fallback for Vello. The main Vello engine (GPU compute shaders) is NOT in scope for this benchmark. Note: `vello_cpu` is currently in **alpha** status.
 
 ## 1. Version and Dependencies
 
 *   **Version**: Experimental (Pin to latest `linebender/vello` commit)
 *   **Repository**: `https://github.com/linebender/vello`
-*   **Dependencies**: Rust toolchain, `wgpu` (even for CPU, sometimes needed for types, though goal is strict CPU).
+*   **Crate**: `vello_cpu` (https://crates.io/crates/vello_cpu)
+*   **Dependencies**: Rust toolchain
 *   **License**: Apache 2.0 / MIT
+*   **Rendering**: Pure CPU software rasterization with SIMD and multi-threading optimization
 
 ## 2. CMake Integration (via Corrosion)
 
@@ -21,9 +25,7 @@ corrosion_import_crate(MANIFEST_PATH "${CMAKE_CURRENT_SOURCE_DIR}/vello_bridge/C
 
 ## 3. Initialization (CPU-Only)
 
-Vello is GPU-first. CPU support might be via `skia-safe` fallback or `vello-encoding` software rasterization.
-**Verification Required**: If Vello's own software rasterizer is not ready, this backend might essentially be a wrapper around Skia-via-Rust.
-For this benchmark, we target **Vello's Fine-Grained Rasterizer** (if functional) or label it "Experimental".
+The `vello_cpu` crate provides a pure CPU implementation optimized for SIMD and multithreaded execution, offering high portability without requiring GPU configuration.
 
 **Rust Bridge (`vello_bridge/src/lib.rs`):**
 ```rust
@@ -70,5 +72,7 @@ pub extern "C" fn vello_render_cpu(
 
 ## 5. Notes
 
-*   **Experimental Status**: This backend is considered high-risk. If a pure CPU path is not available or too slow (just an interpreter), it should be marked as `experimental` in the benchmark.
+*   **Alpha Status**: `vello_cpu` is in early development. May have incomplete features or performance issues.
+*   **Multi-Threading**: The CPU implementation is optimized for SIMD and multithreaded execution.
+*   **Performance**: Reported to be faster than Skia software and tiny-skia due to SIMD optimizations.
 *   **Bridge**: Reuse the pattern from Raqote (C FFI + Corrosion).
