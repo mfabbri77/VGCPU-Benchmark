@@ -25,7 +25,12 @@ brew install qt
 sudo apt install qt6-base-dev
 
 # Windows
-# Use Qt Online Installer or vcpkg
+# Option A: vcpkg (Recommended for developers)
+vcpkg install qtbase:x64-windows
+
+# Option B: Official Online Installer
+# Download from qt.io and install to e.g., C:\Qt\6.x.x
+# Then point CMake to it: -DCMAKE_PREFIX_PATH=C:\Qt\6.x.x\msvc2022_64
 ```
 
 ## 2. CMake Integration
