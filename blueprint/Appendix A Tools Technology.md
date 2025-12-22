@@ -90,7 +90,7 @@ The project **MUST** default to the following versions for reproducible baseline
 | **PlutoVG** | `v1.3.2` (or latest stable) | Dynamic | Default shared library build |
 | **Qt Raster Engine** | `6.8 LTS` | Dynamic | Qt default; LGPL compliant |
 | **AGG** | `2.7.0` | Dynamic | Use Debian packaging approach (see notes) |
-| **Cairo (Image Surface)** | `1.18.2` | Dynamic | System library via pkg-config |
+| **Cairo (Image Surface)** | `1.18.2` | Dynamic | System lib, vcpkg, or `deps/cairo` (Windows) |
 | **Google Benchmark** | `v1.8.3` | Static | Benchmark harness only |
 
 ### A.7.2 Library Linking Policy

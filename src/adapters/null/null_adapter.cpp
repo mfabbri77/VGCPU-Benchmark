@@ -52,7 +52,7 @@ Status NullAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
 
     // Fill with white (simulating a cleared background)
     // This is a no-op render essentially, but gives valid output
-    std::fill(output_buffer.begin(), output_buffer.end(), 0xFF);
+    std::fill(output_buffer.begin(), output_buffer.end(), static_cast<uint8_t>(0xFF));
 
     return Status::Ok();
 }

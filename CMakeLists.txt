@@ -57,12 +57,69 @@ endif()
 # Blueprint Reference: backends/cairo.md
 # -----------------------------------------------------------------------------
 if(ENABLE_CAIRO)
-    find_package(PkgConfig REQUIRED)
-    pkg_check_modules(CAIRO IMPORTED_TARGET cairo>=1.16.0)
+    # 1. Try PkgConfig (standard on Linux/macOS)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(CAIRO IMPORTED_TARGET cairo>=1.16.0)
+    endif()
+
+    # 2. If not found, try CMake Config (vcpkg on Windows)
+    if(NOT CAIRO_FOUND)
+        find_package(cairo CONFIG QUIET)
+        if(cairo_FOUND)
+            if(TARGET cairo::cairo)
+                # Alias to PkgConfig::CAIRO so the rest of the build works transparently
+                if(NOT TARGET PkgConfig::CAIRO)
+                    add_library(PkgConfig::CAIRO ALIAS cairo::cairo)
+                endif()
+                set(CAIRO_FOUND TRUE)
+            endif()
+        endif()
+    endif()
+
+    # 3. If still not found, try Local Deps (Preshing binaries)
+    if(NOT CAIRO_FOUND)
+        set(LOCAL_CAIRO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/cairo/cairo-windows-1.17.2")
+        if(EXISTS "${LOCAL_CAIRO_ROOT}/include/cairo.h")
+            message(STATUS "Found local Cairo at: ${LOCAL_CAIRO_ROOT}")
+            
+            # Create imported target
+            if(NOT TARGET cairo::cairo)
+                add_library(cairo::cairo SHARED IMPORTED)
+                
+                if(MSVC)
+                    set_target_properties(cairo::cairo PROPERTIES
+                        IMPORTED_IMPLIB "${LOCAL_CAIRO_ROOT}/lib/x64/cairo.lib"
+                        IMPORTED_LOCATION "${LOCAL_CAIRO_ROOT}/lib/x64/cairo.dll"
+                        INTERFACE_INCLUDE_DIRECTORIES "${LOCAL_CAIRO_ROOT}/include"
+                    )
+                else()
+                    # Assume x64 for now, adapt if needed
+                    set_target_properties(cairo::cairo PROPERTIES
+                        IMPORTED_IMPLIB "${LOCAL_CAIRO_ROOT}/lib/x64/cairo.lib"
+                        IMPORTED_LOCATION "${LOCAL_CAIRO_ROOT}/lib/x64/cairo.dll"
+                        INTERFACE_INCLUDE_DIRECTORIES "${LOCAL_CAIRO_ROOT}/include"
+                    )
+                endif()
+            endif()
+
+            # Alias
+            if(NOT TARGET PkgConfig::CAIRO)
+                add_library(PkgConfig::CAIRO ALIAS cairo::cairo)
+            endif()
+            
+            set(CAIRO_FOUND TRUE)
+            set(cairo_VERSION "1.17.2")
+            
+            # Save DLL location for copy step later
+            set(LOCAL_CAIRO_DLL "${LOCAL_CAIRO_ROOT}/lib/x64/cairo.dll")
+        endif()
+    endif()
+
     if(CAIRO_FOUND)
-        message(STATUS "Cairo found: ${CAIRO_VERSION}")
+        message(STATUS "Cairo found (Version: ${cairo_VERSION})")
     else()
-        message(FATAL_ERROR "Cairo not found. Install libcairo2-dev (Linux) or use Homebrew (macOS).")
+        message(FATAL_ERROR "Cairo not found. Install libcairo2-dev (Linux), use Homebrew (macOS), or vcpkg/deps (Windows).")
     endif()
 endif()
 
@@ -195,6 +252,15 @@ target_link_libraries(vgcpu-benchmark PRIVATE
     vgcpu_harness
     vgcpu_reporting
 )
+
+if(LOCAL_CAIRO_DLL)
+    add_custom_command(TARGET vgcpu-benchmark POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+        "${LOCAL_CAIRO_DLL}"
+        $<TARGET_FILE_DIR:vgcpu-benchmark>
+        COMMENT "Copying Cairo DLL to output directory"
+    )
+endif()
 
 # -----------------------------------------------------------------------------
 # Installation

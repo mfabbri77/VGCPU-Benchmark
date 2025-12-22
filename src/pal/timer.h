@@ -35,6 +35,9 @@ using Duration = std::chrono::nanoseconds;
 /// Returns "process" or "thread" depending on what GetCpuTime() measures.
 [[nodiscard]] const char* GetCpuTimeSemantics();
 
+/// Get the estimated CPU frequency in Hz (0 if unknown).
+[[nodiscard]] int64_t GetCpuFrequency();
+
 /// Convert duration to nanoseconds as int64.
 [[nodiscard]] inline int64_t ToNanoseconds(Duration d) {
     return d.count();

@@ -66,3 +66,7 @@ Thumbs.db
 # Benchmark outputs
 results.json
 results.csv
+
+# Local Dependencies
+deps/
+vcpkg/

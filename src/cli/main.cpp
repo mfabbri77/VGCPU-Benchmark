@@ -85,6 +85,7 @@ int HandleMetadata(const CliOptions& options) {
     std::cout << "  Memory:    " << (env.memory_bytes / (1024 * 1024)) << " MB\n";
     std::cout << "  Compiler:  " << env.compiler_name << " " << env.compiler_version << "\n";
     std::cout << "  CPU Time:  " << pal::GetCpuTimeSemantics() << "\n";
+    std::cout << "  CPU Freq:  " << (pal::GetCpuFrequency() / 1'000'000.0) << " MHz (est)\n";
     std::cout << "\nBuild Info:\n";
     std::cout << "  Version:   0.1.0\n";
     std::cout << "  Enabled Adapters:\n";

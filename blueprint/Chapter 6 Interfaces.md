@@ -193,7 +193,8 @@ The PAL timing interface **MUST** include:
 
 **Normative requirements**
 
-* `NowMonotonic` **MUST** be monotonic and high-resolution.
+* `NowMonotonic` **MUST** be monotonic and high-resolution (steady clock).
+* CPU time measurement **SHOULD** use the highest-resolution counter available (e.g., `QueryProcessCycleTime` on Windows, `CLOCK_PROCESS_CPUTIME_ID` on Linux).
 * CPU time measurement **MUST** be consistent within a given platform build.
 
 ### 6.5.2 Measurement Record Schema

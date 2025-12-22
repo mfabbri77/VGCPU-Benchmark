@@ -27,11 +27,31 @@ if (CAIRO_FOUND)
     target_include_directories(cairo_adapter INTERFACE ${CAIRO_INCLUDE_DIRS})
     target_link_libraries(cairo_adapter INTERFACE ${CAIRO_LIBRARIES})
 else()
-    message(WARNING "System Cairo not found. Falling back to simple FetchContent (Experimental)")
-    # Note: Cairo build is complex. In a real scenario, use vcpkg.
-    # For now, fail or require user intervention if system lib is missing.
-    message(FATAL_ERROR "Please install libcairo2-dev (Linux) or use vcpkg (Windows/Mac).")
+    # Windows Alternative: Manual Precompiled Binaries
+    # Source: https://github.com/preshing/cairo-windows
+    set(LOCAL_CAIRO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/deps/cairo/cairo-windows-1.17.2")
+    if(EXISTS "${LOCAL_CAIRO_ROOT}/include/cairo.h")
+        add_library(cairo::cairo SHARED IMPORTED)
+        set_target_properties(cairo::cairo PROPERTIES
+            IMPORTED_IMPLIB "${LOCAL_CAIRO_ROOT}/lib/x64/cairo.lib"
+            IMPORTED_LOCATION "${LOCAL_CAIRO_ROOT}/lib/x64/cairo.dll"
+            INTERFACE_INCLUDE_DIRECTORIES "${LOCAL_CAIRO_ROOT}/include"
+        )
+        add_library(PkgConfig::CAIRO ALIAS cairo::cairo)
+        set(CAIRO_FOUND TRUE)
+    endif()
+
+    if(NOT CAIRO_FOUND)
+        message(FATAL_ERROR "Please install libcairo2-dev (Linux), use vcpkg (Windows/Mac), or place precompiled binaries in deps/cairo.")
+    endif()
 endif()
+```
+
+**Windows Alternative (Precompiled)**
+On Windows, if vcpkg fails (e.g., due to dependency build issues), you can use precompiled binaries from `preshing/cairo-windows`.
+1. Download `cairo-windows-1.17.2.zip`.
+2. Extract to `deps/cairo`.
+3. CMake will automatically detect it.
 ```
 
 ## 3. Initialization (CPU-Only)
