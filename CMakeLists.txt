@@ -99,6 +99,13 @@ elseif(MSVC)
 endif()
 
 # -----------------------------------------------------------------------------
+# MinGW Static Linking (Fix for missing libgcc/libstdc++ DLLs)
+# -----------------------------------------------------------------------------
+if(MINGW)
+    set(CMAKE_EXE_LINKER_FLAGS "${CMAKE_EXE_LINKER_FLAGS} -static -static-libgcc -static-libstdc++")
+endif()
+
+# -----------------------------------------------------------------------------
 # Core Library (common types, PAL, IR, Assets)
 # -----------------------------------------------------------------------------
 add_library(vgcpu_core STATIC
