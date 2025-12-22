@@ -34,6 +34,7 @@ CapabilitySet NullAdapter::GetCapabilities() const {
 
 Status NullAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
                            std::vector<uint8_t>& output_buffer) {
+    (void)output_buffer;  // Null adapter does not write to buffer
     if (!initialized_) {
         return Status::Fail("NullAdapter not initialized");
     }

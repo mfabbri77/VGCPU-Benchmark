@@ -36,6 +36,14 @@
 #include "adapters/skia/skia_adapter.h"
 #endif
 
+#ifdef VGCPU_ENABLE_THORVG
+#include "adapters/thorvg/thorvg_adapter.h"
+#endif
+
+#ifdef VGCPU_ENABLE_AMANITHVG
+#include "adapters/amanithvg/amanithvg_adapter.h"
+#endif
+
 using namespace vgcpu;
 
 namespace {
@@ -334,6 +342,14 @@ int main(int argc, char* argv[]) {
 
 #ifdef VGCPU_ENABLE_SKIA
     RegisterSkiaAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_THORVG
+    RegisterThorVGAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_AMANITHVG
+    RegisterAmanithVGAdapter();
 #endif
 
     // Initialize scene registry from manifest

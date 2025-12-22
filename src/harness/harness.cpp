@@ -61,7 +61,7 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
     wall_samples.reserve(static_cast<size_t>(policy.measurement_iterations));
     cpu_samples.reserve(static_cast<size_t>(policy.measurement_iterations));
 
-    int64_t total_overhead_ns = 0;
+    // Note: Overhead measurement removed for now - not actively used
 
     for (int i = 0; i < policy.measurement_iterations; ++i) {
         // Measure inter-call overhead (from end of last iteration to start of this one)
