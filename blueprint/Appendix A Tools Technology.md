@@ -82,40 +82,33 @@ The project **MUST** default to the following versions for reproducible baseline
 | Library | Version / Commit | Linking | Notes |
 |---|---|---|---|
 | **AmanithVG SRE** | `6.0.0` (or latest stable) | Dynamic | Commercial license; CPU-only SRE variant |
-| **Blend2D** | `0.21.2` (or latest stable) | Dynamic | `BLEND2D_STATIC=OFF`; multi-threaded optional |
-| **Skia (CPU Raster)** | `m116` (chrome/116 branch) | Dynamic | `is_component_build=true`; Clang recommended |
-| **ThorVG SW** | `v0.15.16` | Dynamic | SW engine only (via Meson or Conan) |
+| **Blend2D** | `master` (rolling release) | Static | JIT compiler included; static simplifies deployment |
+| **Skia (CPU Raster)** | `m124` (Aseprite prebuilt) | Static | Prebuilt binaries; x86_64 only on Linux |
+| **ThorVG SW** | `v0.15.16` | Static | Built from source; SW engine only |
 | **vello_cpu** | `v0.0.1` (or latest) | Dynamic | Rust `cdylib` via Corrosion |
 | **Raqote** | `v0.8.5` (or latest stable) | Dynamic | Rust `cdylib` via Corrosion |
-| **PlutoVG** | `v1.3.2` (or latest stable) | Dynamic | Default shared library build |
-| **Qt Raster Engine** | `6.8 LTS` | Dynamic | Qt default; LGPL compliant |
-| **AGG** | `2.7.0` | Dynamic | Use Debian packaging approach (see notes) |
-| **Cairo (Image Surface)** | `1.18.2` | Dynamic | System lib, vcpkg, or `deps/cairo` (Windows) |
+| **PlutoVG** | `v1.3.2` (or latest stable) | Static | Built from source via FetchContent |
+| **Qt Raster Engine** | `6.8 LTS` | Dynamic | System library; LGPL compliant |
+| **AGG** | `2.6` | Static | Built from source (ghaerr/agg-2.6 fork) |
+| **Cairo (Image Surface)** | `1.18.2` (or 1.17.2 fallback) | Dynamic | System lib or prebuilt (Windows) |
 | **Google Benchmark** | `v1.8.3` | Static | Benchmark harness only |
 
-### A.7.2 Library Linking Policy
+1. The project uses **static linking** for most rendering backend libraries to:
+   * simplify deployment (single binary with no shared library dependencies),
+   * avoid ABI compatibility issues across systems,
+   * ensure consistent behavior across platforms.
 
-1. The project **MUST** prefer **dynamic linking** for all rendering backend libraries to:
-   * reduce binary size,
-   * enable independent library updates,
-   * simplify license compliance (especially LGPL).
+2. **Exceptions** (dynamic linking required):
+   * **Qt Raster Engine**: System library, cannot be statically linked due to LGPL.
+   * **Cairo**: System library on Linux; prebuilt DLL on Windows.
+   * **AmanithVG SRE**: Prebuilt SDK provides only shared libraries.
+   * **Rust libraries** (Raqote, vello_cpu): Built as `cdylib` crates with C FFI wrappers via Corrosion.
 
-2. **Rust libraries** (Raqote, vello_cpu) **MUST** be built as `cdylib` crates with C FFI wrappers via Corrosion.
+3. **AGG**: Built from source using the `ghaerr/agg-2.6` fork with `-fPIC` and linked statically.
 
-3. **AGG shared library**: The upstream AGG project does not provide a native shared library build. The project **SHOULD** follow the Debian packaging approach:
-   * Debian provides `libagg2` as a shared library (version 2.7.0 in sid)
-   * Reference: Debian Salsa `science-team/agg` repository
-   * Build with `-fPIC` and link as `SHARED` in CMake
+4. **Skia**: Uses prebuilt static libraries from Aseprite's m124 release. Note: Skia does not guarantee ABI stability, but this is acceptable as we pin to a specific version. Linux aarch64 is NOT available from Aseprite; the backend is auto-disabled on that platform.
 
-4. **Skia**: Use `is_component_build=true` GN argument. Note: Skia does not guarantee ABI stability, but this is acceptable as we pin to a specific version.
-
-### A.7.3 Integration
-
-1. The project **SHOULD** use CMake `FetchContent` or `git submodule` to manage these versions.
-2. The project **MUST** allow system-installed dependencies if versions are pinned and recorded.
-3. The build system **MUST** emit dependency pin records into build artifacts and run metadata.
-
-**Rationale**: Dynamic linking reduces binary size, simplifies updates, and ensures license compliance while maintaining reproducibility through version pinning.
+**Rationale**: Static linking reduces deployment complexity and ensures reproducible behavior while maintaining license compliance for LGPL libraries (Qt, Cairo).
 
 ## A.8 Packaging and Release Tooling
 

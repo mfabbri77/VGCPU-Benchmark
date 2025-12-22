@@ -77,12 +77,13 @@ endif()
 # -----------------------------------------------------------------------------
 if(ENABLE_BLEND2D)
     # AsmJit (Required by Blend2D)
+    # Blueprint Reference: Appendix A, §A.7.1 — Blend2D uses rolling release
     FetchContent_Declare(
         asmjit
         GIT_REPOSITORY https://github.com/asmjit/asmjit.git
         GIT_TAG        master
     )
-    # Blend2D
+    # Blend2D (rolling release - no version tags)
     FetchContent_Declare(
         blend2d
         GIT_REPOSITORY https://github.com/blend2d/blend2d.git
@@ -137,9 +138,15 @@ if(ENABLE_SKIA)
         endif()
         set(SKIA_LIB_NAME "libskia.a")
     else()  # Linux
-        set(SKIA_URL "https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-Linux-Release-x64.zip")
-        set(SKIA_OUT_DIR "out/Release-x64")
-        set(SKIA_LIB_NAME "libskia.a")
+        # Blueprint Reference: Chapter 3, §3.1.1 — x86_64 and ARM64 only
+        if(CMAKE_SYSTEM_PROCESSOR MATCHES "arm64|aarch64")
+            message(WARNING "Skia: Prebuilt binaries not available for Linux aarch64. Disabling Skia backend.")
+            set(ENABLE_SKIA OFF CACHE BOOL "" FORCE)
+        else()
+            set(SKIA_URL "https://github.com/aseprite/skia/releases/download/m124-08a5439a6b/Skia-Linux-Release-x64.zip")
+            set(SKIA_OUT_DIR "out/Release-x64")
+            set(SKIA_LIB_NAME "libskia.a")
+        endif()
     endif()
 
     FetchContent_Declare(
@@ -300,42 +307,42 @@ if(ENABLE_THORVG)
     set(THORVG_CONFIG_DIR "${CMAKE_CURRENT_BINARY_DIR}/thorvg-config")
     file(MAKE_DIRECTORY ${THORVG_CONFIG_DIR})
     file(WRITE "${THORVG_CONFIG_DIR}/config.h" "
-// Auto-generated config for ThorVG CMake build
-// Note: ThorVG uses #ifdef, so we only define features we WANT enabled
-#ifndef _TVG_CONFIG_H_
-#define _TVG_CONFIG_H_
+    // Auto-generated config for ThorVG CMake build
+    // Note: ThorVG uses #ifdef, so we only define features we WANT enabled
+    #ifndef _TVG_CONFIG_H_
+    #define _TVG_CONFIG_H_
 
-#define THORVG_VERSION_STRING \"0.15.16\"
-#define THORVG_SW_RASTER_SUPPORT 1
-#define THORVG_THREAD_SUPPORT 1
+    #define THORVG_VERSION_STRING \"0.15.16\"
+    #define THORVG_SW_RASTER_SUPPORT 1
+    #define THORVG_THREAD_SUPPORT 1
 
-// Note: We intentionally do NOT define:
-// - THORVG_GL_RASTER_SUPPORT
-// - THORVG_WG_RASTER_SUPPORT
-// - THORVG_SVG_LOADER_SUPPORT
-// - THORVG_PNG_LOADER_SUPPORT
-// - THORVG_JPG_LOADER_SUPPORT
-// - THORVG_LOTTIE_LOADER_SUPPORT
-// - THORVG_TTF_LOADER_SUPPORT
-// - THORVG_WEBP_LOADER_SUPPORT
-// - THORVG_TVG_LOADER_SUPPORT
-// - THORVG_TVG_SAVER_SUPPORT
-// - THORVG_GIF_SAVER_SUPPORT
-// - THORVG_LOG_ENABLED
-// because ThorVG uses #ifdef (not #if)
+    // Note: We intentionally do NOT define:
+    // - THORVG_GL_RASTER_SUPPORT
+    // - THORVG_WG_RASTER_SUPPORT
+    // - THORVG_SVG_LOADER_SUPPORT
+    // - THORVG_PNG_LOADER_SUPPORT
+    // - THORVG_JPG_LOADER_SUPPORT
+    // - THORVG_LOTTIE_LOADER_SUPPORT
+    // - THORVG_TTF_LOADER_SUPPORT
+    // - THORVG_WEBP_LOADER_SUPPORT
+    // - THORVG_TVG_LOADER_SUPPORT
+    // - THORVG_TVG_SAVER_SUPPORT
+    // - THORVG_GIF_SAVER_SUPPORT
+    // - THORVG_LOG_ENABLED
+    // because ThorVG uses #ifdef (not #if)
 
-// Enable SIMD on ARM64
-#if defined(__aarch64__) || defined(_M_ARM64)
-#define THORVG_NEON_VECTOR_SUPPORT 1
-#endif
+    // Enable SIMD on ARM64
+    #if defined(__aarch64__) || defined(_M_ARM64)
+    #define THORVG_NEON_VECTOR_SUPPORT 1
+    #endif
 
-// Enable AVX on x86_64
-#if defined(__x86_64__) || defined(_M_X64)
-#define THORVG_AVX_VECTOR_SUPPORT 1
-#endif
+    // Enable AVX on x86_64
+    #if defined(__x86_64__) || defined(_M_X64)
+    #define THORVG_AVX_VECTOR_SUPPORT 1
+    #endif
 
-#endif // _TVG_CONFIG_H_
-")
+    #endif // _TVG_CONFIG_H_
+    ")
 
     add_library(thorvg STATIC ${THORVG_SOURCES})
     
@@ -402,7 +409,8 @@ if(ENABLE_AMANITHVG)
         if(CMAKE_SIZEOF_VOID_P EQUAL 8)
             set(AVG_PLATFORM_DIR "windows/x86_64")
         else()
-            set(AVG_PLATFORM_DIR "windows/x86")
+            # Blueprint Reference: Chapter 3, §3.1.1 — x86_64 and ARM64 only (no 32-bit)
+            message(FATAL_ERROR "windows/aarch64 is unsupported.")
         endif()
         set(AVG_LIB_NAME "libAmanithVG.dll")
     else()  # Linux
@@ -664,6 +672,12 @@ endif()
 
 if(ENABLE_CAIRO)
     target_link_libraries(vgcpu_adapters PUBLIC PkgConfig::CAIRO)
+    if(UNIX AND NOT APPLE)
+        find_package(Fontconfig QUIET)
+        if(Fontconfig_FOUND)
+            target_link_libraries(vgcpu_adapters PUBLIC Fontconfig::Fontconfig)
+        endif()
+    endif()
 endif()
 
 if(ENABLE_BLEND2D)
@@ -739,6 +753,15 @@ target_link_libraries(vgcpu-benchmark PRIVATE
 
 if(ENABLE_SKIA AND MSVC)
     target_link_libraries(vgcpu-benchmark PRIVATE "${skia_binaries_SOURCE_DIR}/out/Release-x64/zlib.lib")
+endif()
+
+if(UNIX AND NOT APPLE)
+    find_package(Fontconfig QUIET)
+    find_package(Freetype QUIET)
+    find_package(ZLIB QUIET)
+    if(Fontconfig_FOUND AND Freetype_FOUND AND ZLIB_FOUND)
+        target_link_libraries(vgcpu-benchmark PRIVATE -Wl,--no-as-needed fontconfig freetype z -Wl,--as-needed)
+    endif()
 endif()
 
 # Handle DLL deployment for Windows

@@ -8,9 +8,9 @@
 
 *   **Version**: 0.8.5
 *   **Source**: Crates.io / GitHub `https://github.com/jrmuizel/raqote`
-*   **Dependencies**: Rust toolchain (cargo, rustc), `font-kit` (optional, can be disabled).
-*   **License**: MIT / Apache 2.0
-*   **Rendering**: Pure CPU software rasterization (f32 precision)
+*   **Dependencies**: Rust toolchain (stable)
+*   **License**: Apache 2.0 / MIT
+*   **Rendering**: Pure CPU software rasterization with SIMD and multi-threading optimization (via Corrosion)
 
 ## 2. CMake Integration (via Corrosion)
 

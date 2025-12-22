@@ -6,11 +6,12 @@
 
 ## 1. Version and Dependencies
 
-*   **Version**: Milestone 116 (m116)
-*   **Repository**: `https://skia.googlesource.com/skia.git`
-*   **Commit Tag**: `chrome/m116`
+*   **Version**: Milestone 124 (m124) — Aseprite prebuilt binaries
+*   **Repository**: Prebuilt from `https://github.com/aseprite/skia/releases`
+*   **Commit Tag**: `m124-08a5439a6b`
 *   **License**: BSD-3-Clause
 *   **Rendering**: Pure CPU software rasterization via `SkSurface::MakeRasterDirect`
+*   **Platform Availability**: Windows x64, Linux x64, macOS x64/arm64. **Linux aarch64 NOT available.**
 
 ## 2. CMake Integration
 

@@ -9,7 +9,7 @@
 *   **Version**: Experimental (Pin to latest `linebender/vello` commit)
 *   **Repository**: `https://github.com/linebender/vello`
 *   **Crate**: `vello_cpu` (https://crates.io/crates/vello_cpu)
-*   **Dependencies**: Rust toolchain
+*   **Dependencies**: Rust toolchain (stable)
 *   **License**: Apache 2.0 / MIT
 *   **Rendering**: Pure CPU software rasterization with SIMD and multi-threading optimization
 
