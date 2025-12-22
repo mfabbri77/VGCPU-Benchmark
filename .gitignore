@@ -71,3 +71,7 @@ results.csv
 # Local Dependencies
 deps/
 vcpkg/
+
+# Rust
+target/
+**/*.rs.bk

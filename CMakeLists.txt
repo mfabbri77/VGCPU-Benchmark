@@ -333,14 +333,9 @@ if(ENABLE_RAQOTE OR ENABLE_VELLO_CPU)
     message(STATUS "Corrosion (Rust-CMake bridge) fetched")
 endif()
 
-if(ENABLE_RAQOTE)
-    corrosion_import_crate(MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust_bridge/raqote_ffi/Cargo.toml")
-    message(STATUS "Raqote FFI crate imported via Corrosion")
-endif()
-
-if(ENABLE_VELLO_CPU)
-    corrosion_import_crate(MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust_bridge/vello_ffi/Cargo.toml")
-    message(STATUS "Vello FFI crate imported via Corrosion")
+if(ENABLE_RAQOTE OR ENABLE_VELLO_CPU)
+    corrosion_import_crate(MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust_bridge/Cargo.toml")
+    message(STATUS "Rust bridge workspace imported via Corrosion")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -535,6 +530,11 @@ if(ENABLE_RAQOTE)
     target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_RAQOTE)
 endif()
 
+if(ENABLE_VELLO_CPU)
+    list(APPEND ADAPTER_SOURCES src/adapters/vello/vello_adapter.cpp)
+    target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_VELLO)
+endif()
+
 add_library(vgcpu_adapters STATIC
     src/adapters/adapter_registry.cpp
     ${ADAPTER_SOURCES}
@@ -575,6 +575,10 @@ endif()
 
 if(ENABLE_RAQOTE)
     target_link_libraries(vgcpu_adapters PUBLIC raqote_ffi)
+endif()
+
+if(ENABLE_VELLO_CPU)
+    target_link_libraries(vgcpu_adapters PUBLIC vello_ffi)
 endif()
 
 # -----------------------------------------------------------------------------

@@ -52,6 +52,10 @@
 #include "adapters/raqote/raqote_adapter.h"
 #endif
 
+#ifdef VGCPU_ENABLE_VELLO
+#include "adapters/vello/vello_adapter.h"
+#endif
+
 using namespace vgcpu;
 
 namespace {
@@ -366,6 +370,10 @@ int main(int argc, char* argv[]) {
 
 #ifdef VGCPU_ENABLE_RAQOTE
     RegisterRaqoteAdapter();
+#endif
+
+#ifdef VGCPU_ENABLE_VELLO
+    RegisterVelloAdapter();
 #endif
 
     // Initialize scene registry from manifest
