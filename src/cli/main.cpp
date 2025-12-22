@@ -95,8 +95,54 @@ int HandleRun(const CliOptions& options) {
         return 1;
     }
 
-    // Create test scene (hardcoded for now)
-    auto scene = ir::IrLoader::CreateTestScene(800, 600);
+    // Load scene(s)
+    std::vector<PreparedScene> scenes;
+
+    if (!options.scenes.empty()) {
+        // Load scenes from file paths or asset IDs
+        for (const auto& scene_arg : options.scenes) {
+            std::filesystem::path scene_path(scene_arg);
+
+            // Check if it's a file path
+            if (scene_path.extension() == ".irbin" || std::filesystem::exists(scene_path)) {
+                auto bytes = ir::IrLoader::LoadFromFile(scene_path);
+                if (!bytes) {
+                    std::cerr << "Error: Failed to load scene: " << scene_arg << "\n";
+                    continue;
+                }
+
+                auto result = ir::IrLoader::Prepare(*bytes, scene_path.stem().string());
+                if (result.failed()) {
+                    std::cerr << "Error: Failed to parse scene: " << result.status().message
+                              << "\n";
+                    continue;
+                }
+
+                scenes.push_back(std::move(result.value()));
+                std::cout << "Loaded scene: " << scene_arg << "\n";
+            } else {
+                // Try assets/scenes/<id>.irbin
+                auto asset_path = std::filesystem::path("assets/scenes") / (scene_arg + ".irbin");
+                if (std::filesystem::exists(asset_path)) {
+                    auto bytes = ir::IrLoader::LoadFromFile(asset_path);
+                    if (bytes) {
+                        auto result = ir::IrLoader::Prepare(*bytes, scene_arg);
+                        if (result.ok()) {
+                            scenes.push_back(std::move(result.value()));
+                            std::cout << "Loaded scene: " << scene_arg << "\n";
+                        }
+                    }
+                } else {
+                    std::cerr << "Warning: Scene not found: " << scene_arg << "\n";
+                }
+            }
+        }
+    }
+
+    // Fall back to test scene if no scenes loaded
+    if (scenes.empty()) {
+        scenes.push_back(ir::IrLoader::CreateTestScene(800, 600));
+    }
 
     // Setup benchmark policy
     BenchmarkPolicy policy;
@@ -124,8 +170,11 @@ int HandleRun(const CliOptions& options) {
             continue;
         }
 
-        auto result = Harness::RunCase(*adapter, scene, policy);
-        results.push_back(result);
+        // Run each scene on this backend
+        for (const auto& scene : scenes) {
+            auto result = Harness::RunCase(*adapter, scene, policy);
+            results.push_back(result);
+        }
 
         adapter->Shutdown();
     }

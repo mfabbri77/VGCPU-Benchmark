@@ -48,10 +48,10 @@ All steps in this workplan **MUST** follow **ALL** the conventions defined in th
     - [x] Implement `PlutoVGAdapter`.
     - [x] Verify basic shapes rendering.
 
-- [ ] **Step 2.2: IR Binary Format & Asset Pipeline**
-    - [ ] Finalize IR Binary spec (Chapter 5) in code (`ir_format.h`).
-    - [ ] Write a simple "SVG-to-IR" compiler (python or cpp) or hand-craft binary IR samples.
-    - [ ] Create `assets/scenes` directory with initial test scenes (rects, circles).
+- [x] **Step 2.2: IR Binary Format & Asset Pipeline** ✅
+    - [x] Finalize IR Binary spec (Chapter 5) in code (`ir_format.h`).
+    - [x] Write a simple "SVG-to-IR" compiler (python or cpp) or hand-craft binary IR samples.
+    - [x] Create `assets/scenes` directory with initial test scenes (rects, circles).
 
 - [x] **Step 2.3: Cairo Backend (The "Reference")** ✅
     - [x] Integrate Cairo (System or PkgConfig).

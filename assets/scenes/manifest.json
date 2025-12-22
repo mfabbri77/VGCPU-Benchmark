@@ -1,0 +1,41 @@
+{
+  "version": "1.0.0",
+  "scenes": [
+    {
+      "scene_id": "fills/solid_basic",
+      "ir_path": "fills/solid_basic.irbin",
+      "scene_hash": "686ff0e6",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true
+      },
+      "description": "Basic solid fill scene with rectangles and circles"
+    },
+    {
+      "scene_id": "fills/nested_rects",
+      "ir_path": "fills/nested_rects.irbin",
+      "scene_hash": "3de6fd68",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true
+      },
+      "description": "Performance test with 20 nested rectangles"
+    },
+    {
+      "scene_id": "fills/spiral_circles",
+      "ir_path": "fills/spiral_circles.irbin",
+      "scene_hash": "02fc0ab4",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true
+      },
+      "description": "50 circles in a spiral pattern with rainbow colors"
+    }
+  ]
+}
