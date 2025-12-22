@@ -481,7 +481,6 @@ def main():
         (create_nested_rects_scene, 'fills/nested_rects.irbin'),
         (create_spiral_circles_scene, 'fills/spiral_circles.irbin'),
         (create_gradients_linear_scene, 'fills/gradients_linear.irbin'),
-        (create_gradients_linear_scene, 'fills/gradients_linear.irbin'),
         (create_strokes_curves_scene, 'strokes/strokes_curves.irbin'),
         (create_noop_scene, 'validation/noop.irbin'),
     ]

@@ -46,13 +46,8 @@ Status NullAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
         return Status::InvalidArg("Invalid surface configuration");
     }
 
-    // Allocate output buffer (RGBA8, 4 bytes per pixel)
-    size_t buffer_size = static_cast<size_t>(config.width) * config.height * 4;
-    output_buffer.resize(buffer_size);
-
-    // Fill with white (simulating a cleared background)
-    // This is a no-op render essentially, but gives valid output
-    std::fill(output_buffer.begin(), output_buffer.end(), static_cast<uint8_t>(0xFF));
+    // Buffer is pre-sized by harness. Contents are undefined until kClear.
+    // For null backend, we do nothing - just return success immediately.
 
     return Status::Ok();
 }

@@ -87,8 +87,7 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
     if (config.width <= 0 || config.height <= 0)
         return Status::InvalidArg("Invalid surface configuration");
 
-    size_t buffer_size = static_cast<size_t>(config.width) * config.height * 4;
-    output_buffer.resize(buffer_size);
+    // Buffer is pre-sized by harness. Contents are undefined until kClear.
 
     BLImage img;
     BLResult result =

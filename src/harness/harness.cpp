@@ -38,8 +38,10 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
 
     // Preallocate output buffer (outside timed section)
     // Blueprint Reference: Chapter 4, §4.1 — Timed sections exclude I/O and IR decoding
+    // NOTE: We use resize() not reserve() to ensure adapters receive a correctly sized buffer.
+    // Adapters MUST NOT call resize/fill themselves; the IR kClear command handles clearing.
     std::vector<uint8_t> output_buffer;
-    output_buffer.reserve(static_cast<size_t>(config.width) * config.height * 4);
+    output_buffer.resize(static_cast<size_t>(config.width) * config.height * 4);
 
     // Warm-up phase (untimed for primary stats)
     // Blueprint Reference: Chapter 2, §2.1.5 — Warm-up phase

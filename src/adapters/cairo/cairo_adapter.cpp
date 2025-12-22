@@ -50,11 +50,9 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
         return Status::InvalidArg("Invalid surface configuration");
     }
 
+    // Buffer is pre-sized by harness. Contents are undefined until kClear.
     // Cairo uses ARGB32 format with specific stride alignment
     int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, config.width);
-    size_t buffer_size = static_cast<size_t>(stride) * config.height;
-    output_buffer.resize(buffer_size);
-    std::fill(output_buffer.begin(), output_buffer.end(), 0);  // Clear to transparent
 
     // Create Cairo surface wrapping our buffer
     cairo_surface_t* surface = cairo_image_surface_create_for_data(

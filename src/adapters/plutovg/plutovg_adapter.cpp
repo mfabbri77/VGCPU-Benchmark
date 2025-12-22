@@ -50,10 +50,7 @@ Status PlutoVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
         return Status::InvalidArg("Invalid surface configuration");
     }
 
-    // Allocate output buffer (ARGB32, 4 bytes per pixel)
-    size_t buffer_size = static_cast<size_t>(config.width) * config.height * 4;
-    output_buffer.resize(buffer_size);
-    std::fill(output_buffer.begin(), output_buffer.end(), static_cast<uint8_t>(0));  // Clear to transparent
+    // Buffer is pre-sized by harness. Contents are undefined until kClear.
 
     // Create PlutoVG surface wrapping our buffer
     plutovg_surface_t* surface =

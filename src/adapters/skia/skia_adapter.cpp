@@ -155,8 +155,7 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
     if (!scene.IsValid())
         return Status::InvalidArg("Invalid scene");
 
-    size_t expected_size = static_cast<size_t>(config.width) * config.height * 4;
-    output_buffer.resize(expected_size);
+    // Buffer is pre-sized by harness. Contents are undefined until kClear.
 
     // Create SkSurface wrapping our buffer
     SkImageInfo info =
