@@ -94,10 +94,6 @@ QBrush CreateBrush(const Paint& paint) {
 
 }  // namespace
 
-initialized_ = true;
-return Status::Ok();
-}
-
 Status QtAdapter::Initialize(const AdapterArgs& /*args*/) {
     // QGuiApplication needs a specialized offscreen backend for CLI usage
     if (!qApp) {

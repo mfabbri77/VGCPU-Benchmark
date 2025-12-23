@@ -42,8 +42,8 @@ set(VGCPU_DEP_CAIRO_PREBUILT_VERSION "1.17.2")
 # Corrosion - Rust-CMake bridge
 set(VGCPU_DEP_CORROSION_TAG "v0.5.0")
 
-# Rust toolchain version (stable, not nightly per [DEC-BUILD-06])
-set(VGCPU_DEP_RUST_TOOLCHAIN "1.84.0-aarch64-apple-darwin")
+# Rust toolchain version (updated to nightly to support vello_cpu's edition2024 requirement)
+set(VGCPU_DEP_RUST_TOOLCHAIN "nightly-aarch64-apple-darwin")
 
 # -----------------------------------------------------------------------------
 # Validate no floating deps function (called at configure time)

@@ -4,6 +4,15 @@
 # Blueprint Reference: Appendix A, §A.2 — Build System (CMake)
 cmake_minimum_required(VERSION 3.21)
 
+# Fix for deprecation warnings
+if(POLICY CMP0135)
+    cmake_policy(SET CMP0135 NEW)
+endif()
+if(POLICY CMP0169)
+    cmake_policy(SET CMP0169 NEW)
+endif()
+
+
 # Fix for dependencies (e.g. FreeType) using old CMake versions (<3.5)
 # which are no longer supported by modern CMake.
 set(CMAKE_POLICY_VERSION_MINIMUM "3.5")
@@ -78,6 +87,7 @@ if(ENABLE_CAIRO AND WIN32)
     FetchContent_Declare(
         cairo_prebuilt
         URL https://github.com/preshing/cairo-windows/releases/download/1.17.2/cairo-windows-1.17.2.zip
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(cairo_prebuilt)
 
@@ -111,11 +121,7 @@ endif()
 if(ENABLE_BLEND2D)
     # AsmJit (Required by Blend2D)
     # Blueprint Reference: [REQ-99], [REQ-100-01] — Pinned to commit SHA
-    FetchContent_Declare(
-        asmjit
-        GIT_REPOSITORY https://github.com/asmjit/asmjit.git
-        GIT_TAG        ${VGCPU_DEP_ASMJIT_COMMIT}
-    )
+
     # Blend2D - Blueprint Reference: [REQ-99], [REQ-100-02] — Pinned to commit SHA
     FetchContent_Declare(
         blend2d
@@ -134,12 +140,13 @@ if(ENABLE_BLEND2D)
     set(BLEND2D_INSTALL OFF CACHE BOOL "" FORCE)
     set(BLEND2D_NO_JIT OFF CACHE BOOL "" FORCE)
     set(BLEND2D_EXTERNAL_ASMJIT OFF CACHE BOOL "" FORCE) # Use source directly
+    # Populate asmjit (Use command form to avoid deprecation warning and add_subdirectory)
+    FetchContent_Populate(
+        asmjit
+        GIT_REPOSITORY https://github.com/asmjit/asmjit.git
+        GIT_TAG        ${VGCPU_DEP_ASMJIT_COMMIT}
+    )
 
-    # Populate asmjit manually
-    FetchContent_GetProperties(asmjit)
-    if(NOT asmjit_POPULATED)
-        FetchContent_Populate(asmjit)
-    endif()
 
     # Point Blend2D to asmjit source
     set(ASMJIT_DIR "${asmjit_SOURCE_DIR}" CACHE PATH "" FORCE)
@@ -185,6 +192,7 @@ if(ENABLE_SKIA)
     FetchContent_Declare(
         skia_binaries
         URL ${SKIA_URL}
+        DOWNLOAD_EXTRACT_TIMESTAMP TRUE
     )
     FetchContent_MakeAvailable(skia_binaries)
 
@@ -313,10 +321,9 @@ if(ENABLE_THORVG)
         GIT_REPOSITORY https://github.com/thorvg/thorvg.git
         GIT_TAG        ${VGCPU_DEP_THORVG_TAG}
     )
-    FetchContent_GetProperties(thorvg)
-    if(NOT thorvg_POPULATED)
-        FetchContent_Populate(thorvg)
-    endif()
+    # Populate thorvg
+    FetchContent_MakeAvailable(thorvg)
+
 
     # Create ThorVG library from source (SW engine only, no loaders)
     set(THORVG_SOURCES
@@ -508,19 +515,19 @@ endif()
 # Blueprint Reference: backends/raqote.md, backends/vello.md, [DEC-BUILD-06]
 # -----------------------------------------------------------------------------
 if(ENABLE_RAQOTE OR ENABLE_VELLO_CPU)
+    set(Rust_TOOLCHAIN ${VGCPU_DEP_RUST_TOOLCHAIN})
     FetchContent_Declare(
         Corrosion
         GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
         GIT_TAG ${VGCPU_DEP_CORROSION_TAG}
     )
     FetchContent_MakeAvailable(Corrosion)
-    message(STATUS "Corrosion (Rust-CMake bridge) fetched (${VGCPU_DEP_CORROSION_TAG})")
+    message(STATUS "Corrosion (Rust-CMake bridge) fetched (${VGCPU_DEP_CORROSION_TAG}) using toolchain ${Rust_TOOLCHAIN}")
 endif()
 
 if(ENABLE_RAQOTE OR ENABLE_VELLO_CPU)
     corrosion_import_crate(
         MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust_bridge/Cargo.toml"
-        TOOLCHAIN ${VGCPU_DEP_RUST_TOOLCHAIN}
     )
     message(STATUS "Rust bridge workspace imported via Corrosion using toolchain ${VGCPU_DEP_RUST_TOOLCHAIN}")
 endif()
@@ -653,6 +660,9 @@ target_include_directories(vgcpu_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
     ${CMAKE_CURRENT_SOURCE_DIR}/include
 )
+target_include_directories(vgcpu_core SYSTEM PUBLIC
+    ${nlohmann_json_SOURCE_DIR}/include
+)
 
 target_link_libraries(vgcpu_core PUBLIC nlohmann_json::nlohmann_json)
 
@@ -744,7 +754,7 @@ endif()
 
 if(ENABLE_BLEND2D)
     target_link_libraries(vgcpu_adapters PUBLIC blend2d)
-    target_include_directories(vgcpu_adapters PUBLIC ${blend2d_SOURCE_DIR})
+    target_include_directories(vgcpu_adapters SYSTEM PUBLIC ${blend2d_SOURCE_DIR})
 endif()
 
 if(ENABLE_SKIA)
@@ -753,7 +763,7 @@ endif()
 
 if(ENABLE_THORVG)
     target_link_libraries(vgcpu_adapters PUBLIC thorvg)
-    target_include_directories(vgcpu_adapters PUBLIC ${thorvg_SOURCE_DIR}/inc)
+    target_include_directories(vgcpu_adapters SYSTEM PUBLIC ${thorvg_SOURCE_DIR}/inc)
 endif()
 
 if(ENABLE_AGG)
@@ -784,7 +794,7 @@ add_library(vgcpu_harness STATIC
     src/harness/statistics.cpp
 )
 
-target_link_libraries(vgcpu_harness PUBLIC vgcpu_core vgcpu_adapters)
+target_link_libraries(vgcpu_harness PUBLIC vgcpu_adapters)
 
 # -----------------------------------------------------------------------------
 # Reporting Library
@@ -806,9 +816,7 @@ add_executable(vgcpu-benchmark
     src/cli/cli_parser.cpp
 )
 
-target_link_libraries(vgcpu-benchmark PRIVATE
-    vgcpu_core
-    vgcpu_adapters
+target_link_libraries(vgcpu-benchmark PUBLIC
     vgcpu_harness
     vgcpu_reporting
 )
@@ -886,7 +894,6 @@ target_include_directories(vgcpu_tests PRIVATE
 )
 
 target_link_libraries(vgcpu_tests PRIVATE
-    vgcpu_core
     vgcpu_adapters
 )
 

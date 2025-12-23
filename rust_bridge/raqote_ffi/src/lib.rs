@@ -2,7 +2,7 @@
 // Blueprint Reference: backends/raqote.md
 
 use raqote::{DrawTarget, SolidSource, Source, DrawOptions, PathBuilder, StrokeStyle, LineCap, LineJoin};
-use std::slice;
+
 
 /// Opaque handle to Raqote DrawTarget
 pub struct RqtSurface {
@@ -134,7 +134,7 @@ pub extern "C" fn rqt_fill_path(
     surf: *mut RqtSurface,
     path_ptr: *mut RqtPath,
     r: u8, g: u8, b: u8, a: u8,
-    fill_rule: i32
+    _fill_rule: i32
 ) {
     if surf.is_null() || path_ptr.is_null() { return; }
     
