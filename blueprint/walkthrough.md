@@ -1,276 +1,254 @@
-# Walkthrough — VGCPU-Benchmark Modernization (to product v0.2.0)
+FILE: /blueprint/walkthrough.md
 
-This walkthrough is the **operational plan** for implementing blueprint v1.0.
-Each step references stable IDs ([REQ-*], [TEST-*], [DEC-*]) and ends with a DoD (definition of done) and runnable commands.
+```markdown
+# Walkthrough — Implementation Plan (VGCPU-Benchmark)
 
-> Conventions:
-> - All commands use presets (Ch7 [REQ-106..109]).
-> - “Tier-1” = `null`, `plutovg`, `blend2d` (Ch1 [DEC-SCOPE-02]).
-> - Any compatibility-surface change requires a CR (Ch9 [REQ-137]).
+## 1) Overview
+- **Blueprint Version:** v1.1
+- **Target Product Release:** v0.2.0 ([DEC-VER-01])
+- **Repo Name:** VGCPU-Benchmark
+- **Primary Goal:** Add optional PNG artifact generation and SSIM-based regression against a selectable ground-truth backend, without contaminating benchmark timings. ([REQ-148..REQ-154], [DEC-ARCH-11])
+- **Driving CR:** [CR-0002] PNG artifact output + SSIM regression
 
----
+### Quality Gates (must pass)
+- Formatting/lint gates per existing v1.0 tooling ([DEC-TOOL-01])
+- No `[TEMP-DBG]` markers committed (see `temp_dbg_policy.md`)
+- Unit + integration tests include new artifact/SSIM paths ([TEST-53], [TEST-54], [TEST-55], [TEST-56], [TEST-70..TEST-72])
+- Sanitizers cover PNG + SSIM enabled runs ([TOOL-03-01])
+- Vendored third-party integrity verification in CI ([REQ-155], [TEST-70], [DEC-TOOL-08])
 
-## Phase 0 — Repo normalization & blueprint adoption
+### How to Run (Quickstart)
+> Use the repo’s existing presets. If unsure: `cmake --list-presets`.
 
-### Step 0.1 — Create canonical blueprint structure
-- Action:
-  - Create `/blueprint/` with the files emitted by blueprint v1.0 ([META-05-01..14]).
-  - Move existing repo `/blueprint/` to `/docs/legacy_blueprint/` ([DEC-PRE-INTAKE-01], [DEC-TOOL-01], [REQ-115]).
-- DoD:
-  - Canonical `/blueprint/blueprint_v1.0_ch*.md` exist.
-  - `/docs/legacy_blueprint/` contains previous docs.
-- Commands:
-  - N/A (file moves + commit).
-
-### Step 0.2 — Create governance scaffolding
-- Action:
-  - Add `/cr/` directory.
-  - Add CR template `cr_template.md` as `/cr/CR-0000_TEMPLATE.md`.
-  - Ensure `/blueprint/decision_log.md` is present and append-only ([REQ-138]).
-- DoD:
-  - A sample CR exists for “Adopt blueprint v1.0” referencing key decisions ([DEC-*]).
-- Commands:
-  - N/A.
+- Configure: `cmake --preset <dev>`
+- Build: `cmake --build --preset <dev>`
+- Tests: `ctest --preset <dev> --output-on-failure`
+- Example correctness run (SSIM implies PNG):
+  `vgcpu-benchmark --out <dir> --compare-ssim --ground-truth-backend skia --ssim-threshold 0.99` ([API-03-01..04], [DEC-API-07])
 
 ---
 
-## Phase 1 — Build system modernization (presets + gates)
-
-### Step 1.1 — Add CMake presets
-- Implements: [REQ-92..94], [DEC-BUILD-02], [REQ-106..109]
-- Action:
-  - Add `CMakePresets.json` with presets: `dev`, `release`, `ci`, `asan`, `ubsan`, `tsan`.
-  - Introduce cache variables: `VGCPU_WERROR`, `VGCPU_TIER1_ONLY`, `VGCPU_ENABLE_*SAN`.
-- DoD:
-  - `cmake --preset dev` configures on at least one platform locally.
-- Commands:
-  - `cmake --preset dev`
-  - `cmake --build --preset dev`
-
-### Step 1.2 — Add tier-1-only build mode
-- Implements: [REQ-95-02], [DEC-BUILD-03], [DEC-SCOPE-02]
-- Action:
-  - Implement `VGCPU_TIER1_ONLY` that forces optional `ENABLE_*` options OFF.
-  - Ensure Tier-1 defaults are ON when not in tier1-only mode ([DEC-BUILD-03]).
-- DoD:
-  - `cmake --preset ci` results in only Tier-1 backends being compiled/registered.
-- Commands:
-  - `cmake --preset ci`
-  - `cmake --build --preset ci`
-
-### Step 1.3 — Add dependency pinning enforcement
-- Implements: [REQ-99..101], [REQ-100], [TEST-37], [DEC-BUILD-05]
-- Action:
-  - Centralize all FetchContent versions/SHAs in `cmake/vgcpu_deps.cmake`.
-  - Replace any `master/main` refs with immutable tags/SHAs.
-  - Add configure-time linter: fail if any `GIT_TAG` is `master/main`.
-- DoD:
-  - Configure fails if an engineer reintroduces `master/main`.
-- Commands:
-  - `cmake --preset ci` (should succeed)
-  - (negative test) set a dep to `master` and verify failure.
-
-### Step 1.4 — Add gate targets: format/lint/temp-dbg/include checks/tests
-- Implements: [REQ-103..105], [REQ-116..122], [REQ-120], [DEC-TOOL-04]
-- Action:
-  - Add `.clang-format`, `.clang-tidy`, `.editorconfig`.
-  - Add tools scripts:
-    - `tools/check_no_temp_dbg.py` ([REQ-122])
-    - `tools/check_includes.py` ([DEC-TOOL-04])
-  - Wire CMake targets:
-    - `format`, `format_check`, `lint`, `check_no_temp_dbg`, `check_includes`, `tests`.
-- DoD:
-  - All targets exist and fail correctly on violations.
-- Commands:
-  - `cmake --preset ci`
-  - `cmake --build --preset ci --target format_check`
-  - `cmake --build --preset ci --target check_no_temp_dbg`
-  - `cmake --build --preset ci --target check_includes`
-  - `cmake --build --preset ci --target lint` (where enabled)
+## 2) Phases
+Phases are ordered to keep the project buildable and testable at every step. Each step includes:
+- **Refs:** stable IDs from the blueprint (implementers cite these IDs in code comments)
+- **Artifacts:** which files/dirs change
+- **Commands:** runnable build/test commands
+- **DoD:** “definition of done” for the step
 
 ---
 
-## Phase 2 — Establish a real test suite (CTest + unit/contract tests)
+## 3) Phase 0 — Repo Bootstrap & Tooling
 
-### Step 2.1 — Add /tests and CTest integration
-- Implements: [TEST-01..20], [TEST-25..48], [TEST-INTAKE-02], [TEST-DELTA-01]
-- Action:
-  - Create `/tests` with a unit test runner (Catch2/Doctest/GoogleTest—pick one via CR if needed).
-  - Add `enable_testing()` and `add_test()` registrations.
-  - Ensure CI’s `ctest` actually runs >0 tests.
-- DoD:
-  - `ctest --preset ci` runs and reports tests executed.
-- Commands:
-  - `cmake --preset ci`
-  - `cmake --build --preset ci`
-  - `ctest --preset ci --output-on-failure`
+### P0.S1 — Add third_party vendored dependencies
+- **Refs:** [REQ-149], [REQ-152], [REQ-155], [DEC-BUILD-20], [DEC-BUILD-21], [DEC-TOOL-08]
+- **Artifacts:**
+  - `third_party/stb/stb_image_write.h`
+  - `third_party/ssim_lomont/ssim_lomont.hpp` (vendored single-file SSIM implementation)
+  - `THIRD_PARTY_NOTICES.md` (add entries)
+- **Commands:**
+  - `cmake --preset <dev>`
+  - `cmake --build --preset <dev>`
+- **DoD:**
+  - Vendored files present with provenance header (upstream, date, license, revision/hash) ([BUILD-02-02b])
+  - Notices updated
+  - Build still succeeds
 
-### Step 2.2 — Implement correctness tests for PAL/assets/IR/stats/reporting
-- Implements: Ch3/Ch5/Ch6/Ch9 tests:
-  - PAL: [TEST-04], [TEST-05]
-  - Manifest: [TEST-06], [TEST-07]
-  - IR: [TEST-08], [TEST-09]
-  - Stats/harness: [TEST-15..17], [TEST-31..33]
-  - Reporting: [TEST-18..20], [TEST-22..24], [TEST-46]
-- Action:
-  - Add fixtures for manifest and minimal IR scenes (or use existing assets with a controlled subset).
-  - Add golden tests for CSV header order and required JSON keys.
-- DoD:
-  - Tier-1 tests pass on all three OSes in CI.
-- Commands:
-  - `ctest --preset ci --output-on-failure`
-
-### Step 2.3 — Hot-path and allocation tests (debug instrumentation)
-- Implements: [REQ-71-03], [DEC-MEM-08], [TEST-27], [TEST-28], [TEST-30]
-- Action:
-  - Add optional allocation instrumentation build flag `VGCPU_ENABLE_ALLOC_INSTRUMENTATION`.
-  - Implement `no_alloc_in_measured_loop_null` test for null backend.
-- DoD:
-  - In a debug/test preset, the no-allocation test passes.
-- Commands:
-  - `cmake --preset dev -DVGCPU_ENABLE_ALLOC_INSTRUMENTATION=ON` (if supported by preset)
-  - `cmake --build --preset dev`
-  - `ctest --preset dev --output-on-failure`
-
-### Step 2.4 — Concurrency + TSan
-- Implements: [REQ-87], [REQ-110-06], [TEST-35]
-- Action:
-  - Ensure multi-thread harness partitioning tests exist and pass.
-  - Add TSan CI job on Linux/Clang if toolchain supports it.
-- DoD:
-  - TSan job runs and is green, or an approved fallback stress job exists.
-- Commands:
-  - `cmake --preset tsan`
-  - `cmake --build --preset tsan`
-  - `ctest --preset tsan --output-on-failure`
+### P0.S2 — Wire CMake for artifacts module + hash verification
+- **Refs:** [BUILD-04-01..04], [TEST-70], [DEC-BUILD-22], [DEC-BUILD-24]
+- **Artifacts:**
+  - `src/artifacts/stb_image_write_impl.cpp` (only TU defining `STB_IMAGE_WRITE_IMPLEMENTATION`) ([BUILD-04-03])
+  - New target `vgcpu_artifacts` and link it into harness/app as needed
+  - CMake updates (`cmake/vgcpu_deps.cmake` + hash verification option)
+- **Commands:**
+  - `cmake --preset <dev> -DVGCPU_VERIFY_THIRD_PARTY_HASHES=ON`
+  - `cmake --build --preset <dev>`
+- **DoD:**
+  - No ODR issues with stb
+  - Configure fails if vendored hashes mismatch when verification ON ([TEST-70-01])
+  - Third-party includes treated as `SYSTEM` ([DEC-BUILD-22])
 
 ---
 
-## Phase 3 — Internal interfaces + layering cleanup
+## 4) Phase 1 — Core API Skeleton (Artifacts Module)
 
-### Step 3.1 — Introduce internal header tree and export/version macros
-- Implements: [DEC-API-05], [REQ-52], [API-02-10..11], [REQ-132]
-- Action:
-  - Add `include/vgcpu/internal/*.h` per Ch4 interface sketches.
-  - Generate `include/vgcpu/version.h` from CMake configure step.
-  - Add `-fvisibility=hidden` where applicable ([REQ-52-01]).
-- DoD:
-  - Build succeeds; internal headers are used by targets; no “public” installs.
-- Commands:
-  - `cmake --preset ci`
-  - `cmake --build --preset ci`
-  - `ctest --preset ci --output-on-failure`
+### P1.S1 — Add internal headers for naming, PNG writing, SSIM
+- **Refs:** [API-20..API-24], [MEM-10-04], [DEC-SCOPE-05]
+- **Artifacts:**
+  - `include/vgcpu/internal/artifacts/naming.h`
+  - `include/vgcpu/internal/artifacts/png_writer.h`
+  - `include/vgcpu/internal/artifacts/ssim.h`
+  - `include/vgcpu/internal/artifacts/image_view.h` (helper type; internal)
+- **Commands:**
+  - `cmake --build --preset <dev>`
+- **DoD:**
+  - Headers compile everywhere; no exceptions crossing module boundaries ([REQ-53])
+  - Functions are re-entrant/thread-safe by design ([API-09-01])
 
-### Step 3.2 — Adapter registry contracts + capability flags
-- Implements: [REQ-32..36], [DEC-CONC-05], [TEST-10..14], [TEST-34]
-- Action:
-  - Ensure registry enumerates only compiled backends.
-  - Add `supports_parallel_render` capability and enforce harness refusal.
-- DoD:
-  - `registry_contains_tier1` passes on all OSes.
-- Commands:
-  - `ctest --preset ci --output-on-failure`
-
-### Step 3.3 — Logging and schema-versioned reporting
-- Implements: [REQ-02], [REQ-40..44], [REQ-49], [REQ-133], [TEST-18..19], [TEST-46]
-- Action:
-  - Implement structured logging with console + JSONL sinks (outside measured loops).
-  - Add JSON/CSV schema version fields and validators.
-- DoD:
-  - Smoke run produces valid JSON/CSV; validators pass in CI.
-- Commands:
-  - `cmake --preset ci`
-  - `cmake --build --preset ci`
-  - `./build/ci/vgcpu-benchmark --help`
-  - `./build/ci/vgcpu-benchmark list`
-  - `./build/ci/vgcpu-benchmark run --backend null --reps 10 --warmup 1 --out build/ci/out`
-  - `python tools/validate_report_json.py build/ci/out/report.json`
-  - `python tools/validate_report_csv.py build/ci/out/report.csv`
+### P1.S2 — Extend CLI options and validation rules (no behavior yet)
+- **Refs:** [REQ-150], [REQ-153], [REQ-154], [API-03-01..09], [API-02]
+- **Artifacts:**
+  - `src/cli/cli_parser.{h,cpp}` (`CliOptions` new fields)
+  - `src/cli/main.cpp` (validation + help text)
+- **Commands:**
+  - `cmake --build --preset <dev>`
+  - `ctest --preset <dev> --output-on-failure` (existing CLI tests, if any)
+- **DoD:**
+  - New flags parse and validate:
+    - missing `--ground-truth-backend` when `--compare-ssim` => exit code 2 ([TEST-54-02])
+    - threshold out of range => exit code 2 ([TEST-54-01])
+  - `--compare-ssim` implies PNG artifacts internally (documented in `--help`) ([DEC-API-07])
 
 ---
 
-## Phase 4 — CI workflow updates & release packaging
+## 5) Phase 2 — Core Implementation (Hot Path + Post-benchmark Work)
 
-### Step 4.1 — CI uses presets only + add gate jobs
-- Implements: [REQ-106..109], [REQ-110], [REQ-127], [TEST-39]
-- Action:
-  - Update `.github/workflows/ci.yml` to use:
-    - `cmake --preset ci`
-    - `cmake --build --preset ci`
-    - `ctest --preset ci`
-  - Add jobs for `asan`, `ubsan`, and `tsan` (or fallback stress) on Linux.
-  - Add fast lint job: `lint_workflows_presets.py`.
-- DoD:
-  - CI green with new gates; no raw configure flags in workflows.
-- Commands (locally emulate):
-  - `python tools/lint_workflows_presets.py`
+### P2.S1 — Implement deterministic naming + filesystem-safe paths
+- **Refs:** [API-22..API-23], [MEM-10-04], [DEC-SCOPE-05]
+- **Artifacts:**
+  - `src/artifacts/naming.cpp`
+- **Commands:**
+  - `ctest --preset <dev> --output-on-failure`
+- **DoD:**
+  - Sanitization rules implemented exactly (allowed charset, collapse `_`, trim, truncation+hash) ([MEM-10-04])
+  - Unit tests for edge cases: spaces, unicode bytes, very long names ([TEST-53-01])
 
-### Step 4.2 — Packaging target and artifact validation
-- Implements: [REQ-111], [REQ-140], [REQ-101]
-- Action:
-  - Expose packaging script via `package` target.
-  - Ensure assets are included and Tier-1 release runs out-of-the-box.
-  - Add `THIRD_PARTY_NOTICES.md` and license collection.
-- DoD:
-  - `cmake --build --preset release --target package` produces an archive matching contract.
-- Commands:
-  - `cmake --preset release`
-  - `cmake --build --preset release --target package`
+### P2.S2 — Implement PNG writer (stb_image_write)
+- **Refs:** [REQ-149], [API-20], [DEC-BUILD-20], [DEC-ARCH-15]
+- **Artifacts:**
+  - `src/artifacts/png_writer.cpp`
+  - `src/artifacts/stb_image_write_impl.cpp`
+- **Commands:**
+  - `ctest --preset <dev> --output-on-failure`
+- **DoD:**
+  - Writes `<output_dir>/png/<scene>_<backend>.png` using `stbi_write_png`
+  - Fail-fast on write/encode errors when PNG enabled ([DEC-ARCH-15])
+  - Unit test validates PNG signature and dimensions ([TEST-53-02])
+
+### P2.S3 — Implement SSIM comparator wrapper (RGBA8 premul)
+- **Refs:** [REQ-151], [REQ-152], [API-21], [DEC-MEM-11], [DEC-ARCH-13]
+- **Artifacts:**
+  - `src/artifacts/ssim_compare.cpp` (+ vendored header usage)
+- **Commands:**
+  - `ctest --preset <dev> --output-on-failure`
+- **DoD:**
+  - Computes per-channel SSIM and deterministic aggregate mean ([API-21-03])
+  - Unit tests:
+    - identical buffers => ~1.0
+    - perturbed buffers => lower
+    - dimension mismatch => invalid-argument result ([TEST-53-03], [TEST-55-03])
+
+### P2.S4 — Harness integration: post-benchmark render + PNG artifacts (no SSIM yet)
+- **Refs:** [REQ-148], [REQ-150], [DEC-ARCH-11], [MEM-03-01], [MEM-09-01]
+- **Artifacts:**
+  - `src/harness/harness.cpp` (or equivalent harness entry)
+  - link `vgcpu_artifacts`
+- **Commands:**
+  - `vgcpu-benchmark --out <dir> --png ...`
+- **DoD:**
+  - PNG generation performed only in post-benchmark phase; never in measured loop ([TEST-55-04])
+  - Creates `<output_dir>/png/` only when needed ([ARCH-08-02])
+  - Writes one PNG per (scene, backend) with required naming
+
+### P2.S5 — Harness integration: SSIM comparison phase (ground truth first)
+- **Refs:** [REQ-151..REQ-154], [DEC-ARCH-12], [ARCH-04-02], [MEM-03-02], [API-02-04]
+- **Artifacts:**
+  - `src/harness/harness.cpp` (per-scene two-step ordering)
+  - error/exit-code plumbing to distinguish regression failures
+- **Commands:**
+  - `vgcpu-benchmark --out <dir> --compare-ssim --ground-truth-backend skia --ssim-threshold 0.99 ...`
+- **DoD:**
+  - For each scene: GT backend benchmarked and rendered first, GT buffer retained, then other backends compared ([ARCH-04-02])
+  - Missing GT backend fails early ([DEC-ARCH-12], [TEST-54-03])
+  - Any SSIM < threshold => exit code 4, reports + PNGs still written ([API-02-04], [TEST-72-03])
+
+### P2.S6 — Reporting schema extensions (PNG path + SSIM metrics)
+- **Refs:** [API-07-01..04], [DEC-SCOPE-03], [VER-15-01]
+- **Artifacts:**
+  - `src/reporting/*.cpp` (JSON + CSV writers)
+- **Commands:**
+  - Run one sample and inspect outputs in `<output_dir>`
+- **DoD:**
+  - JSON includes `schema_version` and new fields when enabled
+  - CSV includes schema marker and new columns
+  - Report rows include `png_path` and SSIM metadata when applicable
 
 ---
 
-## Phase 5 — Performance regression harness (coarse, non-flaky)
-
-### Step 5.1 — Define CI perf suite and baseline format
-- Implements: [REQ-143..146], [DEC-VER-04], [DEC-VER-05]
-- Action:
-  - Add `perf/`:
-    - `perf/scenes_ci.txt` (small scene ids list)
-    - `perf/baselines/<os>/<backend>/ci_suite.json` (committed baselines)
-  - Implement `tools/perf_diff.py`:
-    - compares p50/p90 per scene,
-    - ignores nondeterministic metadata,
-    - emits a summary diff.
-- DoD:
-  - Diff tool works on two sample reports and produces stable output.
-- Commands:
-  - `python tools/perf_diff.py --baseline perf/baselines/linux/null/ci_suite.json --current build/ci/out/report.json`
-
-### Step 5.2 — Add CI perf job (non-blocking initially)
-- Implements: [REQ-143], [REQ-146]
-- Action:
-  - Add a CI job that runs the CI perf suite and uploads artifacts.
-  - Start as “warn-only”; switch to gating after baselines settle.
-- DoD:
-  - Artifacts are uploaded and diff summary is visible.
-- Commands:
-  - N/A (CI).
+## 6) Phase 3 — Backends (Vulkan/Metal/DX12) (If applicable)
+- **DEC:** N/A for this project version ([DEC-ARCH-16], [REQ-07]).
+- **DoD:** No GPU backend work is performed.
 
 ---
 
-## Phase 6 — Documentation & migration notes
-
-### Step 6.1 — Developer quickstart and migration doc
-- Implements: [REQ-130], [REQ-147]
-- Action:
-  - Add `docs/developer_quickstart.md` and `docs/migration_v0.1_to_v0.2.md`.
-  - Document Tier-1 backends, presets, schema_version, and new gates.
-- DoD:
-  - A new contributor can build and run Tier-1 with only the quickstart.
-- Commands:
-  - Follow quickstart commands verbatim and verify.
+## 7) Phase 4 — Python Bindings (If requested)
+- **DEC:** N/A (no bindings requested).
+- **DoD:** No binding artifacts are created.
 
 ---
 
-## Global Definition of Done (for v0.2.0 milestone)
-All of the following must be true:
+## 8) Phase 5 — Hardening, Sanitizers, and CI
 
-- [DoD-01] Tier-1 builds and runs on Windows/macOS/Linux ([REQ-01], [REQ-110]).
-- [DoD-02] CI uses presets only and includes sanitizer jobs ([REQ-106..110]).
-- [DoD-03] Tests exist and run via CTest; CI `ctest` runs >0 tests ([TEST-01..48]).
-- [DoD-04] No floating dependencies in shipped presets ([REQ-99], [TEST-37]).
-- [DoD-05] TEMP-DBG markers are forbidden and gated ([REQ-121..122]).
-- [DoD-06] Reports are schema-versioned and validators pass ([REQ-48..50], [REQ-133], [REQ-124..125]).
-- [DoD-07] Release package is self-contained for Tier-1 ([REQ-17], [REQ-140]).
-- [DoD-08] All [REQ-*] are mapped to ≥1 [TEST-*] and ≥1 checklist task (validated by implementation_checklist.yaml generation rules).
+### P5.S1 — Add/extend tests for CLI, artifacts, harness ordering, and regression exit codes
+- **Refs:** [TEST-53..TEST-56], [TEST-72-03]
+- **Artifacts:**
+  - `tests/test_artifacts_png.cpp`
+  - `tests/test_ssim.cpp`
+  - `tests/test_cli_options.cpp`
+  - `tests/test_harness_artifacts_ssim.cpp` (integration)
+- **Commands:**
+  - `ctest --preset <dev> --output-on-failure`
+- **DoD:**
+  - All new tests pass locally and in CI presets
+  - Tests assert separation from measured loop (counters/hooks) ([MEM-09-02])
 
+### P5.S2 — Enable sanitizer and third-party hash verification coverage
+- **Refs:** [TOOL-03-01], [TEST-70], [TEST-71]
+- **Artifacts:**
+  - CI config updates (existing CI system), preset toggles
+- **Commands:**
+  - `cmake --preset <asan> -DVGCPU_VERIFY_THIRD_PARTY_HASHES=ON`
+  - `cmake --build --preset <asan>`
+  - `ctest --preset <asan> --output-on-failure`
+- **DoD:**
+  - At least one CI job runs SSIM-enabled invocation under ASan/UBSan ([TOOL-03-01])
+  - Hash verification gate is ON in CI and enforced ([TEST-70], [DEC-TOOL-08])
+
+---
+
+## 9) Phase 6 — Release Readiness
+
+### P6.S1 — Docs, help text, and changelog
+- **Refs:** [REQ-150..REQ-154], [DEC-API-07], [VER-12], [VER-15]
+- **Artifacts:**
+  - `README.md` (document flags + example)
+  - `CHANGELOG.md` (v0.2.0 entry)
+- **Commands:**
+  - `vgcpu-benchmark --help` (spot check)
+- **DoD:**
+  - Docs explain:
+    - `--png`, `--compare-ssim`, `--ground-truth-backend`, `--ssim-threshold`
+    - SSIM implies PNG artifacts ([DEC-API-07])
+    - Output paths and naming ([DEC-SCOPE-05])
+
+### P6.S2 — Hygiene sweep + final gates
+- **Refs:** [TEMP-DBG], [REQ-155]
+- **Artifacts:** repo-wide
+- **Commands:**
+  - `cmake --build --preset <dev> --target format_check` (if present)
+  - `ctest --preset <dev> --output-on-failure`
+- **DoD:**
+  - No `[TEMP-DBG]` markers remain
+  - All gates pass; CI green
+
+---
+
+## 10) Mapping to Implementation Checklist
+- [REQ-148..REQ-155] are mapped to concrete machine-executable tasks in `/blueprint/implementation_checklist.yaml`.
+- Each checklist task references the relevant IDs (without brackets) and has an explicit “done when” condition.
+
+---
+
+## 11) Notes
+- SSIM is performed on in-memory premultiplied RGBA buffers generated in the same run (no PNG decoding dependency) ([DEC-BUILD-24], [DEC-MEM-11]).
+- Artifact generation is explicitly out-of-band and should be considered a correctness/debugging aid, not part of performance measurement ([DEC-ARCH-11]).
+```

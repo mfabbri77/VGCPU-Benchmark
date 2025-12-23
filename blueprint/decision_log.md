@@ -1,24 +1,9 @@
 # Decision Log — VGCPU-Benchmark (Append-only)
 
-Date created: 2025-12-23 (Europe/Rome)
-Blueprint version: v1.0.0
-Product target milestone: v0.2.0 (see [DEC-META-01])
+Date created: 2025-12-23
+Maintainer: repository owner(s)
 
-> Rule: This file is **append-only**. Do not edit prior entries; add new decisions or superseding entries.
-
----
-
-## [DEC-PRE-INTAKE-01] Canonical /blueprint directory; move legacy docs
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Context:** The repo already contains `/blueprint/` legacy documents. This modernization requires `/blueprint/` to be the canonical source-of-truth with specific filenames.
-- **Decision:** Move existing `/blueprint/` to `/docs/legacy_blueprint/` and generate the canonical `/blueprint/` structure for this blueprint set.
-- **Rationale:** Avoid naming collisions and ensure deterministic governance artifacts.
-- **Alternatives:** (A) Rename the canonical blueprint directory (rejected; violates repo convention). (B) Delete legacy docs (rejected; lose context).
-- **Consequences:** Links/docs must be updated; contributors follow the new canonical `/blueprint/`.
-- **Affected IDs:** [DEC-ARCH-05], [DEC-TOOL-01], [REQ-115], [REQ-147]
-- **Verification:** CI/doc lint ensures canonical blueprint files exist; migration doc updated ([REQ-147]).
+> Rule: This file is **append-only**. Do not edit or reorder past entries. If a decision changes, add a new entry that supersedes the old one and links to it.
 
 ---
 
@@ -36,6 +21,44 @@ Product target milestone: v0.2.0 (see [DEC-META-01])
 
 ---
 
+## [DEC-PRE-INTAKE-01] Canonical /blueprint directory; move legacy docs
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Context:** The repo already contains `/blueprint/` legacy docs not matching the canonical structure and filenames required by this blueprint schema.
+- **Decision:** Move existing `/blueprint/` to `/docs/legacy_blueprint/` and create the canonical `/blueprint/` structure for this blueprint set.
+- **Rationale:** Avoid naming collisions and ensure deterministic governance artifacts.
+- **Alternatives:** (A) Rename the canonical blueprint directory (rejected; violates repo convention). (B) Delete legacy docs (rejected; lose context).
+- **Consequences:** Links/docs must be updated; contributors follow the new canonical `/blueprint/`.
+- **Affected IDs:** [DEC-ARCH-05], [DEC-TOOL-01], [REQ-115], [REQ-147]
+- **Verification:** CI/doc lint ensures canonical blueprint files exist; migration doc updated ([REQ-147]).
+
+---
+
+## [DEC-ARCH-05] Repo layout normalized to canonical targets
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Context:** The repo layout includes multiple experimental targets and varying include paths; enforce canonical layout for reproducibility.
+- **Decision:** Adopt `/src`, `/include`, `/tests`, `/tools`, `/examples`, `/docs`, `/blueprint` with CMake targets aligned to these directories.
+- **Rationale:** Deterministic structure enables automation and simplifies CI gates.
+- **Alternatives:** Keep ad-hoc layout (rejected; hard to maintain and automate).
+- **Consequences:** New modules must conform; includes are validated by tooling.
+- **Affected IDs:** [REQ-115], [REQ-120]
+- **Verification:** `check_includes` and build succeed across presets.
+
+---
+
+## [DEC-TOOL-01] Tooling/layout decision for legacy blueprint docs
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Context/Decision/Rationale:** See [DEC-PRE-INTAKE-01].
+- **Affected IDs:** [REQ-115]
+- **Verification:** Docs links and quickstart updated.
+
+---
+
 ## [DEC-SCOPE-01] C++ language standard baseline
 - **Date:** 2025-12-23
 - **Status:** Active
@@ -45,36 +68,50 @@ Product target milestone: v0.2.0 (see [DEC-META-01])
 - **Rationale:** Minimizes toolchain churn across OSes.
 - **Alternatives:** C++17; immediate C++23.
 - **Consequences:** Avoid C++23-only features; keep portability constraints.
-- **Affected IDs:** [REQ-89]
-- **Verification:** Configure presets compile with C++20 across CI matrix.
+- **Affected IDs:** [REQ-01-04], [BUILD-05]
+- **Verification:** CI builds using the defined compiler matrix without needing C++23 flags.
 
 ---
 
-## [DEC-SCOPE-02] Tier-1 backend list for CI stability
+## [DEC-SCOPE-02] Tier-1 backends are minimal (CI stability)
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Context:** Many optional backends add heavy/fragile dependencies. CI needs a stable minimum set.
-- **Decision:** Tier-1 backends: `null`, `plutovg`, `blend2d`. Others optional by default.
-- **Rationale:** Cross-platform reliability while still exercising meaningful CPU renderers.
-- **Alternatives:** Only `null+plutovg`; include Skia/Cairo/Qt as Tier-1.
-- **Consequences:** CI enforces Tier-1 only via preset/option ([VGCPU_TIER1_ONLY]).
-- **Affected IDs:** [DEC-BUILD-03], [REQ-110], [TEST-10]
-- **Verification:** `registry_contains_tier1` in CI on all OSes.
+- **Context:** Optional backends have heavy deps and variable platform support; CI must stay reliable.
+- **Decision:** Define Tier-1 backends as: `null`, `plutovg`, `blend2d`. Treat others as optional.
+- **Rationale:** Keep CI signal strong and prevent flakes due to optional backends.
+- **Alternatives:** Make Skia/Cairo Tier-1 (rejected; increases fragility and build times).
+- **Consequences:** CI jobs must at minimum test Tier-1; optional backends are best-effort.
+- **Affected IDs:** [REQ-121], [REQ-122]
+- **Verification:** CI runs Tier-1 build + smoke tests on all OSes.
 
 ---
 
-## [DEC-SCOPE-03] Reports are a versioned compatibility surface
+## [DEC-BUILD-03] Use vcpkg + vendoring where needed; avoid system packages
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Context:** Downstream tooling often parses CSV/JSON. Unversioned changes break consumers.
-- **Decision:** Treat CSV/JSON schemas as versioned; include `schema_version` and apply SemVer rules to schema-impacting changes.
-- **Rationale:** Predictable evolution and traceability.
-- **Alternatives:** Best-effort, undocumented schema changes.
-- **Consequences:** Schema validators + tests required; schema changes require CR.
-- **Affected IDs:** [REQ-48..50], [REQ-133], [TEST-24], [TEST-42], [TEST-43]
-- **Verification:** Schema validators run in CI on smoke artifacts ([REQ-125]).
+- **Context:** System packages vary widely across OSes/CI runners; reproducibility is critical.
+- **Decision:** Prefer vcpkg for C/C++ deps; vendor single-header/single-file libs when appropriate; avoid relying on system packages.
+- **Rationale:** Deterministic dependency resolution.
+- **Alternatives:** System packages (rejected), Conan (deferred).
+- **Consequences:** CI sets up vcpkg; dependency updates are explicit.
+- **Affected IDs:** [REQ-103], [REQ-104], [REQ-105]
+- **Verification:** Clean builds on fresh runners succeed via presets.
+
+---
+
+## [DEC-SCOPE-03] Reports are a compatibility surface; schema version is explicit
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Context:** Downstream tooling consumes CSV/JSON. Silent schema drift breaks users.
+- **Decision:** Treat report schemas as versioned compatibility surfaces; include explicit schema version markers.
+- **Rationale:** Supports deterministic tooling upgrades.
+- **Alternatives:** Best-effort schema changes (rejected).
+- **Consequences:** Schema changes require version bumps + migration notes.
+- **Affected IDs:** [REQ-86], [REQ-87], [REQ-88]
+- **Verification:** Schema tests run in CI on smoke artifacts ([REQ-125]).
 
 ---
 
@@ -96,135 +133,13 @@ Product target milestone: v0.2.0 (see [DEC-META-01])
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Context:** Headers and targets are currently structured as internal implementation pieces.
-- **Decision:** Treat `vgcpu_*` libs as internal; no stable external ABI promise.
-- **Rationale:** Enables iteration without ABI constraints.
-- **Alternatives:** Publish an SDK; provide stable C ABI.
-- **Consequences:** Enforce include/visibility boundaries to avoid accidental public API.
-- **Affected IDs:** [DEC-API-01], [REQ-120], [REQ-52]
-- **Verification:** Include linter and visibility flags in CI.
-
----
-
-## [DEC-ARCH-02] Single-process, single-executable architecture
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Context:** Plugin architectures add ABI/security/distribution complexity.
-- **Decision:** Keep compiled-in backends; no runtime plugin DLL/SO in v0.2.0.
-- **Rationale:** Simpler cross-platform distribution.
-- **Alternatives:** Runtime plugins per backend.
-- **Consequences:** Adding backends requires rebuild; feature flags remain build-time.
-- **Affected IDs:** [REQ-07], [BUILD-03]
-- **Verification:** Release artifacts run without external plugin installs.
-
----
-
-## [DEC-ARCH-03] Core must not depend on backend libraries
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Context:** Core (PAL/IR/assets) must be testable without heavyweight deps.
-- **Decision:** `vgcpu_core` has zero backend dependencies.
-- **Rationale:** Portability and testability.
-- **Alternatives:** Allow backends to leak into core.
-- **Consequences:** Adapter boundary must be expressive and isolated.
-- **Affected IDs:** [REQ-120-01], [DEC-TOOL-04]
-- **Verification:** Include linter blocks forbidden include patterns.
-
----
-
-## [DEC-ARCH-04] Rust adapters optional by default
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Context:** Rust adds toolchain complexity and increases CI variability.
-- **Decision:** Rust-backed adapters remain optional (not Tier-1) unless promoted via CR.
-- **Rationale:** Keep minimum build stable.
-- **Alternatives:** Make Rust adapters Tier-1.
-- **Consequences:** Separate CI job for Rust; stable Rust pinning required.
-- **Affected IDs:** [DEC-BUILD-06], [REQ-102]
-- **Verification:** Optional CI job; build succeeds with Rust disabled.
-
----
-
-## [DEC-ARCH-05] Canonical repo layout adopted; legacy blueprint moved
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Context/Decision/Rationale:** See [DEC-PRE-INTAKE-01].
-- **Affected IDs:** [REQ-115]
-- **Verification:** Repo structure checks in CI and docs.
-
----
-
-## [DEC-ARCH-06] Distribution policy for optional runtime deps
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Context:** Some optional backends rely on runtime DLLs/prebuilts.
-- **Decision:** Tier-1 backends must not require extra runtime installs; optional backends bundled only if legally/reliably possible or disabled in Tier-1 releases.
-- **Rationale:** Predictable out-of-box execution.
-- **Alternatives:** Bundle everything always; require users to install runtime deps.
-- **Consequences:** Provide tiered release presets/artifacts.
-- **Affected IDs:** [REQ-17], [REQ-140]
-- **Verification:** Tier-1 release smoke run passes on clean machines/CI runners.
-
----
-
-## [DEC-ARCH-07] IR immutability after load
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Context:** Cross-backend comparability and caching safety.
-- **Decision:** `SceneIR` and `PreparedScene` are immutable; adapters may prepare backend-specific resources without mutating shared IR.
-- **Rationale:** Prevent cross-backend contamination.
-- **Alternatives:** Let adapters mutate IR.
-- **Consequences:** Adapter API includes a `Prepare()` stage; ownership rules tightened.
-- **Affected IDs:** [REQ-66], [REQ-83]
-- **Verification:** Concurrency tests + code review; no mutable shared state.
-
----
-
-## [DEC-ARCH-08] Default fail-on-missing-scene; optional continue
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Context:** Benchmark comparability expects a complete scene set.
-- **Decision:** Default is fail run if any requested scene cannot load/prepare; provide `--continue-on-error` for partial runs.
-- **Rationale:** Avoid silent partial benchmarks.
-- **Alternatives:** Skip missing scenes by default.
-- **Consequences:** CLI option and report error records required.
-- **Affected IDs:** [REQ-24], [REQ-81-02]
-- **Verification:** CLI tests for both modes; report contains errors.
-
----
-
-## [DEC-ARCH-09] Status/Result as primary error transport
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Context:** Need stable error codes and predictable control flow.
-- **Decision:** Use `Status/Result<T>` across VGCPU boundaries; catch/convert any exceptions at boundaries.
-- **Rationale:** Deterministic error handling and reporting.
-- **Alternatives:** Exceptions end-to-end.
-- **Consequences:** Interfaces are noexcept where practical; error codes are append-only.
-- **Affected IDs:** [DEC-API-03], [REQ-53], [REQ-54]
-- **Verification:** Unit tests for stable error codes; no-throw boundaries.
-
----
-
-## [DEC-ARCH-10] Single-thread default; multi-thread opt-in
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Context:** Benchmark noise and comparability.
-- **Decision:** Default `--threads=1`; multi-thread is opt-in and treated as separate benchmark dimension.
-- **Rationale:** Reduce noise and complexity.
-- **Alternatives:** Auto-parallelize by core count.
-- **Consequences:** Reports/logs must record thread count prominently.
-- **Affected IDs:** [DEC-API-04], [REQ-75], [REQ-145]
-- **Verification:** Concurrency tests and CLI contract tests.
+- **Context:** Static linking into a CLI; no external consumers promised.
+- **Decision:** Treat `vgcpu_*` libs as internal implementation, not a stable SDK/ABI.
+- **Rationale:** Maintain velocity and avoid ABI lock-in.
+- **Alternatives:** Publish an SDK and guarantee ABI (rejected).
+- **Consequences:** Headers use `include/vgcpu/internal/**`; no install target by default.
+- **Affected IDs:** [DEC-API-02], [REQ-120]
+- **Verification:** Include-lint and visibility rules enforce boundary; no accidental exports.
 
 ---
 
@@ -247,54 +162,135 @@ Product target milestone: v0.2.0 (see [DEC-META-01])
 - **Status:** Active
 - **Introduced In:** v1.0.0
 - **Context:** Static linking into CLI; no external SDK promise.
-- **Decision:** No ABI stability guarantee across minor; still use visibility/export macros for hygiene.
-- **Rationale:** Flexibility.
-- **Alternatives:** Stable ABI; C ABI.
-- **Consequences:** Maintain exports as future-proofing only.
-- **Affected IDs:** [REQ-52]
-- **Verification:** Builds across OSes; no ABI check required.
+- **Decision:** No ABI stability guarantee across minor; still use visibility/export macros consistently.
+- **Rationale:** Avoid accidental ABI commitments while keeping code hygiene.
+- **Alternatives:** Strict ABI guarantees (rejected), no export macros (rejected).
+- **Consequences:** Any future shared library must revisit ABI rules via CR.
+- **Affected IDs:** [DEC-ARCH-01], [REQ-120]
+- **Verification:** Build artifacts show limited exported symbols; symbol checks in CI.
 
 ---
 
-## [DEC-API-03] No exceptions across VGCPU boundaries
+## [DEC-ARCH-02] Asset manifest is the single source of truth for scenes
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Context:** Exceptions crossing module/FFI boundaries are unsafe and hard to report.
-- **Decision:** No exceptions as a contract across VGCPU boundaries; convert at boundaries.
-- **Rationale:** Safety and determinism.
-- **Alternatives:** Exceptions end-to-end.
-- **Consequences:** Explicit error codes and Status/Result usage everywhere.
-- **Affected IDs:** [REQ-53], [REQ-54], [REQ-58]
-- **Verification:** Tests assert stable error codes; adapter boundary catches exceptions.
+- **Decision:** Use `assets/manifest.json` to enumerate available scenes and metadata.
+- **Rationale:** Deterministic scene selection and stable IDs.
+- **Alternatives:** Directory scan at runtime (rejected; nondeterministic ordering).
+- **Consequences:** Adding/removing scenes requires manifest update.
+- **Affected IDs:** [REQ-62], [REQ-63]
+- **Verification:** Tests validate manifest consistency.
 
 ---
 
-## [DEC-API-04] Default thread-safety contract
+## [DEC-ARCH-03] Canonical render output format = RGBA8 premultiplied
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Context:** Many backends are not thread-safe; harness must remain safe by default.
-- **Decision:** Adapters are not thread-safe unless declared; harness uses per-thread adapter instances.
-- **Rationale:** Prevent races and undefined behavior.
-- **Alternatives:** Share adapter across threads.
-- **Consequences:** Registry exposes capability flags; harness refuses unsupported parallel runs.
-- **Affected IDs:** [DEC-CONC-05], [REQ-82]
-- **Verification:** [TEST-34] backend refuses parallel if unsupported.
+- **Decision:** Adapter outputs are normalized to RGBA8 premultiplied alpha.
+- **Rationale:** Unified pipeline for reporting and future correctness checks.
+- **Alternatives:** BGRA; floating-point; separate alpha.
+- **Consequences:** Adapters must convert internally if needed.
+- **Affected IDs:** [REQ-69], [REQ-70]
+- **Verification:** Adapter conformance tests for known patterns.
 
 ---
 
-## [DEC-API-05] Header structure: internal include tree
+## [DEC-ARCH-04] Statistics computed in harness (not backend-specific)
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Context:** Need deterministic internal module boundaries.
-- **Decision:** Centralize internal headers under `include/vgcpu/internal/` and keep `src/` private headers private.
-- **Rationale:** Clear layering and tooling enforcement.
-- **Alternatives:** Keep headers in `src/` and export include dirs publicly.
-- **Consequences:** CMake include dirs become target-scoped and private by default.
-- **Affected IDs:** [REQ-18], [REQ-120]
-- **Verification:** Include linter + build succeeds.
+- **Decision:** Collect raw timings and compute summary stats in the harness.
+- **Rationale:** Comparable results across backends.
+- **Alternatives:** Backend-provided stats (rejected).
+- **Consequences:** Harness owns measurement policy; backends focus on rendering.
+- **Affected IDs:** [REQ-04], [REQ-05]
+- **Verification:** Stats unit tests.
+
+---
+
+## [DEC-ARCH-06] Output directory created on demand; fail fast on errors
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Decision:** Create output directory if missing; treat failures as fatal.
+- **Affected IDs:** [REQ-84], [REQ-85]
+- **Verification:** Integration tests simulate unwritable paths.
+
+---
+
+## [DEC-ARCH-07] Structured logging as JSONL option
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Decision:** Support JSON Lines logging mode for CI and machine parsing.
+- **Affected IDs:** [REQ-02-02b], [REQ-02-01]
+- **Verification:** Log schema test and sample artifact validation.
+
+---
+
+## [DEC-ARCH-08] Prefer monotonic clocks; abstract platform timing
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Decision:** Use a platform abstraction for monotonic timing.
+- **Affected IDs:** [REQ-04-03]
+- **Verification:** Unit tests compare monotonic progression; platform builds.
+
+---
+
+## [DEC-ARCH-09] Adapter registry IDs are stable and lowercase
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Decision:** Backend IDs are lowercase and stable; CLI uses these IDs.
+- **Affected IDs:** [REQ-06-01], [API-06-02]
+- **Verification:** Registry uniqueness check and CLI listing test.
+
+---
+
+## [DEC-ARCH-10] Single-thread default; multi-thread opt-in
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Context:** Benchmark noise and comparability.
+- **Decision:** Default `--threads=1`; multi-thread is opt-in and treated as separate benchmark dimension.
+- **Rationale:** Reduce noise and complexity.
+- **Alternatives:** Auto-parallelize by core count.
+- **Consequences:** Reports/logs must record thread count prominently.
+- **Affected IDs:** [DEC-API-04], [REQ-75], [REQ-145]
+- **Verification:** Concurrency tests and CLI contract tests.
+
+---
+
+## [DEC-API-03] Error model = Status/Result, no exceptions across boundaries
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Decision:** Use `Status` / `Result<T>`; exceptions are not allowed across module boundaries.
+- **Affected IDs:** [REQ-53]
+- **Verification:** Code review + compile flags; tests assert error codes.
+
+---
+
+## [DEC-API-04] CLI flag naming: kebab-case long flags
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Decision:** Use `--long-flag` names; avoid short flags except `-h`/`--help`.
+- **Affected IDs:** [REQ-06], [REQ-76]
+- **Verification:** CLI help snapshot tests.
+
+---
+
+## [DEC-API-05] Include boundary check: prevent internal headers from leaking
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.0.0
+- **Decision:** Add an include boundary check gate.
+- **Affected IDs:** [REQ-120]
+- **Verification:** `check_includes` target in CI.
 
 ---
 
@@ -318,227 +314,157 @@ Product target milestone: v0.2.0 (see [DEC-META-01])
 - **Introduced In:** v1.0.0
 - **Decision:** Use `FixedString<N>` for error messages and short metadata to avoid heap allocation in error/hot paths.
 - **Affected IDs:** [REQ-53-03]
-- **Verification:** Unit tests; allocation instrumentation shows no alloc in measured loop.
+- **Verification:** Unit tests; allocation audits.
 
 ---
 
-## [DEC-MEM-02] Preallocated per-scene samples vector
+## [DEC-MEM-02] Pre-allocate render buffers; no measured-loop resizing
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Allocate `std::vector<uint64_t>` sized to `reps` before measurement; fill by index.
-- **Affected IDs:** [REQ-62], [REQ-77]
-- **Verification:** [TEST-28] and [TEST-32].
+- **Decision:** Allocate/resize render buffers before warmup/measurement; reuse across iterations.
+- **Affected IDs:** [REQ-12], [REQ-69]
+- **Verification:** Hot-path instrumentation tests; code review.
 
 ---
 
-## [DEC-MEM-03] In-place sort for percentile computation
+## [DEC-MEM-03] Use std::vector for pixel buffers; spans for views
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Sort the preallocated samples vector in-place after measurement for deterministic percentiles.
-- **Affected IDs:** [REQ-63], [REQ-38]
-- **Verification:** [TEST-15] stats known-samples test.
+- **Decision:** Store pixels in `std::vector<uint8_t>`; pass as `std::span<const uint8_t>` to helpers.
+- **Affected IDs:** [REQ-69], [REQ-70]
+- **Verification:** Unit tests validate sizes and lifetimes.
 
 ---
 
-## [DEC-MEM-04] Default stride and alignment policy
+## [DEC-MEM-04] Keep IR data immutable after load
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Default stride `width*4`, align buffer base pointer to 64 bytes best-effort.
-- **Affected IDs:** [REQ-64], [REQ-65]
-- **Verification:** [TEST-30] best-effort alignment test.
+- **Decision:** Treat loaded IR and prepared scenes as immutable to simplify concurrency and determinism.
+- **Affected IDs:** [REQ-03]
+- **Verification:** Const-correctness checks; tests.
 
 ---
 
-## [DEC-MEM-05] Harness owns SceneBundle; avoid shared_ptr overhead
+## [DEC-MEM-05] Avoid per-iteration logging and allocation
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Use a harness-owned container of `{meta, ir, prepared}` and pass `const&` to adapters.
-- **Affected IDs:** [REQ-61], [REQ-66]
-- **Verification:** Lifetime tests ([TEST-29]) and TSan smoke.
+- **Decision:** No per-iteration logs/allocations in measured loops; only aggregate outputs.
+- **Affected IDs:** [REQ-02-03], [REQ-12]
+- **Verification:** Performance hygiene tests.
 
 ---
 
-## [DEC-MEM-06] Compact prepared command stream representation
+## [DEC-MEM-06] Normalize paths in reports to avoid leaking user info
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Normalize to a compact `Cmd{u16,u16,u32}` stream plus payload arrays (SoA).
-- **Affected IDs:** [REQ-67]
-- **Verification:** IR decode/prepare unit tests ([TEST-08]) and adapter prepare tests.
+- **Decision:** Avoid reporting full user home paths by default.
+- **Affected IDs:** [REQ-15-01]
+- **Verification:** Report snapshot tests.
 
 ---
 
-## [DEC-MEM-07] Monotonic arena for preparation allocations
+## [DEC-MEM-07] Store schema_version in JSON; CSV header marker
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Use an internal bump allocator `Arena` for scene preparation allocations; none in measured loop.
-- **Affected IDs:** [REQ-68], [TEST-25], [TEST-26]
-- **Verification:** Arena unit tests + measured-loop alloc test.
+- **Decision:** JSON includes `schema_version`; CSV includes a header marker or dedicated field.
+- **Affected IDs:** [DEC-SCOPE-03], [REQ-86..88]
+- **Verification:** Schema tests on generated artifacts.
 
 ---
 
-## [DEC-MEM-08] Allocation instrumentation in non-Release builds
+## [DEC-MEM-08] Sanitize user-provided names before filesystem use
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Optional debug allocation counters assert zero allocations during measured loop.
-- **Affected IDs:** [REQ-71-03], [TEST-27]
-- **Verification:** Null-backend no-alloc test on supported platforms.
+- **Decision:** Sanitize scene/backend identifiers for filesystem-safe output names.
+- **Affected IDs:** [REQ-84], [REQ-85]
+- **Verification:** Unit tests for sanitization.
 
 ---
 
-## [DEC-MEM-09] Default benchmark surface size
+## [DEC-MEM-09] Limit artifact filename component length; add hash on truncation
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Default surface size is 1024×1024 (CLI override allowed).
-- **Affected IDs:** [REQ-72]
-- **Verification:** CLI run reports include dimensions; smoke test covers defaults.
+- **Decision:** If sanitized name exceeds max length, truncate and append stable hash suffix.
+- **Affected IDs:** [REQ-84], [REQ-85]
+- **Verification:** Unit tests.
 
 ---
 
-## [DEC-CONC-01] Multi-thread mode parallelizes reps within a scene
+## [DEC-CONC-01] Single orchestrator thread; backends are black boxes
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** For `threads>1`, parallelize repetition slices for a single scene; keep scenes serial and ordered.
-- **Affected IDs:** [REQ-75], [REQ-76]
-- **Verification:** [TEST-33] stable report order.
+- **Decision:** Harness orchestration is single-threaded by default; backend threading is opaque.
+- **Affected IDs:** [REQ-75]
+- **Verification:** Determinism tests and log order checks.
 
 ---
 
-## [DEC-CONC-02] Do not start empty-slice workers when reps < threads
+## [DEC-CONC-02] Parallel benchmarking requires a dedicated CR
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Skip workers with empty slices.
-- **Affected IDs:** [REQ-77]
-- **Verification:** Partition test ([TEST-31]) covers edge cases.
+- **Decision:** Do not add parallel case execution without explicit CR and determinism analysis.
+- **Affected IDs:** [REQ-75], [REQ-145]
+- **Verification:** Review policy.
 
 ---
 
-## [DEC-CONC-03] Use a start-alignment barrier per scene
+## [DEC-CONC-03] No cancellation/timeouts in baseline
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Align worker start with a barrier outside measured loop.
-- **Affected IDs:** [REQ-79], [REQ-78]
-- **Verification:** Concurrency stress tests; no locks in measured loop.
+- **Decision:** No run cancellation/timeouts; user controls duration via CLI.
+- **Affected IDs:** [REQ-76]
+- **Verification:** N/A (policy).
 
 ---
 
-## [DEC-CONC-04] Use std::jthread-based worker pool
+## [DEC-CONC-04] Logging is thread-safe; emitted from orchestrator by default
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Implement worker pool with `std::jthread` and bounded task queue.
-- **Affected IDs:** [REQ-80], [REQ-81]
-- **Verification:** Clean shutdown tests; no thread leaks in CI.
+- **Decision:** Logging is thread-safe, but harness emits events from orchestrator thread by default.
+- **Affected IDs:** [REQ-02]
+- **Verification:** Stress tests.
 
 ---
 
-## [DEC-CONC-05] Add capability flag supports_parallel_render
+## [DEC-CONC-05] Deterministic ordering for scenes/backends
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Registry exposes `supports_parallel_render`; harness refuses `threads>1` otherwise.
-- **Affected IDs:** [REQ-82], [TEST-34]
-- **Verification:** Backend refusal test passes.
+- **Decision:** Stable ordering for scenes and backends; explicit ordering is logged.
+- **Affected IDs:** [REQ-13]
+- **Verification:** Ordering tests.
 
 ---
 
-## [DEC-CONC-06] No shared caches in v0.2.0
+## [DEC-CONC-06] Prefer std::chrono::steady_clock behind PAL
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Avoid global caches in VGCPU layers for v0.2.0.
-- **Affected IDs:** [REQ-83]
-- **Verification:** Code review + TSan job; no shared mutable singletons.
+- **Decision:** Use steady clock abstraction; no wall-clock time for measurements.
+- **Affected IDs:** [REQ-04-03]
+- **Verification:** Platform tests.
 
 ---
 
-## [DEC-CONC-07] Best-effort pinning implementation policy
+## [DEC-CONC-07] TSan is best-effort; allow curated exclusions
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Implement pinning best-effort using platform APIs; macOS limited support.
-- **Affected IDs:** [REQ-86]
-- **Verification:** Logging reports pinning success/failure; no crash if unsupported.
-
----
-
-## [DEC-BUILD-01] Preserve existing ENABLE_* backend option names
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Decision:** Keep existing CMake option names to avoid breaking workflows/docs.
-- **Affected IDs:** [REQ-96]
-- **Verification:** Old options still configure; presets toggle tier-1 only.
-
----
-
-## [DEC-BUILD-02] Preset naming and preset-only CI contract
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Decision:** Standardize on `dev/release/ci/asan/ubsan/tsan` presets; CI uses presets only.
-- **Affected IDs:** [REQ-92], [REQ-106..109], [TEST-39]
-- **Verification:** Workflow preset-linter passes; CI builds from presets only.
-
----
-
-## [DEC-BUILD-03] Backend defaults + Tier-1-only CI mode
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Decision:** In `ci`, force optional backends OFF; local defaults may be broader for dev convenience.
-- **Affected IDs:** [REQ-95-02], [REQ-110]
-- **Verification:** CI matrix builds reliably with Tier-1-only config.
-
----
-
-## [DEC-BUILD-04] Do not combine sanitizers in presets
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Decision:** Separate ASan/UBSan/TSan presets/jobs.
-- **Affected IDs:** [REQ-97], [REQ-110-04..06]
-- **Verification:** Sanitizer jobs stable and platform-appropriate.
-
----
-
-## [DEC-BUILD-05] Keep FetchContent; enforce deterministic pins
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Decision:** Continue using FetchContent but reject floating branches in shipped presets.
-- **Affected IDs:** [REQ-99], [REQ-100], [TEST-37]
-- **Verification:** Configure-time check fails on `master/main`.
-
----
-
-## [DEC-BUILD-06] Pin Rust toolchain to stable (no floating nightly)
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Decision:** Use a pinned stable Rust toolchain version and `--locked` builds.
-- **Affected IDs:** [REQ-102]
-- **Verification:** Optional Rust CI job uses pinned toolchain and `Cargo.lock`.
-
----
-
-## [DEC-BUILD-07] Cache policy for FetchContent + Rust builds
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Decision:** Cache `_deps` and Rust `target` with keys including dep/version files.
-- **Affected IDs:** [REQ-110], [TEST-39]
-- **Verification:** CI cache hit rates improve; builds remain correct.
+- **Decision:** Run TSan on curated configs; some third-party backends may be excluded.
+- **Affected IDs:** [REQ-126]
+- **Verification:** CI TSan job.
 
 ---
 
@@ -552,53 +478,43 @@ Product target milestone: v0.2.0 (see [DEC-META-01])
 
 ---
 
-## [DEC-TOOL-01] Tooling/layout decision for legacy blueprint docs
+## [DEC-TOOL-02] clang-format is the formatting source-of-truth
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Context/Decision/Rationale:** See [DEC-PRE-INTAKE-01].
-- **Affected IDs:** [REQ-115]
-- **Verification:** Docs links and quickstart updated.
+- **Decision:** Enforce clang-format on all C/C++ sources in CI.
+- **Affected IDs:** [REQ-112]
+- **Verification:** `format`/`format_check` targets in CI.
 
 ---
 
-## [DEC-TOOL-02] clang-format style baseline
+## [DEC-TOOL-03] clang-tidy is optional locally; required in CI on curated configs
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Adopt LLVM-based `.clang-format` with explicit overrides (e.g., column limit 100).
-- **Affected IDs:** [REQ-116]
-- **Verification:** `format_check` target enforced in CI.
+- **Decision:** Run clang-tidy in CI on curated presets; keep it optional locally.
+- **Affected IDs:** [REQ-113], [REQ-126]
+- **Verification:** CI tidy job.
 
 ---
 
-## [DEC-TOOL-03] Pragmatic clang-tidy checks set
+## [DEC-TOOL-04] TEMP debug code policy is strict; CI fails with markers
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Enable a low-churn subset of checks; exclude third-party sources from analysis.
-- **Affected IDs:** [REQ-118], [REQ-119]
-- **Verification:** `lint` job runs on Linux; fails on new warnings in CI.
+- **Decision:** `[TEMP-DBG]` markers are the only acceptable TEMP debug mechanism; CI fails if any remain.
+- **Affected IDs:** [REQ-114]
+- **Verification:** `check_temp_dbg` gate.
 
 ---
 
-## [DEC-TOOL-04] Include-boundary linter via tools/check_includes.py
+## [DEC-TOOL-05] Observability uses structured logs and run metadata
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Enforce layering via a custom include linter integrated as a CMake gate target.
-- **Affected IDs:** [REQ-120], [TEST-41]
-- **Verification:** Include violation fixtures fail deterministically.
-
----
-
-## [DEC-TOOL-05] Lightweight internal logging framework
-- **Date:** 2025-12-23
-- **Status:** Active
-- **Introduced In:** v1.0.0
-- **Decision:** Implement minimal internal logging with console + JSONL sinks; keep schema stable.
-- **Affected IDs:** [REQ-02], [REQ-123]
-- **Verification:** JSONL validator tool; smoke run produces valid logs.
+- **Decision:** Structured logs include run metadata and outcomes; JSONL option supported.
+- **Affected IDs:** [REQ-02]
+- **Verification:** Log schema tests.
 
 ---
 
@@ -626,9 +542,9 @@ Product target milestone: v0.2.0 (see [DEC-META-01])
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** `schema_version` is a monotonic integer, independent from product SemVer.
-- **Affected IDs:** [REQ-133]
-- **Verification:** Schema validators and tests enforce presence and bump rules.
+- **Decision:** `schema_version` increments monotonically and is independent of product version.
+- **Affected IDs:** [DEC-SCOPE-03]
+- **Verification:** Schema tests.
 
 ---
 
@@ -646,29 +562,265 @@ Product target milestone: v0.2.0 (see [DEC-META-01])
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Gate on ≥15% p50/p90 regressions with confirmation rerun; warn at 10–15%.
-- **Affected IDs:** [REQ-143..146]
-- **Verification:** Perf diff tooling + policy tests ([TEST-48]).
+- **Decision:** Perf gates in CI detect only large regressions; rerun confirmation required.
+- **Affected IDs:** [DEC-SCOPE-04], [REQ-143..146]
+- **Verification:** Perf tooling tests.
 
 ---
 
-## [DEC-VER-05] Store perf baselines in-repo for v0.2.0
+## [DEC-VER-05] Dependency update cadence is explicit via CR
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Keep baselines under `/perf/baselines/**` and require CR to update.
-- **Affected IDs:** [REQ-144]
-- **Verification:** CI compares against committed baseline; baseline update PRs require review.
+- **Decision:** Dependency bumps require a CR, pinned revisions, and license verification.
+- **Affected IDs:** [REQ-104], [REQ-105]
+- **Verification:** CI build and notice checks.
 
 ---
 
-## [DEC-VER-06] Migration expectations for v0.2.0
+## [DEC-VER-06] Security fixes can bypass normal cadence but not CI gates
 - **Date:** 2025-12-23
 - **Status:** Active
 - **Introduced In:** v1.0.0
-- **Decision:** Treat legacy blueprint move and additive schema_version fields as non-breaking unless behavior changes; review any CLI/CSV order changes as potentially breaking.
-- **Affected IDs:** [REQ-147]
-- **Verification:** Migration doc produced; CLI/schema tests enforce stability.
+- **Decision:** Security hotfixes may be expedited, but must still pass CI and update notices.
+- **Affected IDs:** [REQ-106]
+- **Verification:** Release checklist.
 
 ---
 
+---
+
+## [DEC-SCOPE-05] PNG artifact naming: <scene>_<backend>.png in a flat folder
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** PNG artifacts are produced per (scene, backend). Per-backend subfolders were explicitly rejected; collisions must be avoided.
+- **Decision:** Write artifacts to `<output_dir>/png/` using filename `<scene_sanitized>_<backend_id>.png`.
+- **Rationale:** Flat folder is convenient for browsing/globbing while backend suffix prevents collisions.
+- **Alternatives:** (A) Per-backend subfolders (rejected by user). (B) `<backend>__<scene>.png` (less consistent with requested naming).
+- **Consequences:** Backend ids must be unique and stable; sanitization must be deterministic.
+- **Affected IDs:** [REQ-148], [REQ-150], [ARCH-06-04], [API-06-02]
+- **Verification:** Integration test asserts expected filenames and that multiple backends do not collide.
+
+---
+
+## [DEC-ARCH-11] Post-benchmark render for artifacts (no timing contamination)
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** Encoding PNG and computing SSIM involve I/O and CPU work that would distort benchmark timings if performed in measured loops.
+- **Decision:** Perform a separate untimed render pass after timings are computed, and use that buffer for PNG + SSIM.
+- **Rationale:** Ensures measured results reflect backend render cost only, not artifact/verification overhead.
+- **Alternatives:** (A) Reuse the last measured-iteration buffer (risk: measured-loop side effects and encoding overlap). (B) Disable artifacts whenever benchmarking (does not meet requirements).
+- **Consequences:** Backends must support an extra render; harness must clearly separate phases.
+- **Affected IDs:** [REQ-148], [REQ-151], [MEM-01-02], [TEST-55-04]
+- **Verification:** Tests assert artifact counters remain zero during measured iterations and become non-zero only after measurement.
+
+---
+
+## [DEC-ARCH-12] SSIM requires built/enabled ground truth backend; fail if missing
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** SSIM comparisons require a ground truth image; silently skipping comparisons is misleading.
+- **Decision:** If `--compare-ssim` is enabled and the specified `--ground-truth-backend` is not available/enabled, fail before running comparisons.
+- **Rationale:** Prevents false confidence and makes configuration problems obvious.
+- **Alternatives:** Skip comparisons with warning (rejected; hides failures).
+- **Consequences:** CLI must validate backend availability early and provide a list of valid backend ids.
+- **Affected IDs:** [REQ-153], [API-03-05b], [ARCH-04-02], [TEST-54-03]
+- **Verification:** CLI contract test: missing GT backend → non-zero exit with actionable message.
+
+---
+
+## [DEC-ARCH-13] Lightweight vendored SSIM implementation (no heavy deps)
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** SSIM is required, but heavy image/toolkit dependencies would bloat builds and complicate CI.
+- **Decision:** Use a lightweight, permissive-licensed, vendorable SSIM implementation (single header or small TU), pinned and recorded in notices.
+- **Rationale:** Keeps the dependency graph small and reproducible.
+- **Alternatives:** (A) OpenCV (rejected: heavy). (B) Custom SSIM implementation (rejected: maintenance risk).
+- **Consequences:** We wrap SSIM to match RGBA premul inputs and provide deterministic aggregation.
+- **Affected IDs:** [REQ-152], [BUILD-02], [API-21]
+- **Verification:** Unit tests validate SSIM correctness on synthetic patterns; CI verifies vendored hashes.
+
+---
+
+## [DEC-ARCH-14] Default SSIM threshold is 0.99 (configurable)
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** Users need a meaningful default threshold that detects visual regressions but remains tunable.
+- **Decision:** Default `--ssim-threshold` is **0.99**, validated within `[0,1]`, and comparisons fail when SSIM < threshold.
+- **Rationale:** Strict by default while accommodating minor backend/platform differences by user override.
+- **Alternatives:** 0.995 (stricter; more flakiness). 0.95 (looser; may miss regressions).
+- **Consequences:** CI pipelines may tune threshold per backend/platform; artifacts must be kept for failure triage.
+- **Affected IDs:** [REQ-154], [API-03-04], [API-02-04], [VER-14-02]
+- **Verification:** Integration test forces a known-different image and asserts exit code 4 when below threshold.
+
+---
+
+## [DEC-ARCH-15] PNG write failures are fatal when artifacts are enabled
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** When users enable artifact output, silent failures defeat the purpose and make SSIM triage impossible.
+- **Decision:** Fail fast on PNG write/encode errors when PNG output is enabled.
+- **Rationale:** Preserves user expectations and avoids partial/inconsistent artifact sets.
+- **Alternatives:** Best-effort continue with warnings (deferred as future option).
+- **Consequences:** Error handling must clearly report path + OS error; reports written up to failure are still valid.
+- **Affected IDs:** [REQ-148], [API-20-02], [ARCH-17-02]
+- **Verification:** Unit test simulates unwritable directory and asserts non-zero exit and error message.
+
+---
+
+## [DEC-MEM-10] Tight stride requirement: stride == width*4 in v1.1
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** PNG writer and SSIM comparator assume a simple contiguous layout; allowing arbitrary stride complicates correctness and increases copy risk.
+- **Decision:** Enforce `stride_bytes == width*4` for adapter outputs in v1.1.
+- **Rationale:** Simplifies artifact pipeline; matches observed adapter behavior.
+- **Alternatives:** Support padded stride and propagate stride throughout (requires broader API/data changes).
+- **Consequences:** Adapters requiring padding must internally convert/copy to tight stride before returning.
+- **Affected IDs:** [API-04-01b], [MEM-02-01], [REQ-149]
+- **Verification:** Adapter contract tests validate buffer sizes and stride for Tier-1 backends.
+
+---
+
+## [DEC-MEM-11] SSIM compares premultiplied RGBA directly (no un-premultiply)
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** User requirement: compare premultiplied RGBA directly; avoid additional color/alpha transforms.
+- **Decision:** Compute SSIM per channel on premultiplied RGBA8 and aggregate deterministically.
+- **Rationale:** Minimal transforms; consistent with buffer contract.
+- **Alternatives:** Un-premultiply; ignore alpha (RGB only).
+- **Consequences:** Edge/coverage differences may reduce SSIM; threshold must be configurable.
+- **Affected IDs:** [REQ-151], [API-21-03], [REQ-154]
+- **Verification:** Unit tests cover identical vs perturbed buffers and confirm expected SSIM behavior.
+
+---
+
+## [DEC-API-07] SSIM implies PNG artifacts for diagnosability
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** SSIM failures must be debuggable with concrete image artifacts.
+- **Decision:** When `--compare-ssim` is enabled, PNG artifacts are generated regardless of `--png` flag (effectively force-enabled).
+- **Rationale:** Ensures every SSIM result can be inspected visually.
+- **Alternatives:** Allow SSIM without writing PNGs (rejected; poor triage).
+- **Consequences:** `--help` and docs must state this implication clearly.
+- **Affected IDs:** [REQ-151], [REQ-148], [API-03-06]
+- **Verification:** CLI test asserts `--compare-ssim` produces PNGs even without `--png`.
+
+---
+
+## [DEC-API-08] SSIM library selection: ChrisLomont/SSIM (MIT), vendored
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** Need a lightweight SSIM implementation that can be vendored and built everywhere.
+- **Decision:** Vendor the single-file SSIM implementation from Chris Lomont’s SSIM project (MIT).
+- **Rationale:** Minimal footprint, permissive license, easy to integrate.
+- **Alternatives:** Other small SSIM snippets; heavier dependencies like OpenCV (rejected).
+- **Consequences:** Must record upstream provenance and license in `THIRD_PARTY_NOTICES.md` and pin via SHA-256 verification.
+- **Affected IDs:** [REQ-152], [BUILD-02-02], [REQ-155]
+- **Verification:** SSIM unit tests + third-party hash check in CI.
+
+---
+
+## [DEC-CONC-08] Serialize artifact I/O to avoid races/corruption
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** Artifact writing uses filesystem I/O; future parallelism could create races or partial files.
+- **Decision:** Serialize artifact directory creation and PNG writes via a dedicated mutex (or on the orchestrator thread).
+- **Rationale:** Deterministic, safe output; avoids write collisions.
+- **Alternatives:** Lock-free unique paths; per-scene locks.
+- **Consequences:** Optional artifact phase remains sequential; acceptable because it is out-of-band and user-controlled.
+- **Affected IDs:** [CONC-03-02], [CONC-07-01], [REQ-148]
+- **Verification:** TSan-enabled tests include an artifacts-enabled run path.
+
+---
+
+## [DEC-BUILD-20] Vendor stb_image_write for PNG output
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Decision:** Vendor `stb_image_write.h` under `third_party/stb/` and compile exactly one TU with `STB_IMAGE_WRITE_IMPLEMENTATION`.
+- **Rationale:** Stable, dependency-free PNG encoding.
+- **Alternatives:** libpng; lodepng.
+- **Consequences:** Must add notices and ensure no ODR violations.
+- **Affected IDs:** [REQ-149], [BUILD-04-03], [REQ-155]
+- **Verification:** Unit test writes a PNG and validates it begins with PNG signature bytes; CI builds all presets.
+
+---
+
+## [DEC-BUILD-21] Vendor SSIM single-file implementation and pin provenance
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Decision:** Vendor selected SSIM implementation under `third_party/ssim_lomont/` and record revision/hash.
+- **Rationale:** Reproducible builds without network fetch.
+- **Alternatives:** FetchContent at configure time (rejected: network variability).
+- **Consequences:** Hash verification gate required; notices updated.
+- **Affected IDs:** [DEC-API-08], [REQ-152], [REQ-155]
+- **Verification:** Hash verification check passes in CI; mismatch intentionally fails.
+
+---
+
+## [DEC-BUILD-22] Treat third_party includes as SYSTEM to preserve Werror cleanliness
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Decision:** Add `third_party/` include dirs as `SYSTEM` for compilation units that include vendored headers.
+- **Rationale:** Prevent third-party warnings from failing CI Werror builds.
+- **Alternatives:** Patch upstream headers; disable Werror globally.
+- **Consequences:** Keep project code warning-clean; vendor headers remain unchanged.
+- **Affected IDs:** [BUILD-04-02]
+- **Verification:** Werror CI job remains green with new deps.
+
+---
+
+## [DEC-BUILD-24] No PNG decode dependency; compare raw buffers in-memory
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** Ground truth is regenerated each run and comparisons happen in the same process.
+- **Decision:** Perform SSIM on in-memory raw RGBA buffers and write PNGs only as artifacts for inspection.
+- **Rationale:** Avoid adding image decode libs; reduce I/O and dependency surface.
+- **Alternatives:** Decode PNGs from disk for SSIM (rejected).
+- **Consequences:** SSIM results always correspond to the same-run ground truth; artifacts are always present when SSIM enabled.
+- **Affected IDs:** [REQ-151], [DEC-API-07], [BUILD-02]
+- **Verification:** Integration tests run SSIM with PNGs written and compare metrics.
+
+---
+
+## [DEC-TOOL-08] Verify vendored third-party files via recorded SHA-256 in CI
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** Single-file vendored deps can drift silently; we need deterministic provenance.
+- **Decision:** Record SHA-256 for each vendored file in CMake metadata and fail CI if files do not match expected hashes when verification is enabled.
+- **Rationale:** Ensures reproducible builds and auditability.
+- **Alternatives:** Manual review only; rely on git history alone.
+- **Consequences:** Updating vendored deps requires a CR and hash refresh.
+- **Affected IDs:** [REQ-155], [TEST-70], [VER-16-01]
+- **Verification:** CI job with `VGCPU_VERIFY_THIRD_PARTY_HASHES=ON` passes; mismatch intentionally fails.
+
+---
+
+## [DEC-VER-07] SSIM failures are correctness regressions (blocking when enabled)
+- **Date:** 2025-12-23
+- **Status:** Active
+- **Introduced In:** v1.1
+- **Context:** SSIM comparisons are introduced to detect correctness drift across backends.
+- **Decision:** When SSIM gating is enabled in a pipeline/run, any SSIM < threshold is treated as a correctness regression and causes non-zero exit (exit code 4).
+- **Rationale:** Encourages early detection and prevents silent correctness drift.
+- **Alternatives:** Advisory-only metric (non-blocking).
+- **Consequences:** Pipelines must retain PNG artifacts and reports for debugging.
+- **Affected IDs:** [REQ-154], [API-02-04], [VER-14-02]
+- **Verification:** Regression test asserts exit code 4 and artifact retention on failure.
+
+---
