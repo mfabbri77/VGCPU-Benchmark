@@ -956,6 +956,41 @@ endif()
 vgcpu_validate_no_floating_deps()
 
 # -----------------------------------------------------------------------------
+# Packaging Target (Blueprint [TASK-07.02])
+# Creates a self-contained release package with executable, assets, and docs
+# -----------------------------------------------------------------------------
+set(VGCPU_PACKAGE_DIR "${CMAKE_BINARY_DIR}/package")
+
+add_custom_target(package_release
+    DEPENDS vgcpu-benchmark
+    COMMAND ${CMAKE_COMMAND} -E make_directory "${VGCPU_PACKAGE_DIR}/bin"
+    COMMAND ${CMAKE_COMMAND} -E copy $<TARGET_FILE:vgcpu-benchmark> "${VGCPU_PACKAGE_DIR}/bin/"
+    COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_SOURCE_DIR}/assets" "${VGCPU_PACKAGE_DIR}/assets"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/README.md" "${VGCPU_PACKAGE_DIR}/"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/LICENSE" "${VGCPU_PACKAGE_DIR}/"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/THIRD_PARTY_NOTICES.md" "${VGCPU_PACKAGE_DIR}/"
+    COMMAND ${CMAKE_COMMAND} -E copy "${CMAKE_SOURCE_DIR}/docs/QUICKSTART.md" "${VGCPU_PACKAGE_DIR}/"
+    COMMENT "[TASK-07.02] Creating release package in ${VGCPU_PACKAGE_DIR}"
+)
+
+# Create archive target (Unix only for now)
+if(UNIX)
+    add_custom_target(package_archive
+        DEPENDS package_release
+        COMMAND ${CMAKE_COMMAND} -E tar czvf 
+            "vgcpu-benchmark-${PROJECT_VERSION}-${CMAKE_SYSTEM_NAME}-${CMAKE_SYSTEM_PROCESSOR}.tar.gz"
+            --format=gnutar
+            "${VGCPU_PACKAGE_DIR}"
+        WORKING_DIRECTORY "${CMAKE_BINARY_DIR}"
+        COMMENT "Creating release archive..."
+    )
+endif()
+
+message(STATUS "  Packaging:")
+message(STATUS "    package_release, package_archive")
+
+
+# -----------------------------------------------------------------------------
 # Summary
 # -----------------------------------------------------------------------------
 message(STATUS "")

@@ -1,0 +1,23 @@
+# Performance Suite Scenes
+# Blueprint Reference: [TASK-08.01], [REQ-64]
+#
+# This file lists scenes used for performance regression testing in CI.
+# Format: scene_id (one per line)
+# Lines starting with # are comments
+
+# Basic fills (fast, deterministic)
+fills/solid_basic
+fills/gradient_linear
+fills/spiral_circles
+
+# Paths (geometry heavy)
+paths/complex_bezier
+paths/stroked_dashes
+
+# Mixed workloads (representative benchmarks)
+mixed/particles_1k
+mixed/text_layout
+
+# Stress tests (longer running, optional)
+# stress/particles_10k
+# stress/svg_tiger
