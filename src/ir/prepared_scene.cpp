@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 6, §6.3.2 — PreparedScene Contract
+// Blueprint Reference: [ARCH-12-01d] PreparedScene (Chapter 3) / [API-06-04] PrepareScene (Chapter
+// 4)
 
 #include "ir/prepared_scene.h"
 

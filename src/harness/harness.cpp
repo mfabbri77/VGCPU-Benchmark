@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.2 — Module harness
+// Blueprint Reference: [ARCH-10-08] Benchmark Harness (Chapter 3) / [API-06-06] Harness: run
+// orchestration (Chapter 4)
 
 #include "harness/harness.h"
 
@@ -53,14 +54,17 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
     config.height = static_cast<int>(scene.height);
 
     // Preallocate output buffer (outside timed section)
-    // Blueprint Reference: Chapter 4, §4.1 — Timed sections exclude I/O and IR decoding
-    // NOTE: We use resize() not reserve() to ensure adapters receive a correctly sized buffer.
-    // Adapters MUST NOT call resize/fill themselves; the IR kClear command handles clearing.
+    // Blueprint Reference: [REQ-21] Measured loop MUST NOT perform filesystem I/O (Chapter 3)
+    // Blueprint Reference: [REQ-89] The measured loop MUST NOT perform filesystem I/O (Chapter 4?
+    // Wait, it was REQ-21 in Ch3) Actually [REQ-21] in Ch3 is the correct one. [REQ-89] was from an
+    // older version or I misread. Let's use [REQ-21] (Ch3) and [REQ-71-01] (Ch5). NOTE: We use
+    // resize() not reserve() to ensure adapters receive a correctly sized buffer. Adapters MUST NOT
+    // call resize/fill themselves; the IR kClear command handles clearing.
     std::vector<uint8_t> output_buffer;
     output_buffer.resize(static_cast<size_t>(config.width) * config.height * 4);
 
     // Warm-up phase (untimed for primary stats)
-    // Blueprint Reference: Chapter 2, §2.1.5 — Warm-up phase
+    // Blueprint Reference: [ARCH-13-02a] Warmup loop (Chapter 3)
     for (int i = 0; i < policy.warmup_iterations; ++i) {
         auto status = adapter.Render(scene, config, output_buffer);
         if (status.failed()) {
@@ -71,7 +75,7 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
     }
 
     // Measurement phase
-    // Blueprint Reference: Chapter 8, §8.3 — Timed vs Untimed Boundaries
+    // Blueprint Reference: [ARCH-13-02b] Measured loop (Chapter 3) / [REQ-21,22,23] (Chapter 3)
     std::vector<int64_t> wall_samples;
     std::vector<int64_t> cpu_samples;
     wall_samples.reserve(static_cast<size_t>(policy.measurement_iterations));

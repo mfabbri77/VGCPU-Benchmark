@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.2 — StatisticsEngine subcomponent
+// Blueprint Reference: [ARCH-10-09] Statistics (Chapter 3) / [API-06-06] SceneStats (Chapter 4)
 
 #pragma once
 
@@ -13,7 +13,7 @@
 namespace vgcpu {
 
 /// Compute timing statistics from samples.
-/// Blueprint Reference: Chapter 6, §6.5.2 — Statistics MUST include p50, dispersion, n
+/// Blueprint Reference: [ARCH-12-02c] SceneStats (Chapter 3) / [ARCH-10-09] (Chapter 3)
 /// @param wall_samples Wall time samples in nanoseconds.
 /// @param cpu_samples CPU time samples in nanoseconds.
 /// @return Computed statistics.

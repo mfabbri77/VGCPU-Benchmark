@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: backends/thorvg.md
+// Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [API-06-05] ThorVG backend
+// (Chapter 4)
 
 #include "adapters/thorvg/thorvg_adapter.h"
 

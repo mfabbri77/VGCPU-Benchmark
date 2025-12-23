@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: backends/vello.md
+// Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [API-07] Rust FFI (Chapter 4) /
+// [DEC-API-06] Raqote/Vello FFI (Chapter 4)
 
 #include "adapters/vello/vello_adapter.h"
 

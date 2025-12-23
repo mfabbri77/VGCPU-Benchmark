@@ -1,8 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.5 — Cairo backend adapter
-// Blueprint Reference: backends/cairo.md
+// Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [API-06-05] Cairo backend
+// (Chapter 4) Blueprint Reference: backends/cairo.md
 
 #pragma once
 

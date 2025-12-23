@@ -1,8 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.3 — Module pal (Platform Abstraction Layer)
-// Blueprint Reference: Chapter 6, §6.5.1 — Timer Abstraction
+// Blueprint Reference: [ARCH-10-03] PAL (Chapter 3) / [API-06-02] PAL (Chapter 4)
+// Blueprint Reference: [REQ-26] Monotonic timing (Chapter 4)
 
 #include "pal/timer.h"
 

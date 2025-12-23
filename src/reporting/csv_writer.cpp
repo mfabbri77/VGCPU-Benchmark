@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.6 — CsvWriter subcomponent
+// Blueprint Reference: [ARCH-10-10] Reporting (Chapter 3) / [API-06-07] Reporting: CSV/JSON emit
+// (Chapter 4)
 
 #include "reporting/reporter.h"
 #include "vgcpu/internal/version.h"
@@ -62,7 +63,7 @@ std::string CsvWriter::ToCsv(const std::vector<CaseResult>& results) {
     oss << "# schema_version=" << VGCPU_REPORT_SCHEMA_VERSION << "\n";
 
     // Header row
-    // Blueprint Reference: Chapter 6, §6.6.2 — CSV columns
+    // Blueprint Reference: [REQ-49] Report MUST carry tool_version/schema_version (Chapter 4)
     oss << "backend_id,scene_id,scene_hash,width,height,decision,";
     oss << "wall_p50_ns,wall_p90_ns,cpu_p50_ns,cpu_p90_ns,sample_count\n";
 

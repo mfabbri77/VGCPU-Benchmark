@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.1 — Module cli (main entry point)
+// Blueprint Reference: [ARCH-10-01] CLI Frontend (Chapter 3)
 
 #include "adapters/adapter_registry.h"
 #include "assets/scene_registry.h"
@@ -81,7 +81,7 @@ void InitSceneRegistry() {
 }
 
 /// Handle the 'list' command.
-/// Blueprint Reference: Chapter 6, §6.1.1 — list subcommand
+/// Blueprint Reference: [API-01-01] CLI list subcommand (Chapter 4) / [ARCH-13-01] (Chapter 3)
 int HandleList(const CliOptions& options) {
     (void)options;
     std::cout << "Available Backends:\n";
@@ -107,7 +107,7 @@ int HandleList(const CliOptions& options) {
 }
 
 /// Handle the 'metadata' command.
-/// Blueprint Reference: Chapter 6, §6.1.1 — metadata subcommand
+/// Blueprint Reference: [API-01-01] CLI metadata subcommand (Chapter 4) / [ARCH-13-01] (Chapter 3)
 int HandleMetadata(const CliOptions& options) {
     (void)options;
     auto env = pal::CollectEnvironment();
@@ -130,7 +130,7 @@ int HandleMetadata(const CliOptions& options) {
 }
 
 /// Handle the 'validate' command.
-/// Blueprint Reference: Chapter 6, §6.1.1 — validate subcommand
+/// Blueprint Reference: [API-01-01] CLI validate subcommand (Chapter 4) / [ARCH-13-01] (Chapter 3)
 int HandleValidate(const CliOptions& options) {
     (void)options;
     if (options.validate_timer) {
@@ -167,7 +167,7 @@ int HandleValidate(const CliOptions& options) {
 }
 
 /// Handle the 'run' command.
-/// Blueprint Reference: Chapter 6, §6.1.1 — run subcommand
+/// Blueprint Reference: [API-01-01] CLI run subcommand (Chapter 4) / [ARCH-13-01] (Chapter 3)
 int HandleRun(const CliOptions& options) {
     auto& registry = AdapterRegistry::Instance();
 

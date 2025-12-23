@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.2 — StatisticsEngine subcomponent
+// Blueprint Reference: [ARCH-10-09] Statistics (Chapter 3) / [API-06-06] SceneStats (Chapter 4)
 
 #include "harness/statistics.h"
 
@@ -43,7 +43,8 @@ TimingStats ComputeStats(std::vector<int64_t>& wall_samples, std::vector<int64_t
     std::sort(cpu_samples.begin(), cpu_samples.end());
 
     // Compute percentiles
-    // Blueprint Reference: Chapter 6, §6.5.2 — p50 + dispersion (p90)
+    // Blueprint Reference: [ARCH-12-02c] SceneStats (Chapter 3) / [DEC-MEM-03] Percentiles from
+    // sorted samples (Chapter 5)
     stats.wall_p50_ns = ComputePercentile(wall_samples, 50.0);
     stats.wall_p90_ns = ComputePercentile(wall_samples, 90.0);
     stats.cpu_p50_ns = ComputePercentile(cpu_samples, 50.0);

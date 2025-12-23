@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.1 — Module cli
+// Blueprint Reference: [ARCH-10-01] CLI Frontend (Chapter 3)
 
 #include "cli/cli_parser.h"
 

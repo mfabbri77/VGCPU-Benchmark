@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 5, §5.3.2 — IR Binary Layout
+// Blueprint Reference: [ARCH-10-05] IR Loader / Decoder (Chapter 3) / [API-06-04] IR: decoding to
+// canonical representation (Chapter 4)
 
 #pragma once
 
@@ -13,7 +14,8 @@ namespace vgcpu {
 namespace ir {
 
 /// IR file magic bytes: 'V', 'G', 'I', 'R'
-/// Blueprint Reference: Chapter 5, §5.3.2 — File Header
+/// Blueprint Reference: [ARCH-10-05] File Header (Chapter 3) / [API-06-04] LoadIrFromFile (Chapter
+/// 4)
 constexpr std::array<uint8_t, 4> kIrMagic = {'V', 'G', 'I', 'R'};
 
 /// Current IR format version.
@@ -21,7 +23,7 @@ constexpr uint8_t kIrMajorVersion = 1;
 constexpr uint8_t kIrMinorVersion = 0;
 
 /// IR File Header (16 bytes, little-endian).
-/// Blueprint Reference: Chapter 5, §5.3.2 — File Header
+/// Blueprint Reference: [ARCH-10-05] File Header (Chapter 3) / [API-06-04] Canonical IR (Chapter 4)
 struct IrHeader {
     uint8_t magic[4];     ///< 'V', 'G', 'I', 'R'
     uint8_t major_ver;    ///< Major version (1)
@@ -34,7 +36,7 @@ struct IrHeader {
 static_assert(sizeof(IrHeader) == 16, "IrHeader must be exactly 16 bytes");
 
 /// Section Type IDs.
-/// Blueprint Reference: Chapter 5, §5.3.2 — Section Type IDs
+/// Blueprint Reference: [ARCH-10-05] Section Type IDs (Chapter 3)
 enum class SectionType : uint8_t {
     kInfo = 0x01,       ///< Metadata using key-value pairs
     kPaint = 0x02,      ///< Color/Gradient table
@@ -44,7 +46,7 @@ enum class SectionType : uint8_t {
 };
 
 /// Section Header.
-/// Blueprint Reference: Chapter 5, §5.3.2 — Sections
+/// Blueprint Reference: [ARCH-10-05] Sections (Chapter 3)
 /// Note: Binary format uses 6-byte layout (type:u8, reserved:u8, length:u32).
 /// In-memory representation may differ due to alignment.
 struct SectionHeader {
@@ -57,7 +59,7 @@ struct SectionHeader {
 constexpr size_t kSectionHeaderBinarySize = 6;
 
 /// Command Opcodes.
-/// Blueprint Reference: Chapter 5, §5.3.3 — IR Opcode Reference
+/// Blueprint Reference: [ARCH-14-B] IR Format Specifications (Chapter 3)
 enum class Opcode : uint8_t {
     kEnd = 0x00,           ///< End of stream
     kSave = 0x01,          ///< Push state (matrix, clip, paints)

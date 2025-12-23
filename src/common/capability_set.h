@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 6, §6.4.1 — CapabilitySet Schema
+// Blueprint Reference: [ARCH-10-02] Common Types (Chapter 3)
 
 #pragma once
 
@@ -10,7 +10,8 @@
 namespace vgcpu {
 
 /// Capability flags for backend feature support.
-/// Blueprint Reference: Chapter 6, §6.4.1 — CapabilitySet Schema
+/// Blueprint Reference: [REQ-55] Component thread-safety (Chapter 4) / [REQ-60] Evolution rules
+/// (Chapter 4)
 struct CapabilitySet {
     // Fill rules
     bool supports_nonzero = true;

@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.4 — Scene Registry (assets module)
+// Blueprint Reference: [ARCH-10-04] Assets & Manifest (Chapter 3) / [API-06-03] Assets/Manifest:
+// scene discovery (Chapter 4)
 
 #pragma once
 
@@ -16,7 +17,8 @@
 namespace vgcpu {
 
 /// Scene metadata from manifest.json
-/// Blueprint Reference: Chapter 5, §5.2.1 — Manifest Format
+/// Blueprint Reference: [ARCH-12-01a/b] SceneId/SceneMeta (Chapter 3) / [API-06-03] SceneMeta
+/// (Chapter 4)
 struct SceneInfo {
     std::string scene_id;                ///< Unique identifier (e.g., "fills/solid_basic")
     std::string ir_path;                 ///< Relative path to .irbin file
@@ -30,7 +32,8 @@ struct SceneInfo {
 };
 
 /// Scene Registry managing available benchmark scenes.
-/// Blueprint Reference: Chapter 7, §7.2.4 — Module assets
+/// Blueprint Reference: [ARCH-10-04] Assets & Manifest (Chapter 3) / [ARCH-11] Allowed dependencies
+/// (Chapter 3)
 class SceneRegistry {
    public:
     /// Get the singleton instance.

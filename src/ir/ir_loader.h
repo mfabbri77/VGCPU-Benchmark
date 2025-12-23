@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 6, §6.3.1 — IR Runtime API
+// Blueprint Reference: [ARCH-10-05] IR Loader / Decoder (Chapter 3) / [API-06-04] IR: decoding to
+// canonical representation (Chapter 4)
 
 #pragma once
 
@@ -17,7 +18,7 @@ namespace vgcpu {
 namespace ir {
 
 /// Validation report for IR assets.
-/// Blueprint Reference: Chapter 6, §6.3.1 — ValidationReport
+/// Blueprint Reference: [API-03] Error handling strategy (Chapter 4) / [REQ-53] (Chapter 4)
 struct ValidationReport {
     bool valid = false;
     std::vector<std::string> errors;
@@ -25,7 +26,8 @@ struct ValidationReport {
 };
 
 /// IR Loader for loading and validating scene files.
-/// Blueprint Reference: Chapter 6, §6.3.1 — IrLoader class
+/// Blueprint Reference: [ARCH-10-05] IR Loader / Decoder (Chapter 3) / [API-06-04] LoadIrFromFile
+/// (Chapter 4)
 class IrLoader {
    public:
     /// Load raw bytes from an IR file.

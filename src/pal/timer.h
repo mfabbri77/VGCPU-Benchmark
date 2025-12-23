@@ -1,8 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.3 — Module pal (Platform Abstraction Layer)
-// Blueprint Reference: Chapter 6, §6.5.1 — Timer Abstraction
+// Blueprint Reference: [ARCH-10-03] PAL (Chapter 3) / [API-06-02] PAL (Chapter 4)
+// Blueprint Reference: [REQ-26] Monotonic timing (Chapter 4)
 
 #pragma once
 
@@ -19,15 +19,17 @@ using TimePoint = std::chrono::steady_clock::time_point;
 using Duration = std::chrono::nanoseconds;
 
 /// Get the current monotonic time.
-/// Blueprint Reference: Chapter 6, §6.5.1 — NowMonotonic()
+/// Blueprint Reference: [API-06-02] NowMonotonicNs (Chapter 4) / [REQ-26] Monotonic timing (Chapter
+/// 4)
 [[nodiscard]] TimePoint NowMonotonic();
 
 /// Calculate elapsed time between two time points.
-/// Blueprint Reference: Chapter 6, §6.5.1 — Elapsed()
+/// Blueprint Reference: [ARCH-10-03] PAL Utilities (Chapter 3) / [API-06-02] NowMonotonicNs
+/// (Chapter 4)
 [[nodiscard]] Duration Elapsed(TimePoint start, TimePoint end);
 
 /// Get the current process/thread CPU time.
-/// Blueprint Reference: Chapter 6, §6.5.1 — GetCpuTime()
+/// Blueprint Reference: [ARCH-10-03] PAL Environment (Chapter 3) / [API-06-02] EnvInfo (Chapter 4)
 /// Note: Semantics (process vs thread) vary by platform and are reported in metadata.
 [[nodiscard]] Duration GetCpuTime();
 

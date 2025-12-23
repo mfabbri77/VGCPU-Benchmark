@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.6 — JsonWriter subcomponent
+// Blueprint Reference: [ARCH-10-10] Reporting (Chapter 3) / [API-01-02] Report schemas (Chapter 4)
 
 #include "reporting/reporter.h"
 

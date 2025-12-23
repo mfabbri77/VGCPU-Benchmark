@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.5 — Adapter registration
+// Blueprint Reference: [ARCH-10-06] Adapter Registry (Chapter 3) / [API-06-05] Registry:
+// creation/enumeration (Chapter 4)
 
 #pragma once
 
@@ -25,7 +26,8 @@ struct AdapterEntry {
 };
 
 /// Registry of available backend adapters.
-/// Blueprint Reference: Chapter 7, §7.2.5 — Adapter registry/catalog
+/// Blueprint Reference: [ARCH-10-06] Adapter Registry (Chapter 3) / [API-06-05] Registry (Chapter
+/// 4)
 class AdapterRegistry {
    public:
     /// Get the singleton instance.

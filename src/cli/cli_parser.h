@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.1 — Module cli
+// Blueprint Reference: [ARCH-10-01] CLI Frontend (Chapter 3)
 
 #pragma once
 
@@ -12,7 +12,7 @@
 namespace vgcpu {
 
 /// CLI subcommand types.
-/// Blueprint Reference: Chapter 6, §6.1.1 — CLI Command Model
+/// Blueprint Reference: [API-01-01] CLI contract (Chapter 4) / [ARCH-13-01] (Chapter 3)
 enum class CliCommand {
     kNone,
     kHelp,
@@ -23,7 +23,7 @@ enum class CliCommand {
 };
 
 /// Parsed CLI options.
-/// Blueprint Reference: Chapter 6, §6.1.2 — CLI Options
+/// Blueprint Reference: [REQ-46] CLI behavior (Chapter 4) / [ARCH-14-A] (Chapter 3)
 struct CliOptions {
     CliCommand command = CliCommand::kNone;
 
@@ -51,7 +51,7 @@ struct CliOptions {
 };
 
 /// CLI argument parser.
-/// Blueprint Reference: Chapter 7, §7.2.1 — cli module responsibilities
+/// Blueprint Reference: [ARCH-10-01] CLI Responsibilities (Chapter 3)
 class CliParser {
    public:
     /// Parse command-line arguments.

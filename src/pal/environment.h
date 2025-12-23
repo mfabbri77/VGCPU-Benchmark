@@ -1,8 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 6, §6.6.1 — run_metadata fields
-// Blueprint Reference: Chapter 7, §7.2.3 — Environment metadata acquisition
+// Blueprint Reference: [ARCH-10-03] PAL (Chapter 3) / [API-06-02] PAL (Chapter 4)
+// Blueprint Reference: [ARCH-12-02d] RunReport environment metadata (Chapter 3)
 
 #pragma once
 
@@ -13,7 +13,8 @@ namespace vgcpu {
 namespace pal {
 
 /// Environment information for run metadata.
-/// Blueprint Reference: Chapter 6, §6.6.1 — run_metadata
+/// Blueprint Reference: [ARCH-12-02d] RunReport environment metadata (Chapter 3) / [API-06-02]
+/// EnvInfo (Chapter 4)
 struct EnvironmentInfo {
     std::string os_name;
     std::string os_version;

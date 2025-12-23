@@ -1,8 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 6, §6.2.1 — Status Structure
-// Blueprint Reference: Appendix D, §D.5 — Error Handling and Status Types
+// Blueprint Reference: [REQ-53] Canonical error types (Chapter 4) / [API-06-01] Common: errors and
+// results (Chapter 4)
 
 #pragma once
 
@@ -13,16 +13,16 @@ namespace vgcpu {
 
 /// Status codes for cross-module API operations.
 enum class StatusCode {
-    kOk,          ///< Operation succeeded
-    kUnsupported, ///< Feature or operation not supported
-    kFail,        ///< Operation failed
-    kInvalidArg,  ///< Invalid argument provided
-    kNotFound,    ///< Resource not found
-    kIOError,     ///< I/O operation failed
+    kOk,           ///< Operation succeeded
+    kUnsupported,  ///< Feature or operation not supported
+    kFail,         ///< Operation failed
+    kInvalidArg,   ///< Invalid argument provided
+    kNotFound,     ///< Resource not found
+    kIOError,      ///< I/O operation failed
 };
 
 /// Structured status result for API operations.
-/// Blueprint Reference: Chapter 6, §6.2.1 — Status Structure
+/// Blueprint Reference: [REQ-53-02] Status/Result classes (Chapter 4)
 struct Status {
     StatusCode code = StatusCode::kOk;
     std::string message;
@@ -55,10 +55,10 @@ struct Status {
 };
 
 /// Result type that can hold either a value or an error status.
-/// Blueprint Reference: Appendix D, §D.5 — Result<T> for operations returning values
+/// Blueprint Reference: [REQ-53-02] Result<T> (Chapter 4) / [API-06-01] Result template (Chapter 4)
 template <typename T>
 class Result {
-public:
+   public:
     /// Construct a successful result with a value.
     Result(T value) : data_(std::move(value)) {}
 
@@ -83,7 +83,7 @@ public:
         return ok() ? value() : std::move(default_value);
     }
 
-private:
+   private:
     std::variant<T, Status> data_;
 };
 

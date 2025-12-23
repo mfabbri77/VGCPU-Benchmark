@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.5 — Adapter registration
+// Blueprint Reference: [ARCH-10-06] Adapter Registry (Chapter 3) / [API-06-05] Registry (Chapter 4)
 
 #include "adapters/adapter_registry.h"
 
@@ -24,7 +24,8 @@ std::vector<std::string> AdapterRegistry::GetAdapterIds() const {
     for (const auto& entry : adapters_) {
         ids.push_back(entry.id);
     }
-    // Blueprint Reference: Appendix D, §D.6 — Deterministic ordering
+    // Blueprint Reference: [REQ-29] Deterministic ordering (Chapter 2) / [ARCH-13-02c] SceneStats
+    // ordering (Chapter 3)
     std::sort(ids.begin(), ids.end());
     return ids;
 }

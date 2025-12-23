@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.5 — Null/Debug backend for testing
+// Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [TEST-27]
+// no_alloc_in_measured_loop_null (Chapter 5)
 
 #pragma once
 

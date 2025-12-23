@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.6 — Module reporting
+// Blueprint Reference: [ARCH-10-10] Reporting (Chapter 3) / [API-06-07] Reporting: CSV/JSON emit
+// (Chapter 4)
 
 #pragma once
 
@@ -16,7 +17,7 @@
 namespace vgcpu {
 
 /// Run metadata for reporting.
-/// Blueprint Reference: Chapter 6, §6.6.1 — run_metadata
+/// Blueprint Reference: [API-01-02] Report schemas (Chapter 4) / [API-06-06] RunReport (Chapter 4)
 struct RunMetadata {
     std::string schema_version = VGCPU_REPORT_SCHEMA_VERSION;
     std::string run_timestamp;
@@ -27,7 +28,7 @@ struct RunMetadata {
 };
 
 /// JSON result writer.
-/// Blueprint Reference: Chapter 6, §6.6.1 — Machine-Readable Output (JSON)
+/// Blueprint Reference: [REQ-48] JSON output format (Chapter 4) / [API-06-07] WriteJson (Chapter 4)
 class JsonWriter {
    public:
     /// Write run results to a JSON file.
@@ -43,7 +44,7 @@ class JsonWriter {
 };
 
 /// CSV result writer.
-/// Blueprint Reference: Chapter 6, §6.6.2 — Machine-Readable Output (CSV)
+/// Blueprint Reference: [REQ-48] CSV output format (Chapter 4) / [API-06-07] WriteCsv (Chapter 4)
 class CsvWriter {
    public:
     /// Write run results to a CSV file.
@@ -57,7 +58,7 @@ class CsvWriter {
 };
 
 /// Human-readable summary writer.
-/// Blueprint Reference: Chapter 6, §6.1.2 — summary format
+/// Blueprint Reference: [API-06-07] WriteSummaryToStdout (Chapter 4) / [ARCH-10-10] (Chapter 3)
 class SummaryWriter {
    public:
     /// Write a human-readable summary to stdout.

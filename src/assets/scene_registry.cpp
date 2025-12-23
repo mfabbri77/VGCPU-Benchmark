@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.4 — Scene Registry (assets module)
+// Blueprint Reference: [ARCH-10-04] Assets & Manifest (Chapter 3) / [API-06-03] Assets/Manifest:
+// scene discovery (Chapter 4)
 
 #include "assets/scene_registry.h"
 

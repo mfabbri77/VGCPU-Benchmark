@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 6, §6.2.1 — Adapter Interface (IBackendAdapter)
+// Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [API-06-05] IBackendAdapter
+// (Chapter 4)
 
 #pragma once
 
@@ -18,7 +19,7 @@ namespace vgcpu {
 struct PreparedScene;
 
 /// Adapter metadata information.
-/// Blueprint Reference: Chapter 6, §6.2.1 — AdapterInfo struct
+/// Blueprint Reference: [API-06-05] BackendDescriptor (Chapter 4)
 struct AdapterInfo {
     std::string id;             ///< Stable identifier (e.g., "cairo_image")
     std::string detailed_name;  ///< Human-readable name (e.g., "Cairo Image Surface")
@@ -27,7 +28,7 @@ struct AdapterInfo {
 };
 
 /// Surface configuration for rendering.
-/// Blueprint Reference: Chapter 6, §6.2.1 — SurfaceConfig struct
+/// Blueprint Reference: [API-06-05] SurfaceDesc (Chapter 4)
 struct SurfaceConfig {
     int width = 0;
     int height = 0;
@@ -41,7 +42,8 @@ struct AdapterArgs {
 };
 
 /// Abstract interface for backend adapters.
-/// Blueprint Reference: Chapter 6, §6.2.1 — IBackendAdapter interface
+/// Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [API-06-05] IBackendAdapter
+/// (Chapter 4)
 class IBackendAdapter {
    public:
     virtual ~IBackendAdapter() = default;
@@ -75,7 +77,8 @@ class IBackendAdapter {
 
     // -------------------------------------------------------------------------
     // Rendering
-    // Blueprint Reference: Chapter 6, §6.2.2 — CPU-Only Enforcement
+    // Blueprint Reference: [API-04] Thread-safety and reentrancy (Chapter 4) / [REQ-56] Reentrancy
+    // rules (Chapter 4) Blueprint Reference: [REQ-56-02] CPU-Only Enforcement (Chapter 4)
     // -------------------------------------------------------------------------
 
     /// Render the scene to an output buffer (hot path). [ARCH-14-F]

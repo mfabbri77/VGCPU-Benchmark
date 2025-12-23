@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 6, §6.3.2 — PreparedScene Contract
+// Blueprint Reference: [ARCH-12-01d] PreparedScene (Chapter 3) / [API-06-04] PrepareScene (Chapter
+// 4)
 
 #pragma once
 
@@ -15,14 +16,14 @@
 namespace vgcpu {
 
 /// A single path geometry.
-/// Blueprint Reference: Chapter 5, §5.3.4 — Path Data Block Format
+/// Blueprint Reference: [ARCH-10-05] Path data format (Chapter 3) / [ARCH-14-B] (Chapter 3)
 struct Path {
     std::vector<ir::PathVerb> verbs;
     std::vector<float> points;  ///< x, y pairs
 };
 
 /// A paint definition (solid color or gradient).
-/// Blueprint Reference: Chapter 5, §5.3.5 — Paint Entry Format
+/// Blueprint Reference: [ARCH-10-05] Paint data format (Chapter 3) / [ARCH-14-B] (Chapter 3)
 struct Paint {
     ir::PaintType type = ir::PaintType::kSolid;
 
@@ -45,7 +46,8 @@ struct Paint {
 };
 
 /// Immutable prepared scene optimized for replay.
-/// Blueprint Reference: Chapter 6, §6.3.2 — PreparedScene Contract
+/// Blueprint Reference: [ARCH-12-01d] PreparedScene (Chapter 3) / [API-06-04] PrepareScene (Chapter
+/// 4)
 struct PreparedScene {
     // Header info
     uint32_t width = 0;

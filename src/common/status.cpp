@@ -1,7 +1,7 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 6, §6.2.1 — Status Structure
+// Blueprint Reference: [ARCH-10-02] Common Types (Chapter 3)
 
 #include "common/status.h"
 

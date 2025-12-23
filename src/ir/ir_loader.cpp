@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 6, §6.3.1 — IR Runtime API
+// Blueprint Reference: [ARCH-10-05] IR Loader / Decoder (Chapter 3) / [API-06-04] IR: decoding
+// (Chapter 4)
 
 #include "ir/ir_loader.h"
 
@@ -281,7 +282,7 @@ Result<PreparedScene> IrLoader::Prepare(const std::vector<uint8_t>& bytes,
 
 std::string IrLoader::ComputeHash(const std::vector<uint8_t>& bytes) {
     // Simple hash based on CRC32 (should be SHA-256 for production)
-    // Blueprint Reference: Chapter 5, §5.4.1 — SceneHash MUST be SHA-256
+    // Blueprint Reference: [REQ-29] Deterministic hashing (Chapter 2) / [ARCH-12-01c] (Chapter 3)
     uint32_t crc = 0;
     for (uint8_t b : bytes) {
         crc = (crc >> 8) ^ ((crc ^ b) * 0x1EDC6F41);

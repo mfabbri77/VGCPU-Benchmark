@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: Chapter 7, §7.2.2 — Module harness
+// Blueprint Reference: [ARCH-10-08] Benchmark Harness (Chapter 3) / [API-06-06] Harness: run
+// orchestration (Chapter 4)
 
 #pragma once
 
@@ -17,7 +18,7 @@
 namespace vgcpu {
 
 /// Benchmark policy configuration.
-/// Blueprint Reference: Chapter 6, §6.1.2 — Benchmark Policy options
+/// Blueprint Reference: [ARCH-12-02a] RunConfig (Chapter 3) / [ARCH-14-A] CLI Frontend (Chapter 3)
 struct BenchmarkPolicy {
     int warmup_iterations = 3;
     int measurement_iterations = 10;
@@ -26,7 +27,7 @@ struct BenchmarkPolicy {
 };
 
 /// Timing statistics for a single benchmark case.
-/// Blueprint Reference: Chapter 6, §6.5.2 — Measurement Record Schema
+/// Blueprint Reference: [ARCH-12-02c] SceneStats (Chapter 3) / [ARCH-12-02d] RunReport (Chapter 3)
 struct TimingStats {
     int64_t wall_p50_ns = 0;  ///< Median wall time in nanoseconds
     int64_t wall_p90_ns = 0;  ///< 90th percentile wall time
@@ -36,7 +37,8 @@ struct TimingStats {
 };
 
 /// Execution outcome for a benchmark case.
-/// Blueprint Reference: Chapter 6, §6.4.2 — Compatibility Decision Output
+/// Blueprint Reference: [ARCH-13-01] Run lifecycle state machine (Chapter 3) / [API-03] Error
+/// handling (Chapter 4)
 enum class CaseDecision {
     kExecute,   ///< Case was executed successfully
     kSkip,      ///< Case was skipped (unsupported features)
@@ -59,7 +61,8 @@ struct CaseResult {
 };
 
 /// Full benchmark run result.
-/// Blueprint Reference: Chapter 6, §6.6.1 — Machine-Readable Output
+/// Blueprint Reference: [API-01-02] Report schemas (Chapter 4) / [REQ-48] CSV/JSON output (Chapter
+/// 4)
 struct RunResult {
     std::string run_timestamp;
     BenchmarkPolicy policy;
@@ -67,7 +70,8 @@ struct RunResult {
 };
 
 /// Harness for executing benchmarks.
-/// Blueprint Reference: Chapter 7, §7.2.2 — Harness Core
+/// Blueprint Reference: [ARCH-10-08] Benchmark Harness (Chapter 3) / [ARCH-13] Primary execution
+/// flow (Chapter 3)
 class Harness {
    public:
     /// Run a benchmark for a single scene on a single backend.
