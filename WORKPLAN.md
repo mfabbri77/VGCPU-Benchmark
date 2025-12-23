@@ -92,38 +92,39 @@ All steps in this workplan **MUST** follow **ALL** the conventions defined in th
 ## Phase 4: Diversity & Rust Bridge
 **Goal**: Integrate remaining C++ backends and Rust-based engines.
 
-- [ ] **Step 4.1: ThorVG, AmanithVG & Qt**
+- [x] **Step 4.1: ThorVG, AmanithVG, Qt & AGG**
     - [x] Integrate AmanithVG (SDK path).
-    - [ ] Integrate ThorVG (SW Engine).
-    - [ ] Integrate Qt (SW Engine).
-    - [ ] Implement adapters.
+    - [x] Integrate ThorVG (SW Engine).
+    - [x] Integrate Qt (SW Engine).
+    - [x] Integrate AGG.
+    - [x] Implement adapters.
 
-- [ ] **Step 4.2: Rust Bridge Infrastructure**
-    - [ ] Setup `Corrosion` CMake integration.
-    - [ ] Create `backends/rust_bridge` crate.
-    - [ ] Implement `Raqote` integration.
+- [x] **Step 4.2: Rust Bridge Infrastructure**
+    - [x] Setup `Corrosion` CMake integration.
+    - [x] Create `backends/rust_bridge` crate.
+    - [x] Implement `Raqote` integration.
 
-- [ ] **Step 4.3: Vello (Experimental)**
-    - [ ] Attempt Vello integration via Rust Bridge.
-    - [ ] Mark as experimental/optional if unstable.
+- [x] **Step 4.3: Vello (Experimental)**
+    - [x] Attempt Vello integration via Rust Bridge.
+    - [x] Mark as experimental/optional if unstable.
 
 ---
 
 ## Phase 5: Reporting, Packaging & Release
 **Goal**: Polish for public consumption.
 
-- [ ] **Step 5.1: Reporting Module**
-    - [ ] Implement JSON Schema output (versioned).
-    - [ ] Implement CSV output.
-    - [ ] Implement specific Dependency Pinning metadata collection.
+- [x] **Step 5.1: Reporting Module**
+    - [x] Implement JSON Schema output (versioned).
+    - [x] Implement CSV output.
+    - [x] Implement specific Dependency Pinning metadata collection.
 
-- [ ] **Step 5.2: CI/CD Pipeline**
-    - [ ] Setup GitHub Actions for Linux/Windows/Mac.
-    - [ ] Ensure build caching for heavy deps (Skia, Qt).
+- [x] **Step 5.2: CI/CD Pipeline**
+    - [x] Setup GitHub Actions for Linux/Windows/Mac.
+    - [x] Ensure build caching for heavy deps (Skia, Qt).
 
 - [ ] **Step 5.3: Documentation & Release**
-    - [ ] Write `BUILD.md` and `USAGE.md`.
-    - [ ] Prepare release script (assets bundle).
+    - [x] Write `BUILD.md` and `USAGE.md`.
+    - [x] Prepare release script (assets bundle).
     - [ ] Tag v0.1.0.
 
 **Final Milestone**: v0.1.0 Release.

@@ -1,0 +1,111 @@
+name: VGCPU Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+env:
+  BUILD_TYPE: Release
+
+jobs:
+  build-release:
+    name: Build Release ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        include:
+          - os: ubuntu-latest
+            artifact_name: vgcpu-benchmark-linux-x86_64
+            asset_name: vgcpu-benchmark-linux-x86_64.tar.gz
+          - os: macos-latest
+            artifact_name: vgcpu-benchmark-macos-x86_64 # Note: macos-latest is x86_64/arm64 depending on runner. Github macos-latest is arm64 (M1) now often, need to check. Assuming unified or specific.
+            asset_name: vgcpu-benchmark-macos.tar.gz
+          - os: windows-latest
+            artifact_name: vgcpu-benchmark-windows-x86_64
+            asset_name: vgcpu-benchmark-windows-x86_64.zip
+
+    steps:
+    - uses: actions/checkout@v4
+
+    - name: Set up Rust
+      uses: actions-rs/toolchain@v1
+      with:
+        toolchain: stable
+        override: true
+
+    - name: Install Dependencies (Linux)
+      if: runner.os == 'Linux'
+      run: |
+        sudo apt-get update
+        sudo apt-get install -y ninja-build libcairo2-dev qt6-base-dev libfreetype6-dev libfontconfig1-dev
+
+    - name: Install Dependencies (macOS)
+      if: runner.os == 'macOS'
+      run: |
+        brew install ninja cairo qt6 freetype fontconfig
+
+    - name: Install Dependencies (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        choco install ninja
+
+    - name: Configure CMake
+      run: cmake -B ${{github.workspace}}/build -G Ninja -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+
+    - name: Build
+      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+
+    - name: Test
+      working-directory: ${{github.workspace}}/build
+      run: ctest -C ${{env.BUILD_TYPE}}
+
+    - name: Package (Unix)
+      if: runner.os != 'Windows'
+      run: |
+        mkdir -p package/bin
+        cp ${{github.workspace}}/build/vgcpu-benchmark package/bin/
+        cp -r assets package/
+        cp README.md package/
+        tar -czvf ${{ matrix.asset_name }} -C package .
+
+    - name: Package (Windows)
+      if: runner.os == 'Windows'
+      run: |
+        mkdir package
+        mkdir package\bin
+        copy ${{github.workspace}}\build\vgcpu-benchmark.exe package\bin\
+        xcopy /E /I assets package\assets
+        copy README.md package\
+        7z a ${{ matrix.asset_name }} .\package\*
+
+    - name: Upload Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: ${{ matrix.artifact_name }}
+        path: ${{ matrix.asset_name }}
+
+  release:
+    needs: build-release
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Download Artifacts
+      uses: actions/download-artifact@v4
+      with:
+        path: artifacts
+
+    - name: Generate Checksums
+      run: |
+        cd artifacts
+        find . -name "*.tar.gz" -o -name "*.zip" -exec shasum -a 256 {} \; > checksums.txt
+        cat checksums.txt
+
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
+      with:
+        files: |
+          artifacts/**/*
+          artifacts/checksums.txt
