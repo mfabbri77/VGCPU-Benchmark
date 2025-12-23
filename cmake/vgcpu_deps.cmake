@@ -52,6 +52,18 @@ else()
 endif()
 
 # -----------------------------------------------------------------------------
+# Vendored Dependencies (v1.1) - Integrity Check Constants
+# -----------------------------------------------------------------------------
+# ssim_lomont.hpp
+set(VGCPU_DEP_SSIM_LOMONT_SHA256 "acd47dad46a781a8de112e58ae2c54641e83899f8abc198a55d551fd595f14bc")
+
+# stb_image_write.h
+set(VGCPU_DEP_STB_IMAGE_WRITE_SHA256 "cbd5f0ad7a9cf4468affb36354a1d2338034f2c12473cf1a8e32053cb6914a05")
+
+# stb_image.h
+set(VGCPU_DEP_STB_IMAGE_READ_SHA256 "594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3")
+
+# -----------------------------------------------------------------------------
 # Validate no floating deps function (called at configure time)
 # -----------------------------------------------------------------------------
 function(vgcpu_validate_no_floating_deps)

@@ -119,8 +119,19 @@ std::string JsonWriter::ToJson(const RunMetadata& metadata,
         oss << "        \"cpu_p50_ns\": " << r.stats.cpu_p50_ns << ",\n";
         oss << "        \"cpu_p90_ns\": " << r.stats.cpu_p90_ns << ",\n";
         oss << "        \"sample_count\": " << r.stats.sample_count << "\n";
-        oss << "      }\n";
-        oss << "    }";
+        oss << "      }";
+        if (!r.artifact_path.empty()) {
+            oss << ",\n      \"artifact_path\": \"" << EscapeJson(r.artifact_path) << "\"";
+        }
+        if (!r.golden_path.empty()) {
+            oss << ",\n      \"ssim\": {\n";
+            oss << "        \"golden_path\": \"" << EscapeJson(r.golden_path) << "\",\n";
+            oss << "        \"score\": " << r.ssim_score << ",\n";
+            oss << "        \"passed\": " << (r.ssim_passed ? "true" : "false") << ",\n";
+            oss << "        \"message\": \"" << EscapeJson(r.ssim_message) << "\"\n";
+            oss << "      }";
+        }
+        oss << "\n    }";
         if (i + 1 < results.size())
             oss << ",";
         oss << "\n";

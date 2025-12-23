@@ -134,6 +134,26 @@ MIT License
 - **License**: MIT
 - **Repository**: https://github.com/corrosion-rs/corrosion
 
+## Vendored Dependencies (v1.1)
+
+### stb_image_write
+- **License**: Public Domain / MIT
+- **Repository**: https://github.com/nothings/stb
+- **Revision**: v1.16 (vendored)
+- **SHA-256**: cbd5f0ad7a9cf4468affb36354a1d2338034f2c12473cf1a8e32053cb6914a05
+
+### stb_image
+- **License**: Public Domain / MIT
+- **Repository**: https://github.com/nothings/stb
+- **Revision**: v2.29 (vendored)
+- **SHA-256**: 594c2fe35d49488b4382dbfaec8f98366defca819d916ac95becf3e75f4200b3
+
+### ChrisLomont/SSIM
+- **License**: MIT
+- **Repository**: https://github.com/ChrisLomont/SSIM
+- **Revision**: master (SSIMCpp/SSIM.h)
+- **SHA-256**: acd47dad46a781a8de112e58ae2c54641e83899f8abc198a55d551fd595f14bc
+
 ---
 
 For the full text of each license, please refer to the respective project repositories.

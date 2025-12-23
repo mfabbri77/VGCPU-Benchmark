@@ -18,7 +18,7 @@ endif()
 set(CMAKE_POLICY_VERSION_MINIMUM "3.5")
 
 project(VGCPU-Benchmark
-    VERSION 0.1.0
+    VERSION 0.2.0
     DESCRIPTION "CPU-only 2D Vector Graphics Benchmark Suite"
     LANGUAGES CXX
 )
@@ -50,6 +50,20 @@ endif()
 include(cmake/vgcpu_deps.cmake)
 include(cmake/vgcpu_options.cmake)
 include(cmake/vgcpu_sanitizers.cmake)
+
+# -----------------------------------------------------------------------------
+# Verify Vendor Dependencies Integrity (v1.1)
+# Blueprint Reference: [REQ-155], [DEC-BUILD-21]
+# -----------------------------------------------------------------------------
+include(cmake/vgcpu_third_party_hashes.cmake)
+if(NOT DEFINED VGCPU_VERIFY_THIRD_PARTY_HASHES)
+    set(VGCPU_VERIFY_THIRD_PARTY_HASHES ON) 
+endif()
+
+if(VGCPU_VERIFY_THIRD_PARTY_HASHES)
+    vgcpu_verify_third_party_hashes()
+endif()
+
 
 
 # -----------------------------------------------------------------------------
@@ -656,6 +670,7 @@ add_library(vgcpu_core STATIC
     src/assets/scene_registry.cpp
     src/common/alloc_tracker.cpp
 )
+vgcpu_apply_sanitizers(vgcpu_core)
 
 target_include_directories(vgcpu_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/src
@@ -737,6 +752,7 @@ add_library(vgcpu_adapters STATIC
 )
 
 target_link_libraries(vgcpu_adapters PUBLIC vgcpu_core)
+vgcpu_apply_sanitizers(vgcpu_adapters)
 
 # Link backend libraries
 if(ENABLE_PLUTOVG)
@@ -788,6 +804,27 @@ if(ENABLE_VELLO_CPU)
 endif()
 
 # -----------------------------------------------------------------------------
+# Artifacts Module (v1.1)
+# -----------------------------------------------------------------------------
+add_library(vgcpu_artifacts STATIC
+    src/artifacts/stb_image_write_impl.cpp
+    src/artifacts/stb_image_read_impl.cpp
+    src/artifacts/png_writer.cpp
+    src/artifacts/png_reader.cpp
+    src/artifacts/ssim_compare.cpp
+    src/artifacts/naming.cpp
+)
+target_include_directories(vgcpu_artifacts PUBLIC
+    include
+    src
+)
+target_include_directories(vgcpu_artifacts SYSTEM PRIVATE
+    third_party
+)
+target_link_libraries(vgcpu_artifacts PUBLIC vgcpu_core)
+vgcpu_apply_sanitizers(vgcpu_artifacts)
+
+# -----------------------------------------------------------------------------
 # Harness Library
 # -----------------------------------------------------------------------------
 add_library(vgcpu_harness STATIC
@@ -795,7 +832,8 @@ add_library(vgcpu_harness STATIC
     src/harness/statistics.cpp
 )
 
-target_link_libraries(vgcpu_harness PUBLIC vgcpu_adapters)
+target_link_libraries(vgcpu_harness PUBLIC vgcpu_adapters vgcpu_artifacts)
+vgcpu_apply_sanitizers(vgcpu_harness)
 
 # -----------------------------------------------------------------------------
 # Reporting Library
@@ -807,6 +845,7 @@ add_library(vgcpu_reporting STATIC
 )
 
 target_link_libraries(vgcpu_reporting PUBLIC vgcpu_core)
+vgcpu_apply_sanitizers(vgcpu_reporting)
 
 # -----------------------------------------------------------------------------
 # CLI Executable
@@ -821,6 +860,7 @@ target_link_libraries(vgcpu-benchmark PUBLIC
     vgcpu_harness
     vgcpu_reporting
 )
+vgcpu_apply_sanitizers(vgcpu-benchmark)
 
 if(ENABLE_SKIA AND MSVC)
     target_link_libraries(vgcpu-benchmark PRIVATE "${skia_binaries_SOURCE_DIR}/out/Release-x64/zlib.lib")
@@ -908,6 +948,7 @@ add_executable(vgcpu_tests
     tests/test_registry.cpp
     tests/test_concurrency.cpp
     tests/test_hotpath.cpp
+    tests/test_artifacts.cpp
 )
 
 target_include_directories(vgcpu_tests PRIVATE
@@ -917,6 +958,7 @@ target_include_directories(vgcpu_tests PRIVATE
 
 target_link_libraries(vgcpu_tests PRIVATE
     vgcpu_adapters
+    vgcpu_artifacts
 )
 
 # Define enabled backends for test registration

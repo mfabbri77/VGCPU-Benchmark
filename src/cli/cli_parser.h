@@ -48,6 +48,9 @@ struct CliOptions {
     bool fail_fast = false;
     bool help = false;
     bool validate_timer = false;
+    bool generate_png = false;
+    bool compare_ssim = false;
+    std::string golden_dir = "assets/golden";
 };
 
 /// CLI argument parser.

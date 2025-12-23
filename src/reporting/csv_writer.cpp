@@ -65,7 +65,8 @@ std::string CsvWriter::ToCsv(const std::vector<CaseResult>& results) {
     // Header row
     // Blueprint Reference: [REQ-49] Report MUST carry tool_version/schema_version (Chapter 4)
     oss << "backend_id,scene_id,scene_hash,width,height,decision,";
-    oss << "wall_p50_ns,wall_p90_ns,cpu_p50_ns,cpu_p90_ns,sample_count\n";
+    oss << "wall_p50_ns,wall_p90_ns,cpu_p50_ns,cpu_p90_ns,sample_count,";
+    oss << "artifact_path,ssim_score,ssim_passed,ssim_message\n";
 
     // Data rows
     for (const auto& r : results) {
@@ -79,7 +80,11 @@ std::string CsvWriter::ToCsv(const std::vector<CaseResult>& results) {
         oss << r.stats.wall_p90_ns << ",";
         oss << r.stats.cpu_p50_ns << ",";
         oss << r.stats.cpu_p90_ns << ",";
-        oss << r.stats.sample_count << "\n";
+        oss << r.stats.sample_count << ",";
+        oss << EscapeCsv(r.artifact_path) << ",";
+        oss << r.ssim_score << ",";
+        oss << (r.ssim_passed ? "true" : "false") << ",";
+        oss << EscapeCsv(r.ssim_message) << "\n";
     }
 
     return oss.str();

@@ -116,6 +116,16 @@ cmake -B build -DVGCPU_TIER1_ONLY=ON
 # Output to JSON and CSV
 ./build/dev/vgcpu-benchmark run --all-backends --scene test/simple_rect \
     --format both --out ./results
+
+# Generate PNG artifacts (Debug/Validation)
+./build/dev/vgcpu-benchmark run --backend blend2d --scene fills/solid_basic \
+    --png --output-dir ./artifacts
+
+# SSIM Regression Testing
+# 1. Generate golden images (store in assets/golden)
+# 2. Run with comparison
+./build/dev/vgcpu-benchmark run --backend blend2d --scene fills/solid_basic \
+    --compare-ssim --golden-dir assets/golden
 ```
 
 ## Quality Gates

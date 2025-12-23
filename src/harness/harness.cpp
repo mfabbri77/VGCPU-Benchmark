@@ -8,8 +8,15 @@
 
 #include "harness/statistics.h"
 #include "pal/timer.h"
+#include "vgcpu/artifacts/naming.hpp"
+#include "vgcpu/artifacts/png_reader.hpp"
+#include "vgcpu/artifacts/png_writer.hpp"
+#include "vgcpu/artifacts/ssim_compare.hpp"
+#include "vgcpu/internal/log.h"
 
 #include <algorithm>
+#include <filesystem>
+#include <mutex>
 
 namespace vgcpu {
 
@@ -111,6 +118,58 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
     // Compute statistics
     result.stats = ComputeStats(wall_samples, cpu_samples);
     result.decision = CaseDecision::kExecute;
+
+    // Artifact Generation
+    if (policy.generate_png) {
+        // [CONC-08-01] Serialize artifact I/O
+        static std::mutex artifact_mutex;
+        std::lock_guard<std::mutex> lock(artifact_mutex);
+
+        std::string filename =
+            artifacts::generate_artifact_path(result.backend_id, result.scene_id, ".png");
+        std::filesystem::path out_path = std::filesystem::path(policy.output_dir) / filename;
+
+        // Ensure output dir exists
+        std::error_code ec;
+        std::filesystem::create_directories(out_path.parent_path(), ec);
+
+        if (artifacts::write_png(out_path.string(), result.width, result.height, output_buffer)) {
+            result.artifact_path = out_path.string();
+        } else {
+            VGCPU_LOG_ERROR("Failed to write artifact: " + out_path.string());
+        }
+    }
+
+    // SSIM Comparison
+    if (policy.compare_ssim) {
+        std::string filename =
+            artifacts::generate_artifact_path(result.backend_id, result.scene_id, ".png");
+
+        std::filesystem::path golden_path = std::filesystem::path(policy.golden_dir) / filename;
+        result.golden_path = golden_path.string();
+
+        if (std::filesystem::exists(golden_path)) {
+            int gw = 0, gh = 0;
+            auto golden_pixels = artifacts::read_image(golden_path.string(), gw, gh);
+            if (!golden_pixels.empty()) {
+                if (gw == result.width && gh == result.height) {
+                    auto ssim_res = artifacts::compute_ssim(gw, gh, output_buffer, gw * 4,
+                                                            golden_pixels, gw * 4);
+                    result.ssim_score = ssim_res.score;
+                    result.ssim_passed = ssim_res.passed;
+                    result.ssim_message = ssim_res.message;
+                } else {
+                    result.ssim_passed = false;
+                    result.ssim_message = "Dimension mismatch";
+                }
+            } else {
+                result.ssim_passed = false;
+                result.ssim_message = "Failed to load golden image";
+            }
+        } else {
+            result.ssim_message = "Golden image not found";
+        }
+    }
 
     return result;
 }

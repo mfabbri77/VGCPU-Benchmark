@@ -28,7 +28,7 @@ std::vector<std::string> SplitString(const std::string& s, char delimiter) {
 }  // namespace
 
 void CliParser::PrintVersion() {
-    std::cout << "vgcpu-benchmark v0.1.0\n";
+    std::cout << "vgcpu-benchmark v0.2.0\n";
     std::cout << "CPU-only 2D Vector Graphics Benchmark Suite\n";
     std::cout << "Copyright (c) 2025 Michele Fabbri\n";
 }
@@ -53,6 +53,9 @@ void CliParser::PrintHelp() {
     std::cout << "  --out <path>           Output directory (default: .)\n";
     std::cout << "  --format <type>        Output format: json, csv, both (default: json)\n";
     std::cout << "  --fail-fast            Stop on first failure\n";
+    std::cout << "  --png                  Save rendered images to output directory\n";
+    std::cout << "  --compare-ssim         Compare result with golden images\n";
+    std::cout << "  --golden-dir <path>    Golden image directory (default: assets/golden)\n";
     std::cout << "\nGeneral Options:\n";
     std::cout << "  --help, -h             Print this help message\n";
     std::cout << "  --version, -v          Print version\n";
@@ -108,7 +111,7 @@ std::optional<CliOptions> CliParser::Parse(int argc, char* argv[]) {
             options.repetitions = std::stoi(argv[++i]);
         } else if (arg == "--threads" && i + 1 < argc) {
             options.threads = std::stoi(argv[++i]);
-        } else if (arg == "--out" && i + 1 < argc) {
+        } else if ((arg == "--out" || arg == "--output-dir") && i + 1 < argc) {
             options.output_dir = argv[++i];
         } else if (arg == "--format" && i + 1 < argc) {
             options.format = argv[++i];
@@ -116,6 +119,12 @@ std::optional<CliOptions> CliParser::Parse(int argc, char* argv[]) {
             options.fail_fast = true;
         } else if (arg == "--timer" || arg == "--validate-timer") {
             options.validate_timer = true;
+        } else if (arg == "--png") {
+            options.generate_png = true;
+        } else if (arg == "--compare-ssim") {
+            options.compare_ssim = true;
+        } else if (arg == "--golden-dir" && i + 1 < argc) {
+            options.golden_dir = argv[++i];
         } else if (arg == "--help" || arg == "-h") {
             options.help = true;
         } else {

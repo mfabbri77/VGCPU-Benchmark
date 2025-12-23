@@ -271,6 +271,10 @@ int HandleRun(const CliOptions& options) {
     policy.measurement_iterations = options.measurement_iters;
     policy.repetitions = options.repetitions;
     policy.thread_count = options.threads;
+    policy.generate_png = options.generate_png;
+    policy.compare_ssim = options.compare_ssim;
+    policy.golden_dir = options.golden_dir;
+    policy.output_dir = options.output_dir.empty() ? "." : options.output_dir;
 
     // Run benchmarks
     std::vector<CaseResult> results;

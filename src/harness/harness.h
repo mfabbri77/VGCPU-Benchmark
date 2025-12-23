@@ -24,6 +24,10 @@ struct BenchmarkPolicy {
     int measurement_iterations = 10;
     int repetitions = 1;
     int thread_count = 1;  // 0 = backend default
+    bool generate_png = false;
+    bool compare_ssim = false;
+    std::string golden_dir;
+    std::string output_dir = ".";
 };
 
 /// Timing statistics for a single benchmark case.
@@ -58,6 +62,13 @@ struct CaseResult {
     std::vector<std::string> reasons;
 
     TimingStats stats;
+
+    // Artifacts
+    std::string artifact_path;
+    std::string golden_path;
+    double ssim_score = 0.0;
+    bool ssim_passed = true;  // Default true if not run
+    std::string ssim_message;
 };
 
 /// Full benchmark run result.
