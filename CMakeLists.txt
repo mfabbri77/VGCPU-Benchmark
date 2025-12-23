@@ -4,6 +4,10 @@
 # Blueprint Reference: Appendix A, §A.2 — Build System (CMake)
 cmake_minimum_required(VERSION 3.21)
 
+# Fix for dependencies (e.g. FreeType) using old CMake versions (<3.5)
+# which are no longer supported by modern CMake.
+set(CMAKE_POLICY_VERSION_MINIMUM "3.5")
+
 project(VGCPU-Benchmark
     VERSION 0.1.0
     DESCRIPTION "CPU-only 2D Vector Graphics Benchmark Suite"
@@ -34,17 +38,17 @@ endif()
 # -----------------------------------------------------------------------------
 # Backend Enablement Options
 # -----------------------------------------------------------------------------
-set(ENABLE_NULL_BACKEND    ON CACHE BOOL "Enable Null backend" FORCE)
-set(ENABLE_PLUTOVG         ON CACHE BOOL "Enable PlutoVG backend" FORCE)
-set(ENABLE_CAIRO           ON CACHE BOOL "Enable Cairo backend" FORCE)
-set(ENABLE_BLEND2D         ON CACHE BOOL "Enable Blend2D backend" FORCE)
-set(ENABLE_SKIA            ON CACHE BOOL "Enable Skia backend" FORCE)
-set(ENABLE_THORVG          ON CACHE BOOL "Enable ThorVG backend" FORCE)
-set(ENABLE_AGG             ON CACHE BOOL "Enable AGG backend" FORCE)
-set(ENABLE_QT              ON CACHE BOOL "Enable Qt Raster backend" FORCE)
-set(ENABLE_AMANITHVG       ON CACHE BOOL "Enable AmanithVG SRE backend" FORCE)
-set(ENABLE_RAQOTE          ON CACHE BOOL "Enable Raqote backend" FORCE)
-set(ENABLE_VELLO_CPU       ON CACHE BOOL "Enable vello_cpu backend" FORCE)
+option(ENABLE_NULL_BACKEND    "Enable Null backend"          ON)
+option(ENABLE_PLUTOVG         "Enable PlutoVG backend"       ON)
+option(ENABLE_CAIRO           "Enable Cairo backend"         ON)
+option(ENABLE_BLEND2D         "Enable Blend2D backend"       ON)
+option(ENABLE_SKIA            "Enable Skia backend"          ON)
+option(ENABLE_THORVG          "Enable ThorVG backend"        ON)
+option(ENABLE_AGG             "Enable AGG backend"           ON)
+option(ENABLE_QT              "Enable Qt Raster backend"     ON)
+option(ENABLE_AMANITHVG       "Enable AmanithVG SRE backend" ON)
+option(ENABLE_RAQOTE          "Enable Raqote backend"        ON)
+option(ENABLE_VELLO_CPU       "Enable vello_cpu backend"     ON)
 
 
 # -----------------------------------------------------------------------------
@@ -78,7 +82,7 @@ endif()
 # -----------------------------------------------------------------------------
 # Cairo (Prebuilt from preshing/cairo-windows)
 # -----------------------------------------------------------------------------
-if(ENABLE_CAIRO)
+if(ENABLE_CAIRO AND WIN32)
     FetchContent_Declare(
         cairo_prebuilt
         URL https://github.com/preshing/cairo-windows/releases/download/1.17.2/cairo-windows-1.17.2.zip
