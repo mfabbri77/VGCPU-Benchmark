@@ -24,6 +24,14 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
     set_property(CACHE CMAKE_BUILD_TYPE PROPERTY STRINGS "Debug" "Release" "RelWithDebInfo" "MinSizeRel")
 endif()
 # -----------------------------------------------------------------------------
+# Global MSVC Runtime Library Setting (Must be before any targets)
+# Skia prebuilts are static (/MT), so we force everything else to match.
+# -----------------------------------------------------------------------------
+if(MSVC)
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+# -----------------------------------------------------------------------------
 # Backend Enablement Options
 # -----------------------------------------------------------------------------
 set(ENABLE_NULL_BACKEND    ON CACHE BOOL "Enable Null backend" FORCE)
@@ -68,9 +76,38 @@ if(ENABLE_PLUTOVG)
 endif()
 
 # -----------------------------------------------------------------------------
-# Cairo (System library via PkgConfig)
-# Blueprint Reference: backends/cairo.md
+# Cairo (Prebuilt from preshing/cairo-windows)
 # -----------------------------------------------------------------------------
+if(ENABLE_CAIRO)
+    FetchContent_Declare(
+        cairo_prebuilt
+        URL https://github.com/preshing/cairo-windows/releases/download/1.17.2/cairo-windows-1.17.2.zip
+    )
+    FetchContent_MakeAvailable(cairo_prebuilt)
+
+    if(WIN32)
+        add_library(cairo STATIC IMPORTED)
+        set_target_properties(cairo PROPERTIES
+            IMPORTED_LOCATION "${cairo_prebuilt_SOURCE_DIR}/lib/x64/cairo.lib"
+            INTERFACE_INCLUDE_DIRECTORIES "${cairo_prebuilt_SOURCE_DIR}/include"
+        )
+        
+        # Set root for DLL copy logic at the end of file
+        set(LOCAL_CAIRO_ROOT "${cairo_prebuilt_SOURCE_DIR}")
+        
+        # Mark as found and create aliases expected by the rest of the build
+        set(CAIRO_FOUND TRUE)
+        set(cairo_VERSION "1.17.2")
+        if(NOT TARGET PkgConfig::CAIRO)
+            add_library(PkgConfig::CAIRO ALIAS cairo)
+        endif()
+    else()
+        # Fallback for non-Windows (though this URL is Windows specific)
+        find_package(Cairo REQUIRED)
+    endif()
+    
+    message(STATUS "Cairo fetched (Prebuilt 1.17.2 - Windows)")
+endif()
 # -----------------------------------------------------------------------------
 # Blend2D & AsmJit (FetchContent)
 # Blueprint Reference: backends/blend2d.md
@@ -180,7 +217,7 @@ if(ENABLE_SKIA)
             "/ALTERNATENAME:inflateReset=Cr_z_inflateReset"
             "/ALTERNATENAME:inflate=Cr_z_inflate"
         )
-        set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+        # set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     endif()
 
     if(APPLE)
@@ -222,6 +259,24 @@ endif()
 # Blueprint Reference: backends/agg.md
 # -----------------------------------------------------------------------------
 if(ENABLE_AGG)
+    # Freetype (Required by AGG)
+    FetchContent_Declare(
+        freetype
+        GIT_REPOSITORY https://gitlab.freedesktop.org/freetype/freetype.git
+        GIT_TAG        VER-2-13-2
+    )
+    set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_PNG ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_HARFBUZZ ON CACHE BOOL "" FORCE)
+    set(FT_DISABLE_BROTLI ON CACHE BOOL "" FORCE)
+    FetchContent_MakeAvailable(freetype)
+
+    # Create alias for compatibility
+    if(TARGET freetype AND NOT TARGET Freetype::Freetype)
+        add_library(Freetype::Freetype ALIAS freetype)
+    endif()
+
     FetchContent_Declare(
         agg
         GIT_REPOSITORY https://github.com/ghaerr/agg-2.6.git
@@ -239,7 +294,7 @@ if(ENABLE_AGG)
             "${agg_SOURCE_DIR}/agg-src/include"
             "${agg_SOURCE_DIR}/agg-src/font_freetype"
         )
-        find_package(Freetype REQUIRED)
+        # find_package(Freetype REQUIRED) -- We build it ourselves now
         target_link_libraries(agg PUBLIC Freetype::Freetype)
         
         target_compile_definitions(agg PUBLIC 

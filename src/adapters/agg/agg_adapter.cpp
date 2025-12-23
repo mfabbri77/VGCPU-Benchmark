@@ -6,6 +6,11 @@
 
 // AGG includes
 #include "adapters/adapter_registry.h"
+#if defined(_MSC_VER)
+#pragma warning(push)
+#pragma warning(disable : 4244 5054 5055)
+#endif
+
 #include "agg_conv_stroke.h"
 #include "agg_conv_transform.h"
 #include "agg_path_storage.h"
@@ -15,6 +20,10 @@
 #include "agg_renderer_scanline.h"
 #include "agg_rendering_buffer.h"
 #include "agg_scanline_p.h"
+
+#if defined(_MSC_VER)
+#pragma warning(pop)
+#endif
 #include "ir/prepared_scene.h"
 
 #include <cmath>
