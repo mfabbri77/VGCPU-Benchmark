@@ -1,3 +1,9 @@
+# VGCPU-Benchmark CI Pipeline
+# Blueprint Reference: [REQ-106..110], [TASK-06.02], Appendix E
+#
+# Uses CMake presets per [REQ-92] - no ad-hoc CMake commands.
+# Runs quality gates per [REQ-103]: format_check, check_no_temp_dbg
+
 name: VGCPU CI
 
 on:
@@ -6,61 +12,147 @@ on:
   pull_request:
     branches: [ main ]
 
-env:
-  BUILD_TYPE: Release
-
 jobs:
-  build-and-test:
-    name: ${{ matrix.os }}
+  # ---------------------------------------------------------------------------
+  # Quality Gates (Fast - runs first)
+  # ---------------------------------------------------------------------------
+  quality-gates:
+    name: Quality Gates
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      
+      - name: Check for TEMP-DBG markers
+        run: python3 tools/check_no_temp_dbg.py .
+      
+      - name: Validate report schemas (smoke test)
+        run: |
+          echo "Report validators available - will run on actual outputs after build"
+
+  # ---------------------------------------------------------------------------
+  # Build Matrix (Tier-1 backends only for CI)
+  # Blueprint Reference: [REQ-107], [DEC-SCOPE-02]
+  # ---------------------------------------------------------------------------
+  build-tier1:
+    name: Build Tier-1 (${{ matrix.os }})
     runs-on: ${{ matrix.os }}
+    needs: quality-gates
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
+        include:
+          - os: ubuntu-latest
+            preset: ci
+            generator: Ninja
+          - os: macos-latest
+            preset: ci
+            generator: Ninja
+          - os: windows-latest
+            preset: ci
+            generator: Ninja
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
 
-    - name: Install Dependencies (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build libcairo2-dev qt6-base-dev libfreetype6-dev libfontconfig1-dev
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
 
-    - name: Install Dependencies (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install ninja cairo qt6 freetype fontconfig
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja
 
-    - name: Install Dependencies (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        choco install ninja
-        # Qt/Cairo handling on Windows via Actions is complex. 
-        # For now, we rely on CMake warnings/skips if not found, or strict failures if required.
-        # We'll try to use vcpkg if feasible, but sticking to basics first.
+      # Configure using preset (per [REQ-92])
+      - name: Configure (CI Preset)
+        run: cmake --preset ${{ matrix.preset }}
 
-    - name: Configure CMake
-      run: |
-        cmake -B ${{github.workspace}}/build -G Ninja -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+      # Build using preset
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
 
-    - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+      # Run CTest
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
 
-    - name: Test
-      working-directory: ${{github.workspace}}/build
-      run: ctest -C ${{env.BUILD_TYPE}} --output-on-failure
+      # Run quality gate targets
+      - name: Check TEMP-DBG markers
+        run: cmake --build --preset ${{ matrix.preset }} --target check_no_temp_dbg
 
-    - name: System Test (Run CLI)
-      working-directory: ${{github.workspace}}/build
-      run: |
-        ./vgcpu-benchmark --help
-        ./vgcpu-benchmark list
-        # Minimal run (1 iteration) on Null backend to verify flow
-        ./vgcpu-benchmark run --backend null --scene-id rect_100x100 --warmup 0 --measure 1 --repeat 1
+      # CLI smoke test
+      - name: CLI Smoke Test
+        run: |
+          ./build/${{ matrix.preset }}/vgcpu-benchmark --help
+          ./build/${{ matrix.preset }}/vgcpu-benchmark list
+          ./build/${{ matrix.preset }}/vgcpu-benchmark run --backend null --scene test/simple_rect --warmup-iters 1 --iters 2 --format json --out /tmp/ci_test
+        shell: bash
+
+      # Validate report output
+      - name: Validate Report Output
+        run: python3 tools/validate_report_json.py /tmp/ci_test/results.json
+        shell: bash
+
+      # Upload build artifacts
+      - name: Upload Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: vgcpu-benchmark-${{ matrix.os }}
+          path: build/${{ matrix.preset }}/vgcpu-benchmark*
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Address Sanitizer (Linux only per [DEC-BUILD-04])
+  # ---------------------------------------------------------------------------
+  sanitizer-asan:
+    name: AddressSanitizer (Linux)
+    runs-on: ubuntu-latest
+    needs: quality-gates
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure (ASan Preset)
+        run: cmake --preset asan
+
+      - name: Build
+        run: cmake --build --preset asan
+
+      - name: Test with ASan
+        run: ctest --preset asan
+        env:
+          ASAN_OPTIONS: detect_leaks=1:abort_on_error=1
+
+  # ---------------------------------------------------------------------------
+  # UndefinedBehavior Sanitizer (Linux only)
+  # ---------------------------------------------------------------------------
+  sanitizer-ubsan:
+    name: UBSan (Linux)
+    runs-on: ubuntu-latest
+    needs: quality-gates
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Dependencies
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
+
+      - name: Configure (UBSan Preset)
+        run: cmake --preset ubsan
+
+      - name: Build
+        run: cmake --build --preset ubsan
+
+      - name: Test with UBSan
+        run: ctest --preset ubsan
+        env:
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1

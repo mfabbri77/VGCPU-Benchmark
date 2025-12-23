@@ -1,3 +1,9 @@
+# VGCPU-Benchmark Release Pipeline
+# Blueprint Reference: [REQ-140..145], [TASK-07.02], Appendix E
+#
+# Uses CMake presets per [REQ-92].
+# Release builds use the 'release' preset with Tier-1 backends only.
+
 name: VGCPU Release
 
 on:
@@ -5,12 +11,12 @@ on:
     tags:
       - 'v*'
 
-env:
-  BUILD_TYPE: Release
-
 jobs:
+  # ---------------------------------------------------------------------------
+  # Build Release Artifacts
+  # ---------------------------------------------------------------------------
   build-release:
-    name: Build Release ${{ matrix.os }}
+    name: Release ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
       matrix:
@@ -18,94 +24,127 @@ jobs:
           - os: ubuntu-latest
             artifact_name: vgcpu-benchmark-linux-x86_64
             asset_name: vgcpu-benchmark-linux-x86_64.tar.gz
+            preset: release
           - os: macos-latest
-            artifact_name: vgcpu-benchmark-macos-x86_64 # Note: macos-latest is x86_64/arm64 depending on runner. Github macos-latest is arm64 (M1) now often, need to check. Assuming unified or specific.
-            asset_name: vgcpu-benchmark-macos.tar.gz
+            artifact_name: vgcpu-benchmark-macos-arm64
+            asset_name: vgcpu-benchmark-macos-arm64.tar.gz
+            preset: release
           - os: windows-latest
             artifact_name: vgcpu-benchmark-windows-x86_64
             asset_name: vgcpu-benchmark-windows-x86_64.zip
+            preset: release
 
     steps:
-    - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
 
-    - name: Set up Rust
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        override: true
+      - name: Install Ninja (Linux)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y ninja-build
 
-    - name: Install Dependencies (Linux)
-      if: runner.os == 'Linux'
-      run: |
-        sudo apt-get update
-        sudo apt-get install -y ninja-build libcairo2-dev qt6-base-dev libfreetype6-dev libfontconfig1-dev
+      - name: Install Ninja (macOS)
+        if: runner.os == 'macOS'
+        run: brew install ninja
 
-    - name: Install Dependencies (macOS)
-      if: runner.os == 'macOS'
-      run: |
-        brew install ninja cairo qt6 freetype fontconfig
+      - name: Install Ninja (Windows)
+        if: runner.os == 'Windows'
+        run: choco install ninja
 
-    - name: Install Dependencies (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        choco install ninja
+      # Configure using preset (per [REQ-92])
+      - name: Configure (Release Preset)
+        run: cmake --preset ${{ matrix.preset }}
 
-    - name: Configure CMake
-      run: cmake -B ${{github.workspace}}/build -G Ninja -DCMAKE_BUILD_TYPE=${{env.BUILD_TYPE}}
+      # Build using preset
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
 
-    - name: Build
-      run: cmake --build ${{github.workspace}}/build --config ${{env.BUILD_TYPE}}
+      # Run tests
+      - name: Test
+        run: ctest --preset ${{ matrix.preset }}
 
-    - name: Test
-      working-directory: ${{github.workspace}}/build
-      run: ctest -C ${{env.BUILD_TYPE}}
+      # Package (Unix)
+      - name: Package (Unix)
+        if: runner.os != 'Windows'
+        run: |
+          mkdir -p package/bin
+          cp build/${{ matrix.preset }}/vgcpu-benchmark package/bin/
+          cp -r assets package/
+          cp README.md package/
+          cp LICENSE package/
+          # Include third-party notices when available
+          [ -f THIRD_PARTY_NOTICES.md ] && cp THIRD_PARTY_NOTICES.md package/
+          tar -czvf ${{ matrix.asset_name }} -C package .
 
-    - name: Package (Unix)
-      if: runner.os != 'Windows'
-      run: |
-        mkdir -p package/bin
-        cp ${{github.workspace}}/build/vgcpu-benchmark package/bin/
-        cp -r assets package/
-        cp README.md package/
-        tar -czvf ${{ matrix.asset_name }} -C package .
+      # Package (Windows)
+      - name: Package (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path package/bin
+          Copy-Item "build/${{ matrix.preset }}/vgcpu-benchmark.exe" -Destination "package/bin/"
+          Copy-Item -Recurse "assets" -Destination "package/"
+          Copy-Item "README.md" -Destination "package/"
+          Copy-Item "LICENSE" -Destination "package/"
+          if (Test-Path "THIRD_PARTY_NOTICES.md") { Copy-Item "THIRD_PARTY_NOTICES.md" -Destination "package/" }
+          Compress-Archive -Path "package/*" -DestinationPath "${{ matrix.asset_name }}"
 
-    - name: Package (Windows)
-      if: runner.os == 'Windows'
-      run: |
-        mkdir package
-        mkdir package\bin
-        copy ${{github.workspace}}\build\vgcpu-benchmark.exe package\bin\
-        xcopy /E /I assets package\assets
-        copy README.md package\
-        7z a ${{ matrix.asset_name }} .\package\*
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact_name }}
+          path: ${{ matrix.asset_name }}
+          retention-days: 30
 
-    - name: Upload Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: ${{ matrix.artifact_name }}
-        path: ${{ matrix.asset_name }}
-
+  # ---------------------------------------------------------------------------
+  # Create GitHub Release
+  # ---------------------------------------------------------------------------
   release:
+    name: Create Release
     needs: build-release
     runs-on: ubuntu-latest
-    steps:
-    - uses: actions/checkout@v4
+    permissions:
+      contents: write
     
-    - name: Download Artifacts
-      uses: actions/download-artifact@v4
-      with:
-        path: artifacts
+    steps:
+      - uses: actions/checkout@v4
+      
+      - name: Download Artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
 
-    - name: Generate Checksums
-      run: |
-        cd artifacts
-        find . -name "*.tar.gz" -o -name "*.zip" -exec shasum -a 256 {} \; > checksums.txt
-        cat checksums.txt
+      - name: Generate Checksums
+        run: |
+          cd artifacts
+          find . -type f \( -name "*.tar.gz" -o -name "*.zip" \) -exec sha256sum {} \; > SHA256SUMS.txt
+          cat SHA256SUMS.txt
 
-    - name: Release
-      uses: softprops/action-gh-release@v1
-      if: startsWith(github.ref, 'refs/tags/')
-      with:
-        files: |
-          artifacts/**/*
-          artifacts/checksums.txt
+      - name: Extract Version
+        id: version
+        run: echo "version=${GITHUB_REF#refs/tags/}" >> $GITHUB_OUTPUT
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: VGCPU-Benchmark ${{ steps.version.outputs.version }}
+          body: |
+            ## VGCPU-Benchmark ${{ steps.version.outputs.version }}
+            
+            CPU-only 2D Vector Graphics Benchmark Suite
+            
+            ### Included Backends (Tier-1)
+            - null (Debug/Testing)
+            - PlutoVG
+            - Blend2D
+            
+            ### Installation
+            Download the archive for your platform and extract it.
+            Run `./bin/vgcpu-benchmark --help` to get started.
+            
+            ### Checksums
+            See `SHA256SUMS.txt` for file checksums.
+          files: |
+            artifacts/**/*.tar.gz
+            artifacts/**/*.zip
+            artifacts/SHA256SUMS.txt
+          draft: false
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'rc') }}
