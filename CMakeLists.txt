@@ -850,6 +850,54 @@ endif()
 install(TARGETS vgcpu-benchmark RUNTIME DESTINATION bin)
 
 # -----------------------------------------------------------------------------
+# Testing Infrastructure (Blueprint [TASK-04.01], [TEST-01])
+# -----------------------------------------------------------------------------
+enable_testing()
+
+# Fetch doctest header-only testing framework
+FetchContent_Declare(
+    doctest
+    GIT_REPOSITORY https://github.com/doctest/doctest.git
+    GIT_TAG v2.4.11
+)
+FetchContent_MakeAvailable(doctest)
+
+# Build test executable
+add_executable(vgcpu_tests
+    tests/test_main.cpp
+    tests/test_pal.cpp
+    tests/test_registry.cpp
+)
+
+target_include_directories(vgcpu_tests PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${doctest_SOURCE_DIR}/doctest
+)
+
+target_link_libraries(vgcpu_tests PRIVATE
+    vgcpu_core
+    vgcpu_adapters
+)
+
+# Define enabled backends for test registration
+target_compile_definitions(vgcpu_tests PRIVATE
+    $<$<BOOL:${ENABLE_NULL_BACKEND}>:VGCPU_ENABLE_NULL_BACKEND>
+    $<$<BOOL:${ENABLE_PLUTOVG}>:VGCPU_ENABLE_PLUTOVG>
+    $<$<BOOL:${ENABLE_BLEND2D}>:VGCPU_ENABLE_BLEND2D>
+)
+
+# Apply sanitizers to test executable
+vgcpu_apply_sanitizers(vgcpu_tests)
+
+# Register tests with CTest
+include(${doctest_SOURCE_DIR}/scripts/cmake/doctest.cmake)
+doctest_discover_tests(vgcpu_tests)
+
+message(STATUS "Tests enabled: vgcpu_tests")
+
+
+
+# -----------------------------------------------------------------------------
 # Quality Gate Targets (Blueprint [REQ-103])
 # -----------------------------------------------------------------------------
 
