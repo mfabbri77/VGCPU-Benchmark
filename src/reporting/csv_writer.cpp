@@ -81,6 +81,16 @@ std::string CsvWriter::ToCsv(const std::vector<CaseResult>& results) {
 }
 
 Status CsvWriter::Write(const std::filesystem::path& path, const std::vector<CaseResult>& results) {
+    // Ensure parent directory exists
+    if (path.has_parent_path()) {
+        std::error_code ec;
+        std::filesystem::create_directories(path.parent_path(), ec);
+        if (ec) {
+            return Status::IOError("Failed to create directory: " + path.parent_path().string() +
+                                   " (" + ec.message() + ")");
+        }
+    }
+
     std::ofstream file(path);
     if (!file) {
         return Status::IOError("Failed to open file for writing: " + path.string());
