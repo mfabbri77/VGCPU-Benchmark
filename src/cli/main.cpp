@@ -11,6 +11,8 @@
 #include "pal/environment.h"
 #include "pal/timer.h"
 #include "reporting/reporter.h"
+#include "vgcpu/internal/log.h"
+#include "vgcpu/internal/version.h"
 
 #include <filesystem>
 #include <iostream>
@@ -77,7 +79,7 @@ void InitSceneRegistry() {
     if (std::filesystem::exists(kDefaultManifest)) {
         auto status = SceneRegistry::Instance().LoadManifest(kDefaultManifest, kDefaultAssetsDir);
         if (status.failed()) {
-            std::cerr << "Warning: Failed to load scene manifest: " << status.message << "\n";
+            VGCPU_LOG_WARN("Failed to load scene manifest: " + status.message);
         }
     }
 }
@@ -123,7 +125,7 @@ int HandleMetadata(const CliOptions& options) {
     std::cout << "  CPU Time:  " << pal::GetCpuTimeSemantics() << "\n";
     std::cout << "  CPU Freq:  " << (pal::GetCpuFrequency() / 1'000'000.0) << " MHz (est)\n";
     std::cout << "\nBuild Info:\n";
-    std::cout << "  Version:   0.1.0\n";
+    std::cout << "  Version:   " << VGCPU_VERSION_STRING << "\n";
     std::cout << "  Enabled Adapters:\n";
     for (const auto& id : AdapterRegistry::Instance().GetAdapterIds()) {
         std::cout << "    - " << id << "\n";
@@ -182,7 +184,7 @@ int HandleRun(const CliOptions& options) {
     }
 
     if (backend_ids.empty()) {
-        std::cerr << "Error: No backends available.\n";
+        VGCPU_LOG_ERROR("No backends available");
         return 1;
     }
 
@@ -216,14 +218,13 @@ int HandleRun(const CliOptions& options) {
             if (scene_path.extension() == ".irbin" || std::filesystem::exists(scene_path)) {
                 auto bytes = ir::IrLoader::LoadFromFile(scene_path);
                 if (!bytes) {
-                    std::cerr << "Error: Failed to load scene: " << scene_arg << "\n";
+                    VGCPU_LOG_ERROR("Failed to load scene: " + std::string(scene_arg));
                     continue;
                 }
 
                 auto result = ir::IrLoader::Prepare(*bytes, scene_path.stem().string());
                 if (result.failed()) {
-                    std::cerr << "Error: Failed to parse scene: " << result.status().message
-                              << "\n";
+                    VGCPU_LOG_ERROR("Failed to parse scene: " + result.status().message);
                     continue;
                 }
 
@@ -256,7 +257,7 @@ int HandleRun(const CliOptions& options) {
                             }
                         }
                     } else {
-                        std::cerr << "Warning: Scene not found: " << scene_arg << "\n";
+                        VGCPU_LOG_WARN("Scene not found: " + std::string(scene_arg));
                     }
                 }
             }
@@ -281,7 +282,7 @@ int HandleRun(const CliOptions& options) {
     for (const auto& backend_id : backend_ids) {
         auto adapter = registry.CreateAdapter(backend_id);
         if (!adapter) {
-            std::cerr << "Warning: Backend '" << backend_id << "' not found, skipping.\n";
+            VGCPU_LOG_WARN("Backend '" + backend_id + "' not found, skipping");
             continue;
         }
 
@@ -289,8 +290,7 @@ int HandleRun(const CliOptions& options) {
         args.thread_count = policy.thread_count;
         auto status = adapter->Initialize(args);
         if (status.failed()) {
-            std::cerr << "Warning: Failed to initialize '" << backend_id << "': " << status.message
-                      << "\n";
+            VGCPU_LOG_WARN("Failed to initialize '" + backend_id + "': " + status.message);
             continue;
         }
 
@@ -306,8 +306,8 @@ int HandleRun(const CliOptions& options) {
     // Prepare metadata
     RunMetadata metadata;
     metadata.run_timestamp = pal::GetTimestamp();
-    metadata.suite_version = "0.1.0";
-    metadata.git_commit = "development";
+    metadata.suite_version = VGCPU_VERSION_STRING;
+    metadata.git_commit = VGCPU_GIT_COMMIT;
     metadata.environment = pal::CollectEnvironment();
     metadata.policy = policy;
 
@@ -322,18 +322,18 @@ int HandleRun(const CliOptions& options) {
         auto json_path = out_dir / "results.json";
         auto status = JsonWriter::Write(json_path, metadata, results);
         if (status.ok()) {
-            std::cout << "JSON output: " << json_path << "\n";
+            VGCPU_LOG_INFO("JSON output: " + json_path.string());
         } else {
-            std::cerr << "Error writing JSON: " << status.message << "\n";
+            VGCPU_LOG_ERROR("Error writing JSON: " + status.message);
         }
     }
     if (options.format == "csv" || options.format == "both") {
         auto csv_path = out_dir / "results.csv";
         auto status = CsvWriter::Write(csv_path, results);
         if (status.ok()) {
-            std::cout << "CSV output: " << csv_path << "\n";
+            VGCPU_LOG_INFO("CSV output: " + csv_path.string());
         } else {
-            std::cerr << "Error writing CSV: " << status.message << "\n";
+            VGCPU_LOG_ERROR("Error writing CSV: " + status.message);
         }
     }
 

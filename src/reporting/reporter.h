@@ -8,6 +8,7 @@
 #include "common/status.h"
 #include "harness/harness.h"
 #include "pal/environment.h"
+#include "vgcpu/internal/version.h"
 
 #include <filesystem>
 #include <string>
@@ -17,7 +18,7 @@ namespace vgcpu {
 /// Run metadata for reporting.
 /// Blueprint Reference: Chapter 6, §6.6.1 — run_metadata
 struct RunMetadata {
-    std::string schema_version = "0.1.0";
+    std::string schema_version = VGCPU_REPORT_SCHEMA_VERSION;
     std::string run_timestamp;
     std::string suite_version;
     std::string git_commit;
