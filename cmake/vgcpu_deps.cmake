@@ -43,7 +43,13 @@ set(VGCPU_DEP_CAIRO_PREBUILT_VERSION "1.17.2")
 set(VGCPU_DEP_CORROSION_TAG "v0.5.0")
 
 # Rust toolchain version (updated to nightly to support vello_cpu's edition2024 requirement)
-set(VGCPU_DEP_RUST_TOOLCHAIN "nightly-aarch64-apple-darwin")
+if(APPLE)
+    set(VGCPU_DEP_RUST_TOOLCHAIN "nightly-aarch64-apple-darwin")
+elseif(WIN32)
+    set(VGCPU_DEP_RUST_TOOLCHAIN "nightly-x86_64-pc-windows-msvc")
+else()
+    set(VGCPU_DEP_RUST_TOOLCHAIN "nightly-x86_64-unknown-linux-gnu")
+endif()
 
 # -----------------------------------------------------------------------------
 # Validate no floating deps function (called at configure time)

@@ -12,11 +12,7 @@ namespace vgcpu {
 TEST_SUITE("Hot-Path Allocation Enforcement") {
     TEST_CASE("NullAdapter::Render performs zero dynamic allocations" *
               doctest::test_suite("hotpath")) {
-#ifndef VGCPU_ENABLE_ALLOC_INSTRUMENTATION
-        MESSAGE("Allocation instrumentation disabled - skipping test");
-        return;
-#endif
-
+#ifdef VGCPU_ENABLE_ALLOC_INSTRUMENTATION
         auto& registry = AdapterRegistry::Instance();
         auto loader = ir::IrLoader::CreateTestScene(200, 200);
         SurfaceConfig config;
@@ -56,6 +52,9 @@ TEST_SUITE("Hot-Path Allocation Enforcement") {
 
             adapter->Shutdown();
         }
+#else
+        MESSAGE("Allocation instrumentation disabled - skipping test");
+#endif
     }
 }
 

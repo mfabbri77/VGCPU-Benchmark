@@ -631,6 +631,7 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     endif()
 elseif(MSVC)
     add_compile_options(/W4)
+    add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
     if(CMAKE_BUILD_TYPE STREQUAL "Release")
         add_compile_options(/WX)
     endif()
@@ -857,6 +858,27 @@ if(MSVC)
                 $<TARGET_FILE_DIR:vgcpu-benchmark>
                 COMMENT "Copying AmanithVG DLL to output directory"
             )
+        endif()
+    endif()
+
+    # Qt Deployment (windeployqt)
+    if(ENABLE_QT)
+        find_program(WINDEPLOYQT_EXE windeployqt HINTS "${Qt6_DIR}/../../../bin")
+        if(WINDEPLOYQT_EXE)
+            add_custom_command(TARGET vgcpu-benchmark POST_BUILD
+                COMMAND ${WINDEPLOYQT_EXE} --release --no-translations --no-compiler-runtime --dir $<TARGET_FILE_DIR:vgcpu-benchmark> $<TARGET_FILE:vgcpu-benchmark>
+                COMMENT "Running windeployqt to deploy Qt dependencies..."
+            )
+            # Manually deploy qoffscreen.dll as windeployqt doesn't always include it by default
+            add_custom_command(TARGET vgcpu-benchmark POST_BUILD
+                COMMAND ${CMAKE_COMMAND} -E make_directory $<TARGET_FILE_DIR:vgcpu-benchmark>/platforms
+                COMMAND ${CMAKE_COMMAND} -E copy_if_different
+                "${Qt6_DIR}/../../../plugins/platforms/qoffscreen.dll"
+                "$<TARGET_FILE_DIR:vgcpu-benchmark>/platforms/qoffscreen.dll"
+                COMMENT "Copying qoffscreen.dll..."
+            )
+        else()
+            message(WARNING "windeployqt not found! Qt backend may fail to run.")
         endif()
     endif()
 endif()
