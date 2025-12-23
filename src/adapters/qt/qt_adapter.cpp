@@ -94,6 +94,10 @@ QBrush CreateBrush(const Paint& paint) {
 
 }  // namespace
 
+initialized_ = true;
+return Status::Ok();
+}
+
 Status QtAdapter::Initialize(const AdapterArgs& /*args*/) {
     // QGuiApplication needs a specialized offscreen backend for CLI usage
     if (!qApp) {
@@ -110,6 +114,14 @@ Status QtAdapter::Initialize(const AdapterArgs& /*args*/) {
     }
 
     initialized_ = true;
+    return Status::Ok();
+}
+
+Status QtAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("QtAdapter not initialized");
+    }
     return Status::Ok();
 }
 

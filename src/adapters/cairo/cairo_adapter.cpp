@@ -20,6 +20,14 @@ Status CairoAdapter::Initialize(const AdapterArgs& args) {
     return Status::Ok();
 }
 
+Status CairoAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("CairoAdapter not initialized");
+    }
+    return Status::Ok();
+}
+
 void CairoAdapter::Shutdown() {
     initialized_ = false;
 }

@@ -4,6 +4,7 @@
 // Blueprint Reference: Chapter 7, §7.2.6 — CsvWriter subcomponent
 
 #include "reporting/reporter.h"
+#include "vgcpu/internal/version.h"
 
 #include <fstream>
 #include <sstream>
@@ -56,6 +57,9 @@ std::string DecisionToString(CaseDecision decision) {
 
 std::string CsvWriter::ToCsv(const std::vector<CaseResult>& results) {
     std::ostringstream oss;
+
+    // Schema version header per [REQ-133-02]
+    oss << "# schema_version=" << VGCPU_REPORT_SCHEMA_VERSION << "\n";
 
     // Header row
     // Blueprint Reference: Chapter 6, §6.6.2 — CSV columns

@@ -46,10 +46,6 @@
 #include "adapters/agg/agg_adapter.h"
 #endif
 
-#ifdef VGCPU_ENABLE_AGG
-#include "adapters/agg/agg_adapter.h"
-#endif
-
 #ifdef VGCPU_ENABLE_QT
 #include "adapters/qt/qt_adapter.h"
 #endif
@@ -207,7 +203,7 @@ int HandleRun(const CliOptions& options) {
             }
         }
         if (!scenes.empty()) {
-            std::cout << "Loaded " << scenes.size() << " scenes from manifest\n";
+            VGCPU_LOG_INFO("Loaded " + std::to_string(scenes.size()) + " scenes from manifest");
         }
     } else if (!options.scenes.empty()) {
         // Load scenes from file paths or asset IDs
@@ -229,7 +225,7 @@ int HandleRun(const CliOptions& options) {
                 }
 
                 scenes.push_back(std::move(result.value()));
-                std::cout << "Loaded scene: " << scene_arg << "\n";
+                VGCPU_LOG_INFO("Loaded scene: " + scene_arg);
             } else {
                 // Try from scene registry
                 auto& scene_reg = SceneRegistry::Instance();
@@ -240,7 +236,7 @@ int HandleRun(const CliOptions& options) {
                         auto result = ir::IrLoader::Prepare(*bytes, scene_arg);
                         if (result.ok()) {
                             scenes.push_back(std::move(result.value()));
-                            std::cout << "Loaded scene: " << scene_arg << "\n";
+                            VGCPU_LOG_INFO("Loaded scene: " + scene_arg);
                         }
                     }
                 } else {
@@ -253,7 +249,7 @@ int HandleRun(const CliOptions& options) {
                             auto result = ir::IrLoader::Prepare(*bytes, scene_arg);
                             if (result.ok()) {
                                 scenes.push_back(std::move(result.value()));
-                                std::cout << "Loaded scene: " << scene_arg << "\n";
+                                VGCPU_LOG_INFO("Loaded scene: " + std::string(scene_arg));
                             }
                         }
                     } else {

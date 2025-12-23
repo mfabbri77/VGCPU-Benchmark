@@ -133,6 +133,14 @@ Status SkiaAdapter::Initialize(const AdapterArgs& /*args*/) {
     return Status::Ok();
 }
 
+Status SkiaAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("SkiaAdapter not initialized");
+    }
+    return Status::Ok();
+}
+
 void SkiaAdapter::Shutdown() {
     initialized_ = false;
 }

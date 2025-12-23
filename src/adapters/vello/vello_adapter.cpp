@@ -100,6 +100,14 @@ Status VelloAdapter::Initialize(const AdapterArgs& /*args*/) {
     return Status::Ok();
 }
 
+Status VelloAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("VelloAdapter not initialized");
+    }
+    return Status::Ok();
+}
+
 void VelloAdapter::Shutdown() {
     initialized_ = false;
 }

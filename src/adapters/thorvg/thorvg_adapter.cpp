@@ -123,6 +123,14 @@ Status ThorVGAdapter::Initialize(const AdapterArgs& /*args*/) {
     return Status::Ok();
 }
 
+Status ThorVGAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("ThorVGAdapter not initialized");
+    }
+    return Status::Ok();
+}
+
 void ThorVGAdapter::Shutdown() {
     if (initialized_) {
         tvg::Initializer::term(tvg::CanvasEngine::Sw);

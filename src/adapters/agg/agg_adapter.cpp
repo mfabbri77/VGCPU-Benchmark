@@ -51,6 +51,14 @@ Status AggAdapter::Initialize(const AdapterArgs& args) {
     return Status::Ok();
 }
 
+Status AggAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("AggAdapter not initialized");
+    }
+    return Status::Ok();
+}
+
 void AggAdapter::Shutdown() {
     initialized_ = false;
 }

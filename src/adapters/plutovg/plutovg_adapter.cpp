@@ -20,6 +20,14 @@ Status PlutoVGAdapter::Initialize(const AdapterArgs& args) {
     return Status::Ok();
 }
 
+Status PlutoVGAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("PlutoVGAdapter not initialized");
+    }
+    return Status::Ok();
+}
+
 void PlutoVGAdapter::Shutdown() {
     initialized_ = false;
 }

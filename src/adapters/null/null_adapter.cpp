@@ -16,6 +16,14 @@ Status NullAdapter::Initialize(const AdapterArgs& args) {
     return Status::Ok();
 }
 
+Status NullAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("NullAdapter not initialized");
+    }
+    return Status::Ok();
+}
+
 void NullAdapter::Shutdown() {
     initialized_ = false;
 }

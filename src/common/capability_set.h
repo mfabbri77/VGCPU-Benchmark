@@ -39,6 +39,9 @@ struct CapabilitySet {
     // Compositing (baseline: source-over)
     bool supports_source_over = true;
 
+    // Concurrency [REQ-35]
+    bool supports_parallel_render = false;
+
     /// Create a CapabilitySet with all features enabled.
     static CapabilitySet All() { return {}; }
 

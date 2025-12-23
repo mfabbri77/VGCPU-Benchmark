@@ -518,8 +518,11 @@ if(ENABLE_RAQOTE OR ENABLE_VELLO_CPU)
 endif()
 
 if(ENABLE_RAQOTE OR ENABLE_VELLO_CPU)
-    corrosion_import_crate(MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust_bridge/Cargo.toml")
-    message(STATUS "Rust bridge workspace imported via Corrosion")
+    corrosion_import_crate(
+        MANIFEST_PATH "${CMAKE_SOURCE_DIR}/rust_bridge/Cargo.toml"
+        TOOLCHAIN ${VGCPU_DEP_RUST_TOOLCHAIN}
+    )
+    message(STATUS "Rust bridge workspace imported via Corrosion using toolchain ${VGCPU_DEP_RUST_TOOLCHAIN}")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -643,6 +646,7 @@ add_library(vgcpu_core STATIC
     src/ir/ir_loader.cpp
     src/ir/prepared_scene.cpp
     src/assets/scene_registry.cpp
+    src/common/alloc_tracker.cpp
 )
 
 target_include_directories(vgcpu_core PUBLIC
@@ -651,6 +655,10 @@ target_include_directories(vgcpu_core PUBLIC
 )
 
 target_link_libraries(vgcpu_core PUBLIC nlohmann_json::nlohmann_json)
+
+if(VGCPU_ENABLE_ALLOC_INSTRUMENTATION)
+    target_compile_definitions(vgcpu_core PUBLIC VGCPU_ENABLE_ALLOC_INSTRUMENTATION)
+endif()
 
 # -----------------------------------------------------------------------------
 # Adapter Library
@@ -868,6 +876,8 @@ add_executable(vgcpu_tests
     tests/test_main.cpp
     tests/test_pal.cpp
     tests/test_registry.cpp
+    tests/test_concurrency.cpp
+    tests/test_hotpath.cpp
 )
 
 target_include_directories(vgcpu_tests PRIVATE
@@ -885,6 +895,7 @@ target_compile_definitions(vgcpu_tests PRIVATE
     $<$<BOOL:${ENABLE_NULL_BACKEND}>:VGCPU_ENABLE_NULL_BACKEND>
     $<$<BOOL:${ENABLE_PLUTOVG}>:VGCPU_ENABLE_PLUTOVG>
     $<$<BOOL:${ENABLE_BLEND2D}>:VGCPU_ENABLE_BLEND2D>
+    $<$<BOOL:${VGCPU_ENABLE_ALLOC_INSTRUMENTATION}>:VGCPU_ENABLE_ALLOC_INSTRUMENTATION>
 )
 
 # Apply sanitizers to test executable
@@ -912,9 +923,19 @@ if(Python3_FOUND)
         WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
         COMMENT "[REQ-105] Checking for TEMP-DBG markers..."
     )
+
+    # Target: check_includes - Enforces include boundary layering [TASK-03.03]
+    add_custom_target(check_includes
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_includes.py ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "[REQ-41] Checking include boundary violations..."
+    )
 else()
     add_custom_target(check_no_temp_dbg
         COMMAND ${CMAKE_COMMAND} -E echo "Warning: Python3 not found, skipping TEMP-DBG check"
+    )
+    add_custom_target(check_includes
+        COMMAND ${CMAKE_COMMAND} -E echo "Warning: Python3 not found, skipping include check"
     )
 endif()
 

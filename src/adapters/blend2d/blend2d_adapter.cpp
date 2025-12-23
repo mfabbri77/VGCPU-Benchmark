@@ -56,6 +56,14 @@ Status Blend2DAdapter::Initialize(const AdapterArgs& args) {
     return Status::Ok();
 }
 
+Status Blend2DAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("Blend2DAdapter not initialized");
+    }
+    return Status::Ok();
+}
+
 void Blend2DAdapter::Shutdown() {
     initialized_ = false;
 }
@@ -75,7 +83,9 @@ AdapterInfo Blend2DAdapter::GetInfo() const {
 }
 
 CapabilitySet Blend2DAdapter::GetCapabilities() const {
-    return CapabilitySet::All();
+    CapabilitySet caps = CapabilitySet::All();
+    caps.supports_parallel_render = true;
+    return caps;
 }
 
 Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,

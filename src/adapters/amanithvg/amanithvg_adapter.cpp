@@ -145,6 +145,14 @@ Status AmanithVGAdapter::Initialize(const AdapterArgs& /*args*/) {
     return Status::Ok();
 }
 
+Status AmanithVGAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("AmanithVGAdapter not initialized");
+    }
+    return Status::Ok();
+}
+
 void AmanithVGAdapter::Shutdown() {
     if (initialized_) {
         vgTerminateMZT();

@@ -23,11 +23,27 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
 
     // Check compatibility
     auto caps = adapter.GetCapabilities();
+
+    // [REQ-35] Concurrency enforcement
+    if (policy.thread_count > 1 && !caps.supports_parallel_render) {
+        result.decision = CaseDecision::kSkip;
+        result.reasons.push_back("UNSUPPORTED_FEATURE:parallel_render");
+        return result;
+    }
+
     RequiredFeatures required;  // TODO: Extract from scene
     std::string compat_reason = CheckCompatibility(caps, required);
     if (!compat_reason.empty()) {
         result.decision = CaseDecision::kSkip;
         result.reasons.push_back(compat_reason);
+        return result;
+    }
+
+    // [ARCH-14-F] Preparation phase
+    auto prepare_status = adapter.Prepare(scene);
+    if (prepare_status.failed()) {
+        result.decision = CaseDecision::kFail;
+        result.reasons.push_back("PREPARE_FAILED:" + prepare_status.message);
         return result;
     }
 

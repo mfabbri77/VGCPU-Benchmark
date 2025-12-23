@@ -13,6 +13,7 @@ class SkiaAdapter : public IBackendAdapter {
     ~SkiaAdapter() override = default;
 
     Status Initialize(const AdapterArgs& args) override;
+    Status Prepare(const PreparedScene& scene) override;
     void Shutdown() override;
     AdapterInfo GetInfo() const override;
     CapabilitySet GetCapabilities() const override;

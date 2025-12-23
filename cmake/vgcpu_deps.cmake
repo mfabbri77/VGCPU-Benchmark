@@ -43,7 +43,7 @@ set(VGCPU_DEP_CAIRO_PREBUILT_VERSION "1.17.2")
 set(VGCPU_DEP_CORROSION_TAG "v0.5.0")
 
 # Rust toolchain version (stable, not nightly per [DEC-BUILD-06])
-set(VGCPU_DEP_RUST_TOOLCHAIN "1.84.0")
+set(VGCPU_DEP_RUST_TOOLCHAIN "1.84.0-aarch64-apple-darwin")
 
 # -----------------------------------------------------------------------------
 # Validate no floating deps function (called at configure time)

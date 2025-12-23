@@ -101,6 +101,14 @@ Status RaqoteAdapter::Initialize(const AdapterArgs& /*args*/) {
     return Status::Ok();
 }
 
+Status RaqoteAdapter::Prepare(const PreparedScene& scene) {
+    (void)scene;
+    if (!initialized_) {
+        return Status::Fail("RaqoteAdapter not initialized");
+    }
+    return Status::Ok();
+}
+
 void RaqoteAdapter::Shutdown() {
     initialized_ = false;
 }

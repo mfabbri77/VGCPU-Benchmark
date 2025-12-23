@@ -19,6 +19,7 @@ class NullAdapter : public IBackendAdapter {
 
     // Lifecycle
     Status Initialize(const AdapterArgs& args) override;
+    Status Prepare(const PreparedScene& scene) override;
     void Shutdown() override;
 
     // Metadata

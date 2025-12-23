@@ -12,6 +12,7 @@ namespace vgcpu {
 class VelloAdapter : public IBackendAdapter {
    public:
     Status Initialize(const AdapterArgs& args) override;
+    Status Prepare(const PreparedScene& scene) override;
     void Shutdown() override;
     [[nodiscard]] AdapterInfo GetInfo() const override;
     [[nodiscard]] CapabilitySet GetCapabilities() const override;

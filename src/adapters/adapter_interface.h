@@ -54,6 +54,11 @@ class IBackendAdapter {
     /// Called once before any rendering operations.
     virtual Status Initialize(const AdapterArgs& args) = 0;
 
+    /// Prepare a scene for rendering.
+    /// Called once per scene before any measurements begin. [ARCH-14-F]
+    /// This is where backends should compile shaders, upload textures, etc.
+    virtual Status Prepare(const PreparedScene& scene) = 0;
+
     /// Shutdown the backend and release resources.
     /// Called once after all rendering is complete.
     virtual void Shutdown() = 0;
@@ -73,7 +78,7 @@ class IBackendAdapter {
     // Blueprint Reference: Chapter 6, §6.2.2 — CPU-Only Enforcement
     // -------------------------------------------------------------------------
 
-    /// Render the scene to an output buffer.
+    /// Render the scene to an output buffer (hot path). [ARCH-14-F]
     /// @param scene The prepared scene to render.
     /// @param config Surface configuration (width, height).
     /// @param output_buffer Output pixel buffer (RGBA8, premultiplied).
