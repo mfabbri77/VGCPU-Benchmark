@@ -36,19 +36,11 @@ if(MSVC)
 endif()
 
 # -----------------------------------------------------------------------------
-# Backend Enablement Options
+# Include Centralized Modules (Blueprint v1.0)
 # -----------------------------------------------------------------------------
-option(ENABLE_NULL_BACKEND    "Enable Null backend"          ON)
-option(ENABLE_PLUTOVG         "Enable PlutoVG backend"       ON)
-option(ENABLE_CAIRO           "Enable Cairo backend"         ON)
-option(ENABLE_BLEND2D         "Enable Blend2D backend"       ON)
-option(ENABLE_SKIA            "Enable Skia backend"          ON)
-option(ENABLE_THORVG          "Enable ThorVG backend"        ON)
-option(ENABLE_AGG             "Enable AGG backend"           ON)
-option(ENABLE_QT              "Enable Qt Raster backend"     ON)
-option(ENABLE_AMANITHVG       "Enable AmanithVG SRE backend" ON)
-option(ENABLE_RAQOTE          "Enable Raqote backend"        ON)
-option(ENABLE_VELLO_CPU       "Enable vello_cpu backend"     ON)
+include(cmake/vgcpu_deps.cmake)
+include(cmake/vgcpu_options.cmake)
+include(cmake/vgcpu_sanitizers.cmake)
 
 
 # -----------------------------------------------------------------------------
@@ -61,7 +53,7 @@ include(FetchContent)
 FetchContent_Declare(
     nlohmann_json
     GIT_REPOSITORY https://github.com/nlohmann/json.git
-    GIT_TAG        v3.11.3
+    GIT_TAG        ${VGCPU_DEP_NLOHMANN_JSON_TAG}
 )
 FetchContent_MakeAvailable(nlohmann_json)
 
@@ -73,10 +65,10 @@ if(ENABLE_PLUTOVG)
     FetchContent_Declare(
         plutovg
         GIT_REPOSITORY https://github.com/sammycage/plutovg.git
-        GIT_TAG        v1.3.2
+        GIT_TAG        ${VGCPU_DEP_PLUTOVG_TAG}
     )
     FetchContent_MakeAvailable(plutovg)
-    message(STATUS "PlutoVG fetched from GitHub (v1.3.2)")
+    message(STATUS "PlutoVG fetched from GitHub (${VGCPU_DEP_PLUTOVG_TAG})")
 endif()
 
 # -----------------------------------------------------------------------------
@@ -118,17 +110,17 @@ endif()
 # -----------------------------------------------------------------------------
 if(ENABLE_BLEND2D)
     # AsmJit (Required by Blend2D)
-    # Blueprint Reference: Appendix A, §A.7.1 — Blend2D uses rolling release
+    # Blueprint Reference: [REQ-99], [REQ-100-01] — Pinned to commit SHA
     FetchContent_Declare(
         asmjit
         GIT_REPOSITORY https://github.com/asmjit/asmjit.git
-        GIT_TAG        master
+        GIT_TAG        ${VGCPU_DEP_ASMJIT_COMMIT}
     )
-    # Blend2D (rolling release - no version tags)
+    # Blend2D - Blueprint Reference: [REQ-99], [REQ-100-02] — Pinned to commit SHA
     FetchContent_Declare(
         blend2d
         GIT_REPOSITORY https://github.com/blend2d/blend2d.git
-        GIT_TAG        master
+        GIT_TAG        ${VGCPU_DEP_BLEND2D_COMMIT}
     )
 
     # Prevent GNUInstallDirs recursion
@@ -267,7 +259,7 @@ if(ENABLE_AGG)
     FetchContent_Declare(
         freetype
         GIT_REPOSITORY https://gitlab.freedesktop.org/freetype/freetype.git
-        GIT_TAG        VER-2-13-2
+        GIT_TAG        ${VGCPU_DEP_FREETYPE_TAG}
     )
     set(FT_DISABLE_ZLIB ON CACHE BOOL "" FORCE)
     set(FT_DISABLE_BZIP2 ON CACHE BOOL "" FORCE)
@@ -281,10 +273,11 @@ if(ENABLE_AGG)
         add_library(Freetype::Freetype ALIAS freetype)
     endif()
 
+    # Blueprint Reference: [REQ-99], [REQ-100-03] — Pinned to commit SHA
     FetchContent_Declare(
         agg
         GIT_REPOSITORY https://github.com/ghaerr/agg-2.6.git
-        GIT_TAG        master
+        GIT_TAG        ${VGCPU_DEP_AGG_COMMIT}
     )
     FetchContent_MakeAvailable(agg)
 
@@ -318,7 +311,7 @@ if(ENABLE_THORVG)
     FetchContent_Declare(
         thorvg
         GIT_REPOSITORY https://github.com/thorvg/thorvg.git
-        GIT_TAG        v0.15.16
+        GIT_TAG        ${VGCPU_DEP_THORVG_TAG}
     )
     FetchContent_GetProperties(thorvg)
     if(NOT thorvg_POPULATED)
@@ -448,10 +441,11 @@ endif()
 # Blueprint Reference: backends/amanithvg.md
 # -----------------------------------------------------------------------------
 if(ENABLE_AMANITHVG)
+    # Blueprint Reference: [REQ-99], [REQ-100-04] — Pinned to commit SHA
     FetchContent_Declare(
         amanithvg_sdk
         GIT_REPOSITORY https://github.com/Mazatech/amanithvg-sdk.git
-        GIT_TAG        master
+        GIT_TAG        ${VGCPU_DEP_AMANITHVG_COMMIT}
         GIT_SHALLOW    ON
     )
     FetchContent_MakeAvailable(amanithvg_sdk)
@@ -511,16 +505,16 @@ endif()
 
 # -----------------------------------------------------------------------------
 # Corrosion (Rust-CMake Bridge)
-# Blueprint Reference: backends/raqote.md, backends/vello.md
+# Blueprint Reference: backends/raqote.md, backends/vello.md, [DEC-BUILD-06]
 # -----------------------------------------------------------------------------
 if(ENABLE_RAQOTE OR ENABLE_VELLO_CPU)
     FetchContent_Declare(
         Corrosion
         GIT_REPOSITORY https://github.com/corrosion-rs/corrosion.git
-        GIT_TAG v0.5.0
+        GIT_TAG ${VGCPU_DEP_CORROSION_TAG}
     )
     FetchContent_MakeAvailable(Corrosion)
-    message(STATUS "Corrosion (Rust-CMake bridge) fetched")
+    message(STATUS "Corrosion (Rust-CMake bridge) fetched (${VGCPU_DEP_CORROSION_TAG})")
 endif()
 
 if(ENABLE_RAQOTE OR ENABLE_VELLO_CPU)
@@ -856,6 +850,64 @@ endif()
 install(TARGETS vgcpu-benchmark RUNTIME DESTINATION bin)
 
 # -----------------------------------------------------------------------------
+# Quality Gate Targets (Blueprint [REQ-103])
+# -----------------------------------------------------------------------------
+
+# Find Python for script execution
+find_package(Python3 COMPONENTS Interpreter QUIET)
+
+# Target: check_no_temp_dbg - Fails if TEMP-DBG markers exist [REQ-105]
+if(Python3_FOUND)
+    add_custom_target(check_no_temp_dbg
+        COMMAND ${Python3_EXECUTABLE} ${CMAKE_SOURCE_DIR}/tools/check_no_temp_dbg.py ${CMAKE_SOURCE_DIR}
+        WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+        COMMENT "[REQ-105] Checking for TEMP-DBG markers..."
+    )
+else()
+    add_custom_target(check_no_temp_dbg
+        COMMAND ${CMAKE_COMMAND} -E echo "Warning: Python3 not found, skipping TEMP-DBG check"
+    )
+endif()
+
+# Target: format_check - Verifies code formatting [REQ-116]
+add_custom_target(format_check
+    COMMAND ${CMAKE_SOURCE_DIR}/tools/format_check.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "[REQ-116] Checking code formatting..."
+)
+
+# Target: format - Applies code formatting
+add_custom_target(format
+    COMMAND ${CMAKE_SOURCE_DIR}/tools/format_all.sh
+    WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+    COMMENT "Formatting all source files..."
+)
+
+# Target: lint - Runs clang-tidy (when enabled) [REQ-103-02]
+if(VGCPU_ENABLE_LINT)
+    find_program(CLANG_TIDY_EXE NAMES clang-tidy)
+    if(CLANG_TIDY_EXE)
+        add_custom_target(lint
+            COMMAND ${CLANG_TIDY_EXE} -p ${CMAKE_BINARY_DIR} 
+                ${CMAKE_SOURCE_DIR}/src/**/*.cpp
+            WORKING_DIRECTORY ${CMAKE_SOURCE_DIR}
+            COMMENT "[REQ-103-02] Running clang-tidy..."
+        )
+    else()
+        add_custom_target(lint
+            COMMAND ${CMAKE_COMMAND} -E echo "Warning: clang-tidy not found"
+        )
+    endif()
+else()
+    add_custom_target(lint
+        COMMAND ${CMAKE_COMMAND} -E echo "Lint disabled (set VGCPU_ENABLE_LINT=ON to enable)"
+    )
+endif()
+
+# Validate dependency pinning at configure time [REQ-99]
+vgcpu_validate_no_floating_deps()
+
+# -----------------------------------------------------------------------------
 # Summary
 # -----------------------------------------------------------------------------
 message(STATUS "")
@@ -878,3 +930,7 @@ message(STATUS "    AmanithVG:    ${ENABLE_AMANITHVG}")
 message(STATUS "    Raqote:       ${ENABLE_RAQOTE}")
 message(STATUS "    vello_cpu:    ${ENABLE_VELLO_CPU}")
 message(STATUS "")
+message(STATUS "  Quality Gates:")
+message(STATUS "    check_no_temp_dbg, format_check, format, lint")
+message(STATUS "")
+

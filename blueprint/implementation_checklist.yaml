@@ -1,0 +1,597 @@
+implementation_checklist:
+  blueprint_version: "1.0"
+  repo_name: "VGCPU-Benchmark"
+
+  milestones:
+    - id: "MS-01"
+      name: "Adopt canonical blueprint + governance"
+      steps:
+        - id: "TASK-01.01"
+          action: "Move existing repo /blueprint to /docs/legacy_blueprint and add canonical /blueprint files for blueprint v1.0."
+          refs:
+            - "META-05"
+            - "DEC-PRE-INTAKE-01"
+            - "DEC-ARCH-05"
+            - "DEC-TOOL-01"
+            - "REQ-115"
+          artifacts:
+            - "docs/legacy_blueprint/"
+            - "blueprint/blueprint_v1.0_ch0_metadata.md"
+            - "blueprint/blueprint_v1.0_ch1_scope.md"
+            - "blueprint/blueprint_v1.0_ch2_system_architecture.md"
+            - "blueprint/blueprint_v1.0_ch3_component_design.md"
+            - "blueprint/blueprint_v1.0_ch4_interfaces_api_abi.md"
+            - "blueprint/blueprint_v1.0_ch5_data_design_hotpath.md"
+            - "blueprint/blueprint_v1.0_ch6_concurrency_parallelism.md"
+            - "blueprint/blueprint_v1.0_ch7_build_toolchain.md"
+            - "blueprint/blueprint_v1.0_ch8_tooling.md"
+            - "blueprint/blueprint_v1.0_ch9_versioning_lifecycle.md"
+            - "blueprint/decision_log.md"
+            - "blueprint/walkthrough.md"
+            - "blueprint/implementation_checklist.yaml"
+          verify:
+            - "test -f blueprint/blueprint_v1.0_ch0_metadata.md"
+            - "test -d docs/legacy_blueprint"
+          notes: "This resolves the directory name collision and establishes /blueprint as source-of-truth."
+
+        - id: "TASK-01.02"
+          action: "Add CR governance scaffolding and ensure decision log is append-only."
+          refs:
+            - "REQ-137"
+            - "REQ-138"
+            - "DEC-VER-03"
+            - "VER-05"
+          artifacts:
+            - "cr/"
+            - "cr/CR-0000_TEMPLATE.md"
+            - "blueprint/decision_log.md"
+          verify:
+            - "test -d cr"
+            - "test -f cr/CR-0000_TEMPLATE.md"
+
+    - id: "MS-02"
+      name: "CMake presets + deterministic dependencies"
+      steps:
+        - id: "TASK-02.01"
+          action: "Introduce CMakePresets.json with dev/release/ci/asan/ubsan/tsan and make CI preset-driven."
+          refs:
+            - "REQ-88"
+            - "REQ-89"
+            - "REQ-92"
+            - "REQ-93"
+            - "REQ-94"
+            - "DEC-BUILD-02"
+            - "TEST-36"
+          artifacts:
+            - "CMakePresets.json"
+            - "target:vgcpu-benchmark"
+          verify:
+            - "cmake --preset dev"
+            - "cmake --build --preset dev"
+            - "cmake --preset ci"
+            - "cmake --build --preset ci"
+
+        - id: "TASK-02.02"
+          action: "Implement Tier-1-only configuration (VGCPU_TIER1_ONLY) and preserve existing ENABLE_* backend options."
+          refs:
+            - "REQ-01"
+            - "REQ-07"
+            - "REQ-16"
+            - "DEC-SCOPE-02"
+            - "REQ-95"
+            - "REQ-96"
+            - "DEC-BUILD-03"
+            - "TEST-10"
+          artifacts:
+            - "CMakeLists.txt"
+            - "cmake/vgcpu_options.cmake"
+            - "src/adapters/"
+          verify:
+            - "cmake --preset ci"
+            - "cmake --build --preset ci"
+            - "build/ci/vgcpu-benchmark list"
+
+        - id: "TASK-02.03"
+          action: "Centralize dependency versions in cmake/vgcpu_deps.cmake, pin all floating deps, and enforce a no-floating-deps configure-time check."
+          refs:
+            - "REQ-99"
+            - "REQ-100"
+            - "REQ-101"
+            - "DEC-BUILD-05"
+            - "TEST-37"
+          artifacts:
+            - "cmake/vgcpu_deps.cmake"
+            - "cmake/check_no_floating_deps.cmake"
+            - "CMakeLists.txt"
+          verify:
+            - "cmake --preset ci"
+            - "cmake --build --preset ci"
+
+        - id: "TASK-02.04"
+          action: "Normalize Rust optional backends to pinned stable toolchain and locked builds when ENABLE_RAQOTE/ENABLE_VELLO_CPU are enabled."
+          refs:
+            - "DEC-ARCH-04"
+            - "DEC-BUILD-06"
+            - "REQ-102"
+          artifacts:
+            - "rust_bridge/rust-toolchain.toml"
+            - "rust_bridge/Cargo.lock"
+            - "rust_bridge/Cargo.toml"
+          verify:
+            - "cmake --preset dev"
+            - "cmake --build --preset dev"
+
+    - id: "MS-03"
+      name: "Tooling and quality gates"
+      steps:
+        - id: "TASK-03.01"
+          action: "Add clang-format/clang-tidy/editorconfig and wire format_check + lint targets."
+          refs:
+            - "REQ-103"
+            - "REQ-116"
+            - "REQ-118"
+            - "REQ-119"
+            - "DEC-TOOL-02"
+            - "DEC-TOOL-03"
+          artifacts:
+            - ".clang-format"
+            - ".clang-tidy"
+            - ".editorconfig"
+            - "tools/format_all.sh"
+            - "tools/format_all.ps1"
+            - "tools/format_check.sh"
+            - "tools/format_check.ps1"
+            - "target:format"
+            - "target:format_check"
+            - "target:lint"
+          verify:
+            - "cmake --preset ci"
+            - "cmake --build --preset ci --target format_check"
+            - "cmake --build --preset ci --target lint"
+
+        - id: "TASK-03.02"
+          action: "Implement TEMP-DBG marker scanning script and enforce via check_no_temp_dbg gate target."
+          refs:
+            - "REQ-104"
+            - "REQ-105"
+            - "REQ-121"
+            - "REQ-122"
+            - "TEST-40"
+          artifacts:
+            - "tools/check_no_temp_dbg.py"
+            - "target:check_no_temp_dbg"
+          verify:
+            - "cmake --preset ci"
+            - "cmake --build --preset ci --target check_no_temp_dbg"
+
+        - id: "TASK-03.03"
+          action: "Implement include-boundary enforcement (check_includes) to prevent layering violations."
+          refs:
+            - "REQ-18"
+            - "REQ-19"
+            - "REQ-120"
+            - "DEC-TOOL-04"
+            - "TEST-41"
+          artifacts:
+            - "tools/check_includes.py"
+            - "target:check_includes"
+          verify:
+            - "cmake --preset ci"
+            - "cmake --build --preset ci --target check_includes"
+
+        - id: "TASK-03.04"
+          action: "Add report/log validators and run them in CI smoke workflow."
+          refs:
+            - "REQ-02"
+            - "REQ-48"
+            - "REQ-49"
+            - "REQ-123"
+            - "REQ-124"
+            - "REQ-125"
+            - "TEST-42"
+            - "TEST-43"
+          artifacts:
+            - "tools/validate_jsonl_logs.py"
+            - "tools/validate_report_json.py"
+            - "tools/validate_report_csv.py"
+            - "docs/log_events.md"
+          verify:
+            - "python tools/validate_report_json.py --help"
+            - "python tools/validate_report_csv.py --help"
+            - "python tools/validate_jsonl_logs.py --help"
+
+        - id: "TASK-03.05"
+          action: "Add workflow/preset linter and a CI job that enforces 'presets-only' usage."
+          refs:
+            - "REQ-126"
+            - "REQ-127"
+            - "TEST-39"
+          artifacts:
+            - "tools/lint_workflows_presets.py"
+            - ".github/workflows/ci.yml"
+          verify:
+            - "python tools/lint_workflows_presets.py"
+
+    - id: "MS-04"
+      name: "Tests (CTest) + correctness + hot-path enforcement"
+      steps:
+        - id: "TASK-04.01"
+          action: "Introduce /tests, enable_testing(), register tests in CTest, and ensure CI runs >0 tests."
+          refs:
+            - "TEST-01"
+            - "TEST-02"
+            - "TEST-03"
+            - "REQ-103"
+          artifacts:
+            - "tests/"
+            - "CMakeLists.txt"
+            - "target:vgcpu_tests"
+          verify:
+            - "cmake --preset ci"
+            - "cmake --build --preset ci"
+            - "ctest --preset ci --output-on-failure"
+
+        - id: "TASK-04.02"
+          action: "Add core unit tests for PAL, manifest, IR decoding, stats math, and reporting schema invariants."
+          refs:
+            - "REQ-26"
+            - "REQ-28"
+            - "REQ-30"
+            - "REQ-38"
+            - "REQ-40"
+            - "REQ-41"
+            - "TEST-04"
+            - "TEST-05"
+            - "TEST-06"
+            - "TEST-07"
+            - "TEST-08"
+            - "TEST-09"
+            - "TEST-15"
+            - "TEST-18"
+            - "TEST-19"
+            - "TEST-22"
+            - "TEST-23"
+          artifacts:
+            - "tests/test_pal.cpp"
+            - "tests/test_manifest.cpp"
+            - "tests/test_ir.cpp"
+            - "tests/test_stats.cpp"
+            - "tests/test_reporting.cpp"
+          verify:
+            - "ctest --preset ci --output-on-failure"
+
+        - id: "TASK-04.03"
+          action: "Add memory/hot-path enforcement tests (arena, preallocation, no allocations in measured loop for null backend)."
+          refs:
+            - "REQ-62"
+            - "REQ-63"
+            - "REQ-68"
+            - "REQ-71"
+            - "DEC-MEM-07"
+            - "DEC-MEM-08"
+            - "TEST-25"
+            - "TEST-26"
+            - "TEST-27"
+            - "TEST-28"
+            - "TEST-30"
+          artifacts:
+            - "tests/test_arena.cpp"
+            - "tests/test_hotpath_alloc.cpp"
+          verify:
+            - "ctest --preset dev --output-on-failure"
+
+        - id: "TASK-04.04"
+          action: "Add concurrency determinism tests and run TSan (or fallback stress) on Linux/Clang."
+          refs:
+            - "REQ-75"
+            - "REQ-76"
+            - "REQ-77"
+            - "REQ-78"
+            - "REQ-87"
+            - "TEST-31"
+            - "TEST-32"
+            - "TEST-33"
+            - "TEST-35"
+          artifacts:
+            - "tests/test_partition.cpp"
+            - "tests/test_multithread_samples.cpp"
+            - "tests/test_tsan_smoke.cpp"
+          verify:
+            - "cmake --preset tsan"
+            - "cmake --build --preset tsan"
+            - "ctest --preset tsan --output-on-failure"
+
+    - id: "MS-05"
+      name: "Internal interfaces + logging + schema-versioned reporting"
+      steps:
+        - id: "TASK-05.01"
+          action: "Introduce include/vgcpu/internal headers, export/version macros, and hidden visibility defaults."
+          refs:
+            - "DEC-API-05"
+            - "REQ-52"
+            - "REQ-57"
+            - "REQ-132"
+            - "TEST-45"
+          artifacts:
+            - "include/vgcpu/export.h"
+            - "include/vgcpu/version.h"
+            - "include/vgcpu/internal/status.h"
+            - "include/vgcpu/internal/pal.h"
+            - "include/vgcpu/internal/assets.h"
+            - "include/vgcpu/internal/ir.h"
+            - "include/vgcpu/internal/adapters.h"
+            - "include/vgcpu/internal/harness.h"
+            - "include/vgcpu/internal/reporting.h"
+          verify:
+            - "cmake --preset ci"
+            - "cmake --build --preset ci"
+            - "ctest --preset ci --output-on-failure"
+
+        - id: "TASK-05.02"
+          action: "Harden adapter registry and adapter phases (Init/Prepare/Render) including supports_parallel_render capability checks."
+          refs:
+            - "REQ-32"
+            - "REQ-33"
+            - "REQ-34"
+            - "REQ-35"
+            - "REQ-36"
+            - "REQ-82"
+            - "DEC-CONC-05"
+            - "TEST-10"
+            - "TEST-12"
+            - "TEST-13"
+            - "TEST-14"
+            - "TEST-34"
+          artifacts:
+            - "src/adapters/registry.*"
+            - "src/adapters/*"
+          verify:
+            - "ctest --preset ci --output-on-failure"
+
+        - id: "TASK-05.03"
+          action: "Implement structured logging (console + JSONL) and ensure no per-iteration logging inside measured loops."
+          refs:
+            - "REQ-02"
+            - "REQ-43"
+            - "REQ-44"
+            - "DEC-TOOL-05"
+            - "TEST-01"
+          artifacts:
+            - "src/common/logging.*"
+            - "docs/log_events.md"
+          verify:
+            - "cmake --preset ci"
+            - "cmake --build --preset ci"
+            - "build/ci/vgcpu-benchmark --help"
+
+        - id: "TASK-05.04"
+          action: "Implement schema-versioned JSON/CSV reporting and validators; enforce stable ordering and required fields."
+          refs:
+            - "DEC-SCOPE-03"
+            - "REQ-48"
+            - "REQ-49"
+            - "REQ-50"
+            - "REQ-133"
+            - "TEST-18"
+            - "TEST-19"
+            - "TEST-24"
+            - "TEST-46"
+          artifacts:
+            - "src/reporting/*"
+            - "tools/validate_report_json.py"
+            - "tools/validate_report_csv.py"
+          verify:
+            - "cmake --preset ci"
+            - "cmake --build --preset ci"
+            - "build/ci/vgcpu-benchmark run --backend null --reps 5 --warmup 1 --out build/ci/out"
+            - "python tools/validate_report_json.py build/ci/out/report.json"
+            - "python tools/validate_report_csv.py build/ci/out/report.csv"
+
+    - id: "MS-06"
+      name: "CI wiring (presets, sanitizers, gates)"
+      steps:
+        - id: "TASK-06.01"
+          action: "Wire sanitizer toggles to presets and ensure sanitizer jobs exist (Linux) per CI minimum matrix."
+          refs:
+            - "REQ-97"
+            - "REQ-98"
+            - "REQ-110"
+            - "DEC-BUILD-04"
+          artifacts:
+            - "CMakeLists.txt"
+            - "cmake/vgcpu_sanitizers.cmake"
+            - "CMakePresets.json"
+          verify:
+            - "cmake --preset asan"
+            - "cmake --build --preset asan"
+            - "ctest --preset asan --output-on-failure"
+            - "cmake --preset ubsan"
+            - "cmake --build --preset ubsan"
+            - "ctest --preset ubsan --output-on-failure"
+
+        - id: "TASK-06.02"
+          action: "Update GitHub Actions workflows to use presets only and run gate targets (format_check, lint, check_no_temp_dbg, check_includes)."
+          refs:
+            - "REQ-01"
+            - "REQ-106"
+            - "REQ-107"
+            - "REQ-108"
+            - "REQ-109"
+            - "REQ-110"
+            - "REQ-127"
+            - "TEST-39"
+          artifacts:
+            - ".github/workflows/ci.yml"
+          verify:
+            - "python tools/lint_workflows_presets.py"
+
+    - id: "MS-07"
+      name: "Packaging + third-party notices"
+      steps:
+        - id: "TASK-07.01"
+          action: "Add third-party license collection and notices suitable for redistribution of any prebuilts."
+          refs:
+            - "REQ-101"
+            - "REQ-140"
+            - "DEC-ARCH-06"
+          artifacts:
+            - "third_party/LICENSES/"
+            - "third_party/THIRD_PARTY_NOTICES.md"
+          verify:
+            - "test -f third_party/THIRD_PARTY_NOTICES.md"
+
+        - id: "TASK-07.02"
+          action: "Expose packaging as a CMake target and ensure Tier-1 release archives are self-contained (assets included)."
+          refs:
+            - "REQ-17"
+            - "REQ-111"
+            - "DEC-BUILD-08"
+          artifacts:
+            - "scripts/package_release.sh"
+            - "target:package"
+            - "assets/"
+          verify:
+            - "cmake --preset release"
+            - "cmake --build --preset release --target package"
+
+    - id: "MS-08"
+      name: "Performance regression harness (coarse gates)"
+      steps:
+        - id: "TASK-08.01"
+          action: "Add perf suite scene list, in-repo baselines, and perf diff tool that ignores nondeterministic metadata."
+          refs:
+            - "REQ-143"
+            - "REQ-144"
+            - "REQ-145"
+            - "REQ-146"
+            - "DEC-VER-04"
+            - "DEC-VER-05"
+            - "TEST-48"
+          artifacts:
+            - "perf/scenes_ci.txt"
+            - "perf/baselines/"
+            - "tools/perf_diff.py"
+          verify:
+            - "python tools/perf_diff.py --help"
+
+        - id: "TASK-08.02"
+          action: "Add CI perf job that runs the CI perf suite, uploads artifacts, and emits diff summary (warn-only initially)."
+          refs:
+            - "REQ-143"
+            - "REQ-146"
+          artifacts:
+            - ".github/workflows/ci.yml"
+          verify:
+            - "python tools/lint_workflows_presets.py"
+
+    - id: "MS-09"
+      name: "Docs + migration to v0.2.0"
+      steps:
+        - id: "TASK-09.01"
+          action: "Write developer quickstart documenting presets, Tier-1 backends, optional backends, and safe benchmark practices."
+          refs:
+            - "REQ-08"
+            - "REQ-09"
+            - "REQ-10"
+            - "REQ-11"
+            - "REQ-12"
+            - "REQ-13"
+            - "REQ-14"
+            - "REQ-15"
+            - "REQ-130"
+          artifacts:
+            - "docs/developer_quickstart.md"
+          verify:
+            - "test -f docs/developer_quickstart.md"
+
+        - id: "TASK-09.02"
+          action: "Write migration doc (v0.1.0→v0.2.0) and add CHANGELOG/MIGRATION files required for releases."
+          refs:
+            - "REQ-139"
+            - "REQ-147"
+            - "DEC-VER-06"
+          artifacts:
+            - "docs/migration_v0.1_to_v0.2.md"
+            - "CHANGELOG.md"
+            - "MIGRATION.md"
+          verify:
+            - "test -f docs/migration_v0.1_to_v0.2.md"
+            - "test -f CHANGELOG.md"
+            - "test -f MIGRATION.md"
+
+  quality_gates:
+    - id: "GATE-01"
+      name: "Configure+build+test via CI preset"
+      command: "cmake --preset ci && cmake --build --preset ci && ctest --preset ci --output-on-failure"
+      refs:
+        - "REQ-106"
+        - "REQ-107"
+        - "REQ-108"
+        - "REQ-110"
+        - "TEST-01"
+    - id: "GATE-02"
+      name: "No TEMP-DBG markers"
+      command: "cmake --build --preset ci --target check_no_temp_dbg"
+      refs:
+        - "REQ-121"
+        - "REQ-122"
+        - "TEMP-DBG"
+    - id: "GATE-03"
+      name: "Formatting clean"
+      command: "cmake --build --preset ci --target format_check"
+      refs:
+        - "REQ-116"
+    - id: "GATE-04"
+      name: "Include boundaries enforced"
+      command: "cmake --build --preset ci --target check_includes"
+      refs:
+        - "REQ-120"
+        - "TEST-41"
+    - id: "GATE-05"
+      name: "No floating dependencies"
+      command: "cmake --preset ci"
+      refs:
+        - "REQ-99"
+        - "TEST-37"
+    - id: "GATE-06"
+      name: "Report schema validators pass on smoke output"
+      command: "python tools/validate_report_json.py <report.json> && python tools/validate_report_csv.py <report.csv>"
+      refs:
+        - "REQ-124"
+        - "REQ-125"
+        - "TEST-42"
+        - "TEST-43"
+    - id: "GATE-07"
+      name: "Sanitizers (Linux) green"
+      command: "cmake --preset asan && cmake --build --preset asan && ctest --preset asan --output-on-failure"
+      refs:
+        - "REQ-110"
+        - "REQ-97"
+    - id: "GATE-08"
+      name: "Perf diff tool runs and ignores nondeterminism"
+      command: "python tools/perf_diff.py --baseline <baseline.json> --current <current.json>"
+      refs:
+        - "REQ-146"
+        - "TEST-48"
+
+  release:
+    tagging: "v<MAJOR>.<MINOR>.<PATCH>"
+    required_files:
+      - "CHANGELOG.md"
+      - "MIGRATION.md"
+      - "third_party/THIRD_PARTY_NOTICES.md"
+      - "docs/migration_v0.1_to_v0.2.md"
+    required_gates:
+      - "GATE-01"
+      - "GATE-02"
+      - "GATE-03"
+      - "GATE-04"
+      - "GATE-05"
+      - "GATE-06"
+    build_artifacts:
+      - name: "tier1_release_package"
+        command: "cmake --preset release && cmake --build --preset release --target package"
+        outputs:
+          - "package/"
+          - "dist/*.zip"
+          - "dist/*checksums*"

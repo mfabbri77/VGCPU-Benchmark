@@ -1,0 +1,142 @@
+{
+    "version": 6,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 21,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "base",
+            "hidden": true,
+            "binaryDir": "${sourceDir}/build/${presetName}",
+            "cacheVariables": {
+                "CMAKE_EXPORT_COMPILE_COMMANDS": "ON"
+            }
+        },
+        {
+            "name": "dev",
+            "displayName": "Development",
+            "description": "Debug build for development",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Debug",
+                "VGCPU_WERROR": "OFF"
+            }
+        },
+        {
+            "name": "release",
+            "displayName": "Release",
+            "description": "Optimized release build",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "VGCPU_WERROR": "OFF"
+            }
+        },
+        {
+            "name": "ci",
+            "displayName": "CI Build",
+            "description": "CI build with warnings as errors and Tier-1 backends only",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "Release",
+                "VGCPU_WERROR": "ON",
+                "VGCPU_TIER1_ONLY": "ON"
+            }
+        },
+        {
+            "name": "asan",
+            "displayName": "AddressSanitizer",
+            "description": "Build with AddressSanitizer enabled",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "VGCPU_ENABLE_ASAN": "ON"
+            }
+        },
+        {
+            "name": "ubsan",
+            "displayName": "UndefinedBehaviorSanitizer",
+            "description": "Build with UBSan enabled",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "VGCPU_ENABLE_UBSAN": "ON"
+            }
+        },
+        {
+            "name": "tsan",
+            "displayName": "ThreadSanitizer",
+            "description": "Build with TSan enabled (Linux/Clang only)",
+            "inherits": "base",
+            "cacheVariables": {
+                "CMAKE_BUILD_TYPE": "RelWithDebInfo",
+                "VGCPU_ENABLE_TSAN": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "dev",
+            "configurePreset": "dev"
+        },
+        {
+            "name": "release",
+            "configurePreset": "release"
+        },
+        {
+            "name": "ci",
+            "configurePreset": "ci"
+        },
+        {
+            "name": "asan",
+            "configurePreset": "asan"
+        },
+        {
+            "name": "ubsan",
+            "configurePreset": "ubsan"
+        },
+        {
+            "name": "tsan",
+            "configurePreset": "tsan"
+        }
+    ],
+    "testPresets": [
+        {
+            "name": "dev",
+            "configurePreset": "dev",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "ci",
+            "configurePreset": "ci",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "asan",
+            "configurePreset": "asan",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "ubsan",
+            "configurePreset": "ubsan",
+            "output": {
+                "outputOnFailure": true
+            }
+        },
+        {
+            "name": "tsan",
+            "configurePreset": "tsan",
+            "output": {
+                "outputOnFailure": true
+            }
+        }
+    ]
+}

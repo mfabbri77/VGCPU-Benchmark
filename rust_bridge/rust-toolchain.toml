@@ -1,4 +1,5 @@
+# Blueprint Reference: [DEC-BUILD-06] - Use pinned stable toolchain
 [toolchain]
-channel = "nightly"
+channel = "1.84.0"
 components = ["rust-src", "rustfmt", "clippy"]
-targets = ["x86_64-unknown-linux-gnu"]
+targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]
