@@ -77,8 +77,8 @@ class IBackendAdapter {
 
     // -------------------------------------------------------------------------
     // Rendering
-    // Blueprint Reference: [API-04] Thread-safety and reentrancy (Chapter 4) / [REQ-56] Reentrancy
-    // rules (Chapter 4) Blueprint Reference: [REQ-56-02] CPU-Only Enforcement (Chapter 4)
+    // Blueprint Reference: [API-04] Thread-safety (Chapter 4) / [REQ-56] Reentrancy (Chapter 4) /
+    // [REQ-56-02] CPU-Only Enforcement (Chapter 4)
     // -------------------------------------------------------------------------
 
     /// Render the scene to an output buffer (hot path). [ARCH-14-F]

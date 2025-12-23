@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [API-06-05] PlutoVG backend
-// (Chapter 4) Blueprint Reference: backends/plutovg.md
+// (Chapter 4)
 
 #pragma once
 

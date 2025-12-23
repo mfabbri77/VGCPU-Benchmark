@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [API-06-05] Cairo backend
-// (Chapter 4) Blueprint Reference: backends/cairo.md
+// (Chapter 4)
 
 #pragma once
 

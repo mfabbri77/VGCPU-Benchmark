@@ -74,17 +74,17 @@ enum class Opcode : uint8_t {
 };
 
 /// Fill rule encoding (u8 in SetFill).
-/// Blueprint Reference: Chapter 5, §5.3.3 — SetFill opcode
+/// Blueprint Reference: [ARCH-10-05] IR Loader / Decoder (Chapter 3) / [ARCH-14-B] SetFill (Chapter
+/// 3)
 enum class FillRule : uint8_t {
     kNonZero = 0,
     kEvenOdd = 1,
 };
 
 /// Stroke Options bitfield (u8 in SetStroke).
-/// Blueprint Reference: Chapter 5, §5.3.6 — Stroke Options
-/// Bits 0-1: Cap (0=Butt, 1=Round, 2=Square)
-/// Bits 2-3: Join (0=Miter, 1=Round, 2=Bevel)
-/// Bits 4-7: Reserved
+/// Blueprint Reference: [ARCH-10-05] IR Loader / Decoder (Chapter 3) / [ARCH-14-B] Stroke (Chapter
+/// 3) Bits 0-1: Cap (0=Butt, 1=Round, 2=Square) Bits 2-3: Join (0=Miter, 1=Round, 2=Bevel) Bits
+/// 4-7: Reserved
 enum class StrokeCap : uint8_t {
     kButt = 0,
     kRound = 1,
@@ -113,7 +113,8 @@ inline StrokeJoin UnpackStrokeJoin(uint8_t opts) {
 }
 
 /// Path verb codes.
-/// Blueprint Reference: Chapter 5, §5.3.4 — Verb Codes
+/// Blueprint Reference: [ARCH-10-05] IR Loader / Decoder (Chapter 3) / [ARCH-14-B] Verb Codes
+/// (Chapter 3)
 enum class PathVerb : uint8_t {
     kMoveTo = 0,   ///< Move to (1 point)
     kLineTo = 1,   ///< Line to (1 point)
@@ -123,7 +124,8 @@ enum class PathVerb : uint8_t {
 };
 
 /// Paint type.
-/// Blueprint Reference: Chapter 5, §5.3.5 — Paint Entry Format
+/// Blueprint Reference: [ARCH-10-05] IR Loader / Decoder (Chapter 3) / [ARCH-14-B] Paint (Chapter
+/// 3)
 enum class PaintType : uint8_t {
     kSolid = 0,
     kLinear = 1,

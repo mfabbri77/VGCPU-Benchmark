@@ -1,7 +1,8 @@
 // Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
 // SPDX-License-Identifier: MIT
 
-// Blueprint Reference: backends/blend2d.md
+// Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [API-06-05] Blend2D backend
+// (Chapter 4)
 
 #include "adapters/blend2d/blend2d_adapter.h"
 

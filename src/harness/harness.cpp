@@ -55,7 +55,7 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
 
     // Preallocate output buffer (outside timed section)
     // Blueprint Reference: [REQ-21] Measured loop MUST NOT perform filesystem I/O (Chapter 3)
-    // Blueprint Reference: [REQ-89] The measured loop MUST NOT perform filesystem I/O (Chapter 4?
+
     // Wait, it was REQ-21 in Ch3) Actually [REQ-21] in Ch3 is the correct one. [REQ-89] was from an
     // older version or I misread. Let's use [REQ-21] (Ch3) and [REQ-71-01] (Ch5). NOTE: We use
     // resize() not reserve() to ensure adapters receive a correctly sized buffer. Adapters MUST NOT

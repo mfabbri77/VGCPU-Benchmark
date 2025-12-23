@@ -336,7 +336,7 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
 
 done:
     // Sync to complete rasterization
-    // Blueprint Note: Measurement MUST include sync()
+    // [API-06-05] Measurement must include work completion (sync/flush) (Chapter 4)
     canvas->draw();
     canvas->sync();
 

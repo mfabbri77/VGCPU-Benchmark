@@ -62,7 +62,8 @@ struct CapabilitySet {
 };
 
 /// Required features for a scene.
-/// Blueprint Reference: Chapter 5, §5.2.2 — Required Features Schema
+/// Blueprint Reference: [ARCH-10-04] Assets & Manifest (Chapter 3) / [API-06-03] RequiredFeatures
+/// (Chapter 4)
 struct RequiredFeatures {
     bool needs_nonzero = false;
     bool needs_evenodd = false;
