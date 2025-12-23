@@ -181,20 +181,23 @@ All dependencies are pinned in `cmake/vgcpu_deps.cmake`. To update a dependency:
 
 ```
 /
-├── blueprint/          # Canonical blueprint v1.0 documentation
+├── assets/             # Scene files and manifests
+├── blueprint/          # Canonical blueprint v1.1 documentation
 ├── cmake/              # CMake modules (deps, options, sanitizers)
 ├── cr/                 # Change Requests for governance
 ├── docs/               # Additional documentation
+├── include/            # Public/Internal headers
 ├── src/                # Source code
 │   ├── adapters/       # Backend adapters
+│   ├── artifacts/      # Artifact generation & SSIM (v1.1)
 │   ├── cli/            # CLI frontend
 │   ├── harness/        # Benchmark harness
 │   ├── ir/             # Intermediate representation
 │   ├── pal/            # Platform abstraction layer
 │   └── reporting/      # JSON/CSV report writers
 ├── tests/              # Unit tests (doctest)
-├── tools/              # Quality gate scripts
-├── assets/             # Scene files and manifests
+├── third_party/        # Vendored dependencies (stb, ssim)
+├── tools/              # Quality gate & smoke scripts
 ├── CMakeLists.txt      # Main CMake file
 └── CMakePresets.json   # CMake presets
 ```
