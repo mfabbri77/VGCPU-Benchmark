@@ -17,6 +17,21 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- Stroke scene redesign (owner layout): three red waves on the top row
+  built from line segments, quadratic beziers and cubic beziers (first
+  scene ever to exercise `QUAD_TO`); the blue spiral centered; three
+  thick squares on the bottom row with bevel/miter/round joins,
+  pixel-aligned stroke boundaries (width 16 on integer edges).
+- Four degenerate-stroke scenes, one degeneracy class per scene (no
+  class repeated), taxonomy per M. Kilgard, "Polar Stroking" (ACM TOG
+  39(4), 2020) and D. Nehab, "Converting Stroked Primitives to Filled
+  Primitives" (SIGGRAPH 2020): `degen_cusps` (exact/near cusp, loop,
+  retraced quadratic), `degen_empty` (zero-length geometry, caps must
+  synthesize all ink), `degen_short_wide` (stroke width up to 20x arc
+  length), `degen_reversal` (180-degree retrace and near-180 miter-limit
+  explosions). Immediate findings: empty-geometry ink ranges 0.00%
+  (raqote) to 0.99% (skia/plutovg/amanithvg) -- the classic cap-synthesis
+  divergence; cairo collapses the retraced quadratic to a dot.
 - PAE (Peak Absolute Error, the L∞/Chebyshev norm) + AE bad-pixel ratio
   as worst-case complements to SSIM — the industry-standard pair (cf.
   ImageMagick `PAE`/`AE` metrics): SSIM averages structure, so a single
@@ -127,6 +142,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release workflow modernized with preset-based builds
 
 ### Fixed
+- ThorVG adapter flattened `QUAD_TO` to a straight `lineTo` ("just use
+  end point" stub) -- latent since v0.1.0, exposed by the first scene to
+  use quadratics. Now performs exact degree elevation to cubic with
+  current-point tracking (including close-restores-subpath-start).
+  thorvg on strokes_curves: SSIM 0.9830/L-inf 240 -> 0.9997/61.
 - Harness: `--repetitions` was parsed, stored in the policy and reported
   in run metadata but NEVER executed -- every run measured exactly one
   repetition regardless of the flag. Now runs `repetitions` measured

@@ -24,39 +24,57 @@ std::unique_ptr<tvg::Shape> CreateShape(const Path& path_data) {
     auto shape = tvg::Shape::gen();
 
     size_t pt_idx = 0;
+    float cur_x = 0.0f, cur_y = 0.0f;      // current point, needed for quad elevation
+    float start_x = 0.0f, start_y = 0.0f;  // subpath start, restored on close
     for (auto verb : path_data.verbs) {
         switch (verb) {
             case ir::PathVerb::kMoveTo:
                 if (pt_idx + 1 <= path_data.points.size() / 2) {
-                    shape->moveTo(path_data.points[pt_idx * 2], path_data.points[pt_idx * 2 + 1]);
+                    cur_x = start_x = path_data.points[pt_idx * 2];
+                    cur_y = start_y = path_data.points[pt_idx * 2 + 1];
+                    shape->moveTo(cur_x, cur_y);
                     pt_idx++;
                 }
                 break;
             case ir::PathVerb::kLineTo:
                 if (pt_idx + 1 <= path_data.points.size() / 2) {
-                    shape->lineTo(path_data.points[pt_idx * 2], path_data.points[pt_idx * 2 + 1]);
+                    cur_x = path_data.points[pt_idx * 2];
+                    cur_y = path_data.points[pt_idx * 2 + 1];
+                    shape->lineTo(cur_x, cur_y);
                     pt_idx++;
                 }
                 break;
             case ir::PathVerb::kQuadTo:
-                // ThorVG doesn't have quadTo directly, approximate with cubic
+                // ThorVG has no quadTo: exact degree elevation to cubic.
+                // c1 = p0 + 2/3 (q - p0), c2 = p1 + 2/3 (q - p1).
                 if (pt_idx + 2 <= path_data.points.size() / 2) {
-                    // Approximate: just use end point
-                    shape->lineTo(path_data.points[(pt_idx + 1) * 2],
-                                  path_data.points[(pt_idx + 1) * 2 + 1]);
+                    const float qx = path_data.points[pt_idx * 2];
+                    const float qy = path_data.points[pt_idx * 2 + 1];
+                    const float ex = path_data.points[(pt_idx + 1) * 2];
+                    const float ey = path_data.points[(pt_idx + 1) * 2 + 1];
+                    const float c1x = cur_x + 2.0f / 3.0f * (qx - cur_x);
+                    const float c1y = cur_y + 2.0f / 3.0f * (qy - cur_y);
+                    const float c2x = ex + 2.0f / 3.0f * (qx - ex);
+                    const float c2y = ey + 2.0f / 3.0f * (qy - ey);
+                    shape->cubicTo(c1x, c1y, c2x, c2y, ex, ey);
+                    cur_x = ex;
+                    cur_y = ey;
                     pt_idx += 2;
                 }
                 break;
             case ir::PathVerb::kCubicTo:
                 if (pt_idx + 3 <= path_data.points.size() / 2) {
-                    shape->cubicTo(
-                        path_data.points[pt_idx * 2], path_data.points[pt_idx * 2 + 1],
-                        path_data.points[(pt_idx + 1) * 2], path_data.points[(pt_idx + 1) * 2 + 1],
-                        path_data.points[(pt_idx + 2) * 2], path_data.points[(pt_idx + 2) * 2 + 1]);
+                    cur_x = path_data.points[(pt_idx + 2) * 2];
+                    cur_y = path_data.points[(pt_idx + 2) * 2 + 1];
+                    shape->cubicTo(path_data.points[pt_idx * 2], path_data.points[pt_idx * 2 + 1],
+                                   path_data.points[(pt_idx + 1) * 2],
+                                   path_data.points[(pt_idx + 1) * 2 + 1], cur_x, cur_y);
                     pt_idx += 3;
                 }
                 break;
             case ir::PathVerb::kClose:
+                cur_x = start_x;
+                cur_y = start_y;
                 shape->close();
                 break;
         }

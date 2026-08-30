@@ -52,14 +52,62 @@
     {
       "scene_id": "strokes/strokes_curves",
       "ir_path": "strokes/strokes_curves.irbin",
-      "scene_hash": "9dcc483d",
+      "scene_hash": "ad5378e2",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_stroke": true
       },
-      "description": "Stroking curves and shapes"
+      "description": "Waves (lines/quads/cubics), centered spiral, join squares"
+    },
+    {
+      "scene_id": "strokes/degen_cusps",
+      "ir_path": "strokes/degen_cusps.irbin",
+      "scene_hash": "8d60126d",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_stroke": true
+      },
+      "description": "Cusp/near-cusp/loop cubics and a retraced quadratic, wide round strokes"
+    },
+    {
+      "scene_id": "strokes/degen_empty",
+      "ir_path": "strokes/degen_empty.irbin",
+      "scene_hash": "80ec661c",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_stroke": true
+      },
+      "description": "Zero-length segments/subpaths: caps must synthesize the geometry"
+    },
+    {
+      "scene_id": "strokes/degen_short_wide",
+      "ir_path": "strokes/degen_short_wide.irbin",
+      "scene_hash": "80b3e8e8",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_stroke": true
+      },
+      "description": "Tiny curves with stroke width >> arc length (up to 20:1)"
+    },
+    {
+      "scene_id": "strokes/degen_reversal",
+      "ir_path": "strokes/degen_reversal.irbin",
+      "scene_hash": "4a1d13bb",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_stroke": true
+      },
+      "description": "180-degree retrace and near-180 miter-limit explosions"
     },
     {
       "scene_id": "validation/noop",
