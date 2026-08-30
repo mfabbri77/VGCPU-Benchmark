@@ -76,7 +76,7 @@
     {
       "scene_id": "strokes/degen_empty",
       "ir_path": "strokes/degen_empty.irbin",
-      "scene_hash": "80ec661c",
+      "scene_hash": "226626c8",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
@@ -88,14 +88,14 @@
     {
       "scene_id": "strokes/degen_short_wide",
       "ir_path": "strokes/degen_short_wide.irbin",
-      "scene_hash": "80b3e8e8",
+      "scene_hash": "d460b76e",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_stroke": true
       },
-      "description": "Tiny curves with stroke width >> arc length (up to 20:1)"
+      "description": "Tiny curves with stroke width >> arc length (up to 40:1)"
     },
     {
       "scene_id": "strokes/degen_reversal",

@@ -575,19 +575,21 @@ def create_degen_empty_scene() -> Tuple[bytes, dict]:
     c = [builder.add_paint(Paint.solid(*rgb)) for rgb in
          ((200, 0, 0), (0, 0, 200), (0, 140, 0), (200, 0, 160), (255, 140, 0), (0, 150, 160))]
 
+    # Uniform 3x2 grid (same landmarks as solid_basic): columns at 1/6,
+    # 3/6, 5/6 of the width, rows at 1/4 and 3/4 of the height.
     cases = [
-        # (path, cap) -- width 36 everywhere
-        (Path().move_to(150, 150).line_to(150, 150), StrokeCap.ROUND),   # dot
+        # (path, cap) -- width 72 everywhere
+        (Path().move_to(133, 150).line_to(133, 150), StrokeCap.ROUND),   # dot
         (Path().move_to(400, 150).line_to(400, 150), StrokeCap.SQUARE),  # square dot
-        (Path().move_to(650, 150).line_to(650, 150), StrokeCap.BUTT),    # nothing (spec-wise)
-        (Path().move_to(150, 420).cubic_to(150, 420, 150, 420, 150, 420), StrokeCap.ROUND),  # all-coincident cubic
-        (Path().move_to(400, 420).close(), StrokeCap.SQUARE),            # empty closed subpath
-        (Path().move_to(650, 420).line_to(650.05, 420), StrokeCap.BUTT), # sub-epsilon segment
+        (Path().move_to(667, 150).line_to(667, 150), StrokeCap.BUTT),    # nothing (spec-wise)
+        (Path().move_to(133, 450).cubic_to(133, 450, 133, 450, 133, 450), StrokeCap.ROUND),  # all-coincident cubic
+        (Path().move_to(400, 450).close(), StrokeCap.SQUARE),            # empty closed subpath
+        (Path().move_to(667, 450).line_to(667.05, 450), StrokeCap.BUTT), # sub-epsilon segment
     ]
     builder.clear(240, 240, 240)
     for paint, (path, cap) in zip(c, cases):
         pid = builder.add_path(path)
-        builder.set_stroke(paint, 36.0, cap, StrokeJoin.ROUND)
+        builder.set_stroke(paint, 72.0, cap, StrokeJoin.ROUND)
         builder.stroke_path(pid)
 
     return builder.build(), {
@@ -599,21 +601,21 @@ def create_degen_empty_scene() -> Tuple[bytes, dict]:
 
 def create_degen_short_wide_scene() -> Tuple[bytes, dict]:
     """Finite but tiny curves stroked with width far exceeding their arc
-    length (ratios 10:1 up to 20:1). The offset construction degenerates;
+    length (ratios 13:1 up to 40:1). The offset construction degenerates;
     engines differ in wafer orientation and cap dominance."""
     builder = IrBuilder(800, 600)
     c = [builder.add_paint(Paint.solid(*rgb)) for rgb in
          ((200, 0, 0), (0, 0, 200), (0, 140, 0), (200, 0, 160))]
 
     cases = [
-        # 3px line, width 60, butt: a 3x60 wafer perpendicular to the line
-        (Path().move_to(200, 150).line_to(203, 150), 60.0, StrokeCap.BUTT),
-        # 3px line, width 60, round: cap-dominated lozenge ~63px
-        (Path().move_to(600, 150).line_to(603, 150), 60.0, StrokeCap.ROUND),
-        # ~6px cubic wiggle, width 50, round
-        (Path().move_to(200, 430).cubic_to(202, 427, 204, 433, 206, 430), 50.0, StrokeCap.ROUND),
-        # ~4px quadratic, width 40, square
-        (Path().move_to(600, 430).quad_to(602, 426, 604, 430), 40.0, StrokeCap.SQUARE),
+        # 3px line, width 120, butt: a 3x120 wafer perpendicular to the line
+        (Path().move_to(200, 150).line_to(203, 150), 120.0, StrokeCap.BUTT),
+        # 3px line, width 120, round: cap-dominated lozenge ~123px
+        (Path().move_to(600, 150).line_to(603, 150), 120.0, StrokeCap.ROUND),
+        # ~6px cubic wiggle, width 100, round
+        (Path().move_to(200, 430).cubic_to(202, 427, 204, 433, 206, 430), 100.0, StrokeCap.ROUND),
+        # ~4px quadratic, width 80, square
+        (Path().move_to(600, 430).quad_to(602, 426, 604, 430), 80.0, StrokeCap.SQUARE),
     ]
     builder.clear(240, 240, 240)
     for paint, (path, width, cap) in zip(c, cases):
@@ -623,7 +625,7 @@ def create_degen_short_wide_scene() -> Tuple[bytes, dict]:
 
     return builder.build(), {
         "scene_id": "strokes/degen_short_wide",
-        "description": "Tiny curves with stroke width >> arc length (up to 20:1)",
+        "description": "Tiny curves with stroke width >> arc length (up to 40:1)",
         "default_width": 800, "default_height": 600,
         "required_features": {"needs_stroke": True}
     }
