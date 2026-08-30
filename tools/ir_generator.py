@@ -283,31 +283,38 @@ class IrBuilder:
         return header + sections
 
 def create_solid_basic_scene() -> Tuple[bytes, dict]:
+    """Six uniform shapes on a 3x2 grid: squares (red, green, blue) on the
+    top row, circles (cyan, magenta, yellow) on the bottom row."""
     builder = IrBuilder(800, 600)
-    white = builder.add_paint(Paint.solid(255, 255, 255))
     red = builder.add_paint(Paint.solid(255, 0, 0))
     green = builder.add_paint(Paint.solid(0, 255, 0))
     blue = builder.add_paint(Paint.solid(0, 0, 255))
+    cyan = builder.add_paint(Paint.solid(0, 255, 255))
+    magenta = builder.add_paint(Paint.solid(255, 0, 255))
     yellow = builder.add_paint(Paint.solid(255, 255, 0))
-    
-    rect1 = builder.add_path(Path().rect(50, 50, 200, 150))
-    rect2 = builder.add_path(Path().rect(300, 50, 200, 150))
-    rect3 = builder.add_path(Path().rect(550, 50, 200, 150))
-    circle1 = builder.add_path(Path().circle(150, 400, 100))
-    circle2 = builder.add_path(Path().circle(400, 400, 80))
-    circle3 = builder.add_path(Path().circle(650, 400, 60))
-    
+
+    # Uniform 3x2 grid: column centers x = 800*(1/6, 3/6, 5/6), row
+    # centers y = 150 / 450. Same footprint for every shape: squares of
+    # side 180, circles of radius 90.
+    cols = [800 / 6, 800 / 2, 800 * 5 / 6]
+    side = 180
+    radius = 90
+
+    squares = [builder.add_path(Path().rect(cx - side / 2, 150 - side / 2, side, side))
+               for cx in cols]
+    circles = [builder.add_path(Path().circle(cx, 450, radius)) for cx in cols]
+
     builder.clear(255, 255, 255)
-    builder.set_fill(red).fill_path(rect1)
-    builder.set_fill(green).fill_path(rect2)
-    builder.set_fill(blue).fill_path(rect3)
-    builder.set_fill(yellow).fill_path(circle1)
-    builder.set_fill(red).fill_path(circle2)
-    builder.set_fill(blue).fill_path(circle3)
-    
+    builder.set_fill(red).fill_path(squares[0])
+    builder.set_fill(green).fill_path(squares[1])
+    builder.set_fill(blue).fill_path(squares[2])
+    builder.set_fill(cyan).fill_path(circles[0])
+    builder.set_fill(magenta).fill_path(circles[1])
+    builder.set_fill(yellow).fill_path(circles[2])
+
     return builder.build(), {
         "scene_id": "fills/solid_basic",
-        "description": "Basic solid fill scene",
+        "description": "Uniform 3x2 grid: RGB squares, CMY circles",
         "default_width": 800, "default_height": 600,
         "required_features": {"needs_nonzero": True}
     }

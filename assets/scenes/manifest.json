@@ -4,14 +4,14 @@
     {
       "scene_id": "fills/solid_basic",
       "ir_path": "fills/solid_basic.irbin",
-      "scene_hash": "686ff0e6",
+      "scene_hash": "8bccfd7a",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_nonzero": true
       },
-      "description": "Basic solid fill scene"
+      "description": "Uniform 3x2 grid: RGB squares, CMY circles"
     },
     {
       "scene_id": "fills/nested_rects",

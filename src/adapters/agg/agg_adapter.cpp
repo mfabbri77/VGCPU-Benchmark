@@ -11,6 +11,7 @@
 #pragma warning(disable : 4244 5054 5055)
 #endif
 
+#include "agg_conv_curve.h"
 #include "agg_conv_stroke.h"
 #include "agg_conv_transform.h"
 #include "agg_gradient_lut.h"
@@ -267,8 +268,14 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                     }
                 }
 
-                // Transform
-                agg::conv_transform<agg::path_storage> trans_path(p, ctm);
+                // Flatten curves, then transform. Fixed 2026-08-30: feeding
+                // path_storage straight into the rasterizer treats curve3/
+                // curve4 verbs as polylines through their control points
+                // (circles rendered as octagons, PAE 255 vs cairo);
+                // agg::conv_curve subdivides them into line segments first.
+                agg::conv_curve<agg::path_storage> curved_path(p);
+                agg::conv_transform<agg::conv_curve<agg::path_storage>> trans_path(curved_path,
+                                                                                   ctm);
 
                 // Paint: solid color or gradient span pipeline
                 agg::rgba8 color(0, 0, 0, 255);
@@ -298,7 +305,8 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                     }
                 } else {
                     // Stroke
-                    agg::conv_stroke<agg::conv_transform<agg::path_storage>> stroke(trans_path);
+                    agg::conv_stroke<agg::conv_transform<agg::conv_curve<agg::path_storage>>>
+                        stroke(trans_path);
                     stroke.width(current_stroke_width);
                     // TODO: Caps/Joins from current_stroke_opts
 
