@@ -31,6 +31,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- Dedicated working-memory profiler subcommand (`vgcpu-benchmark profile-memory` / `memory`):
+  measures single-frame heap allocation metrics completely separated from
+  performance benchmark runs (zero timing contamination on performance runs).
+  Tracks `alloc_count` (malloc/new calls/frame), `free_count`, `peak_heap_bytes`
+  (live high-water mark via `malloc_usable_size`), `total_alloc_bytes` (churn),
+  and `leaked_bytes`. Emits `memory.json` and a console summary matrix.
+- HTML report (`tools/html_report.py`) extended with a dedicated
+  "Working memory profile" section: scene-by-backend matrix displaying
+  peak working heap (KiB/MiB), allocs/frame, and cumulative churn per render.
 - IR v1.1 format: stroke dashing (`kSetDash = 0x32`, count + phase +
   pattern lengths in user units) and clipping (`kClipPush = 0x50` with
   path_id and fill rule, `kClipPop = 0x51`). Scene `RequiredFeatures`

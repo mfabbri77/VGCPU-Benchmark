@@ -41,6 +41,7 @@ void CliParser::PrintHelp() {
     std::cout << "  list       List available backends and scenes\n";
     std::cout << "  metadata   Print environment and build metadata\n";
     std::cout << "  validate   Validate scene manifest and IR assets\n";
+    std::cout << "  profile-memory Profile per-frame working memory and heap allocations\n";
     std::cout << "\nRun Options:\n";
     std::cout << "  --backend <id,...>     Select backends (comma-separated)\n";
     std::cout << "  --scene <id,...>       Select scenes (comma-separated)\n";
@@ -81,6 +82,8 @@ std::optional<CliOptions> CliParser::Parse(int argc, char* argv[]) {
         options.command = CliCommand::kMetadata;
     } else if (cmd == "validate") {
         options.command = CliCommand::kValidate;
+    } else if (cmd == "profile-memory" || cmd == "memory") {
+        options.command = CliCommand::kProfileMemory;
     } else if (cmd == "--help" || cmd == "-h" || cmd == "help") {
         options.command = CliCommand::kHelp;
         return options;

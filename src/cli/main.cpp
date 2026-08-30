@@ -9,12 +9,15 @@
 #include "harness/harness.h"
 #include "ir/ir_loader.h"
 #include "pal/environment.h"
+#include "pal/memory_tracker.h"
 #include "pal/timer.h"
 #include "reporting/reporter.h"
 #include "vgcpu/internal/log.h"
 #include "vgcpu/internal/version.h"
 
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 #include <iostream>
 
 // Force linking of adapter implementations
@@ -197,26 +200,8 @@ int HandleValidate(const CliOptions& options) {
 
 /// Handle the 'run' command.
 /// Blueprint Reference: [API-01-01] CLI run subcommand (Chapter 4) / [ARCH-13-01] (Chapter 3)
-int HandleRun(const CliOptions& options) {
-    auto& registry = AdapterRegistry::Instance();
-
-    // Determine backends to use
-    std::vector<std::string> backend_ids;
-    if (options.all_backends || options.backends.empty()) {
-        backend_ids = registry.GetAdapterIds();
-    } else {
-        backend_ids = options.backends;
-    }
-
-    if (backend_ids.empty()) {
-        VGCPU_LOG_ERROR("No backends available");
-        return 1;
-    }
-
-    // Load scene(s)
+std::vector<PreparedScene> LoadScenesFromOptions(const CliOptions& options) {
     std::vector<PreparedScene> scenes;
-
-    // Support --all-scenes to load from registry
     if (options.all_scenes) {
         auto& scene_reg = SceneRegistry::Instance();
         for (const auto& scene_id : scene_reg.GetSceneIds()) {
@@ -235,28 +220,22 @@ int HandleRun(const CliOptions& options) {
             VGCPU_LOG_INFO("Loaded " + std::to_string(scenes.size()) + " scenes from manifest");
         }
     } else if (!options.scenes.empty()) {
-        // Load scenes from file paths or asset IDs
         for (const auto& scene_arg : options.scenes) {
             std::filesystem::path scene_path(scene_arg);
-
-            // Check if it's a file path
             if (scene_path.extension() == ".irbin" || std::filesystem::exists(scene_path)) {
                 auto bytes = ir::IrLoader::LoadFromFile(scene_path);
                 if (!bytes) {
                     VGCPU_LOG_ERROR("Failed to load scene: " + std::string(scene_arg));
                     continue;
                 }
-
                 auto result = ir::IrLoader::Prepare(*bytes, scene_path.stem().string());
                 if (result.failed()) {
                     VGCPU_LOG_ERROR("Failed to parse scene: " + result.status().message);
                     continue;
                 }
-
                 scenes.push_back(std::move(result.value()));
                 VGCPU_LOG_INFO("Loaded scene: " + scene_arg);
             } else {
-                // Try from scene registry
                 auto& scene_reg = SceneRegistry::Instance();
                 auto path = scene_reg.GetScenePath(scene_arg);
                 if (path && std::filesystem::exists(*path)) {
@@ -269,7 +248,6 @@ int HandleRun(const CliOptions& options) {
                         }
                     }
                 } else {
-                    // Try assets/scenes/<id>.irbin
                     auto asset_path =
                         std::filesystem::path("assets/scenes") / (scene_arg + ".irbin");
                     if (std::filesystem::exists(asset_path)) {
@@ -278,7 +256,7 @@ int HandleRun(const CliOptions& options) {
                             auto result = ir::IrLoader::Prepare(*bytes, scene_arg);
                             if (result.ok()) {
                                 scenes.push_back(std::move(result.value()));
-                                VGCPU_LOG_INFO("Loaded scene: " + std::string(scene_arg));
+                                VGCPU_LOG_INFO("Loaded scene: " + scene_arg);
                             }
                         }
                     } else {
@@ -288,12 +266,30 @@ int HandleRun(const CliOptions& options) {
             }
         }
     }
+    return scenes;
+}
 
-    // Fall back to test scene if no scenes loaded
+/// Blueprint Reference: [API-01-01] CLI run subcommand (Chapter 4) / [ARCH-13-01] (Chapter 3)
+int HandleRun(const CliOptions& options) {
+    auto& registry = AdapterRegistry::Instance();
+
+    // Determine backends to use
+    std::vector<std::string> backend_ids;
+    if (options.all_backends || options.backends.empty()) {
+        backend_ids = registry.GetAdapterIds();
+    } else {
+        backend_ids = options.backends;
+    }
+
+    if (backend_ids.empty()) {
+        VGCPU_LOG_ERROR("No backends available");
+        return 1;
+    }
+
+    auto scenes = LoadScenesFromOptions(options);
     if (scenes.empty()) {
         scenes.push_back(ir::IrLoader::CreateTestScene(800, 600));
     }
-
     // Setup benchmark policy
     BenchmarkPolicy policy;
     policy.warmup_iterations = options.warmup_iters;
@@ -420,6 +416,166 @@ int HandleRun(const CliOptions& options) {
     return 0;
 }
 
+int HandleProfileMemory(const CliOptions& options) {
+    auto& registry = AdapterRegistry::Instance();
+
+    std::vector<std::string> backend_ids;
+    if (options.all_backends || options.backends.empty()) {
+        backend_ids = registry.GetAdapterIds();
+    } else {
+        backend_ids = options.backends;
+    }
+
+    if (backend_ids.empty()) {
+        VGCPU_LOG_ERROR("No backends available");
+        return 1;
+    }
+
+    auto scenes = LoadScenesFromOptions(options);
+    if (scenes.empty()) {
+        scenes.push_back(ir::IrLoader::CreateTestScene(800, 600));
+    }
+
+    struct ActiveBackend {
+        std::string id;
+        std::unique_ptr<IBackendAdapter> adapter;
+    };
+    std::vector<ActiveBackend> active_backends;
+    for (const auto& backend_id : backend_ids) {
+        auto adapter = registry.CreateAdapter(backend_id);
+        if (!adapter) {
+            VGCPU_LOG_WARN("Backend '" + backend_id + "' not found, skipping");
+            continue;
+        }
+
+        AdapterArgs args;
+        args.thread_count = 1;
+        auto status = adapter->Initialize(args);
+        if (status.failed()) {
+            VGCPU_LOG_WARN("Failed to initialize '" + backend_id + "': " + status.message);
+            continue;
+        }
+        active_backends.push_back({backend_id, std::move(adapter)});
+    }
+
+    struct MemoryCaseResult {
+        std::string backend_id;
+        std::string scene_id;
+        std::string decision;
+        std::string skip_reason;
+        pal::MemoryProfile profile;
+    };
+    std::vector<MemoryCaseResult> results;
+
+    for (const auto& scene : scenes) {
+        for (auto& backend : active_backends) {
+            auto caps = backend.adapter->GetCapabilities();
+            std::string compat_reason = CheckCompatibility(caps, scene.required);
+            if (!compat_reason.empty()) {
+                results.push_back({backend.id, scene.scene_id, "SKIP", compat_reason, {}});
+                continue;
+            }
+
+            auto prep_status = backend.adapter->Prepare(scene);
+            if (prep_status.failed()) {
+                results.push_back({backend.id, scene.scene_id, "FAIL", prep_status.message, {}});
+                continue;
+            }
+
+            SurfaceConfig config;
+            config.width = static_cast<int>(scene.width);
+            config.height = static_cast<int>(scene.height);
+
+            std::vector<uint8_t> output_buffer(static_cast<size_t>(config.width) * config.height * 4);
+
+            // 1 unmeasured warmup call
+            backend.adapter->Render(scene, config, output_buffer);
+
+            // Isolated memory profiling pass (1 frame)
+            pal::MemoryProfile prof = pal::TrackMemory([&]() {
+                backend.adapter->Render(scene, config, output_buffer);
+            });
+
+            results.push_back({backend.id, scene.scene_id, "EXECUTE", "", prof});
+        }
+    }
+
+    for (auto& backend : active_backends) {
+        backend.adapter->Shutdown();
+    }
+
+    // Print summary to console
+    std::cout << "\n"
+              << "========================================================================================================\n"
+              << "VGCPU-Benchmark — Working Memory Profile (Heap allocations & Peak Live Bytes per frame)\n"
+              << "========================================================================================================\n"
+              << std::left << std::setw(14) << "Backend"
+              << std::left << std::setw(28) << "Scene"
+              << std::right << std::setw(14) << "Allocs/frame"
+              << std::right << std::setw(14) << "Frees/frame"
+              << std::right << std::setw(18) << "Peak Heap (KB)"
+              << std::right << std::setw(18) << "Total Churn (KB)"
+              << std::right << std::setw(12) << "Leaked\n"
+              << "--------------------------------------------------------------------------------------------------------\n";
+
+    for (const auto& r : results) {
+        std::cout << std::left << std::setw(14) << r.backend_id
+                  << std::left << std::setw(28) << r.scene_id;
+        if (r.decision == "SKIP") {
+            std::cout << "  SKIP (" << r.skip_reason << ")\n";
+        } else if (r.decision == "FAIL") {
+            std::cout << "  FAIL (" << r.skip_reason << ")\n";
+        } else {
+            std::cout << std::right << std::setw(14) << r.profile.alloc_count
+                      << std::right << std::setw(14) << r.profile.free_count
+                      << std::right << std::setw(18) << std::fixed << std::setprecision(1) << (r.profile.peak_heap_bytes / 1024.0)
+                      << std::right << std::setw(18) << std::fixed << std::setprecision(1) << (r.profile.total_alloc_bytes / 1024.0)
+                      << std::right << std::setw(12) << r.profile.leaked_bytes << " B\n";
+        }
+    }
+    std::cout << "========================================================================================================\n";
+
+    // Write memory.json
+    std::filesystem::path out_dir(options.output_dir);
+    std::error_code ec;
+    std::filesystem::create_directories(out_dir, ec);
+    auto json_path = out_dir / "memory.json";
+    std::ofstream out(json_path);
+    if (out) {
+        out << "{\n"
+            << "  \"benchmark\": \"VGCPU-Benchmark\",\n"
+            << "  \"version\": \"" << VGCPU_VERSION_STRING << "\",\n"
+            << "  \"timestamp\": \"" << pal::GetTimestamp() << "\",\n"
+            << "  \"cases\": [\n";
+        for (size_t i = 0; i < results.size(); ++i) {
+            const auto& r = results[i];
+            out << "    {\n"
+                << "      \"backend_id\": \"" << r.backend_id << "\",\n"
+                << "      \"scene_id\": \"" << r.scene_id << "\",\n"
+                << "      \"decision\": \"" << r.decision << "\"";
+            if (!r.skip_reason.empty()) {
+                out << ",\n      \"reason\": \"" << r.skip_reason << "\"";
+            }
+            if (r.decision == "EXECUTE") {
+                out << ",\n      \"memory\": {\n"
+                    << "        \"alloc_count\": " << r.profile.alloc_count << ",\n"
+                    << "        \"free_count\": " << r.profile.free_count << ",\n"
+                    << "        \"peak_heap_bytes\": " << r.profile.peak_heap_bytes << ",\n"
+                    << "        \"total_alloc_bytes\": " << r.profile.total_alloc_bytes << ",\n"
+                    << "        \"leaked_bytes\": " << r.profile.leaked_bytes << "\n"
+                    << "      }\n";
+            } else {
+                out << "\n";
+            }
+            out << "    }" << (i + 1 < results.size() ? "," : "") << "\n";
+        }
+        out << "  ]\n}\n";
+        VGCPU_LOG_INFO("Memory profile JSON: " + json_path.string());
+    }
+
+    return 0;
+}
+
 }  // namespace
 
 int main(int argc, char* argv[]) {
@@ -492,6 +648,8 @@ int main(int argc, char* argv[]) {
             return HandleValidate(*options);
         case CliCommand::kRun:
             return HandleRun(*options);
+        case CliCommand::kProfileMemory:
+            return HandleProfileMemory(*options);
         default:
             CliParser::PrintHelp();
             return 1;

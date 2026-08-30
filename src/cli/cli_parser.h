@@ -20,6 +20,7 @@ enum class CliCommand {
     kList,
     kMetadata,
     kValidate,
+    kProfileMemory,
 };
 
 /// Parsed CLI options.

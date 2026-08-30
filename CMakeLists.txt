@@ -665,6 +665,7 @@ add_library(vgcpu_core STATIC
     src/common/status.cpp
     src/pal/timer.cpp
     src/pal/environment.cpp
+    src/pal/memory_tracker.cpp
     src/ir/ir_loader.cpp
     src/ir/prepared_scene.cpp
     src/assets/scene_registry.cpp
