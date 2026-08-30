@@ -33,22 +33,35 @@ set(VGCPU_DEP_AGG_COMMIT "c4f36b4432142f22c0bf82c6fbdb41567a236be2")
 set(VGCPU_DEP_FREETYPE_TAG "VER-2-13-2")
 
 # AmanithVG SDK - Vector graphics library
-# Pinned to commit SHA (SDK snapshots, no version tags)
-set(VGCPU_DEP_AMANITHVG_COMMIT "b7f44f6b95b812adb07e4842d3cbee146bde801d")
+# Pinned to commit SHA (SDK snapshots, no version tags). Bumped 2026-08-30:
+# the previously pinned b7f44f6b was no longer reachable in the upstream
+# repo (history rewritten upstream, single-branch snapshot convention) --
+# updated to the current master HEAD.
+set(VGCPU_DEP_AMANITHVG_COMMIT "207f00924dab804909d925f2004b41eb74a575de")
 
 # Cairo - Prebuilt for Windows
 set(VGCPU_DEP_CAIRO_PREBUILT_VERSION "1.17.2")
 
-# Corrosion - Rust-CMake bridge
-set(VGCPU_DEP_CORROSION_TAG "v0.5.0")
+# Corrosion - Rust-CMake bridge. Bumped 2026-08-30 from v0.5.0: that version's
+# FindRust.cmake cannot parse `rustup toolchain list --verbose` output from
+# rustup >= 1.28.0 ("... (active, default) ..." replaced the old
+# "... (default) ..." marker), so it silently discovers zero toolchains and
+# fails configure (upstream corrosion-rs#590, fixed in v0.5.1).
+set(VGCPU_DEP_CORROSION_TAG "v0.5.2")
 
-# Rust toolchain version (updated to nightly to support vello_cpu's edition2024 requirement)
+# Rust toolchain version. Pinned to stable (DEC-BUILD-06,
+# rust_bridge/rust-toolchain.toml). Fixed 2026-08-30: this variable still
+# said "nightly" after DEC-BUILD-06 moved to stable, which made Corrosion's
+# FindRust look for a "nightly-*" rustup toolchain that no longer exists
+# and fail configure outright. Bumped from 1.84.0 to 1.86.0 the same day:
+# 1.84.0 cannot build vello_cpu (needs `edition2024`, stable since 1.85.0);
+# vello_cpu 0.0.4's own MSRV is 1.86.0, so that is the pin.
 if(APPLE)
-    set(VGCPU_DEP_RUST_TOOLCHAIN "nightly-aarch64-apple-darwin")
+    set(VGCPU_DEP_RUST_TOOLCHAIN "1.86.0-aarch64-apple-darwin")
 elseif(WIN32)
-    set(VGCPU_DEP_RUST_TOOLCHAIN "nightly-x86_64-pc-windows-msvc")
+    set(VGCPU_DEP_RUST_TOOLCHAIN "1.86.0-x86_64-pc-windows-msvc")
 else()
-    set(VGCPU_DEP_RUST_TOOLCHAIN "nightly-x86_64-unknown-linux-gnu")
+    set(VGCPU_DEP_RUST_TOOLCHAIN "1.86.0-x86_64-unknown-linux-gnu")
 endif()
 
 # -----------------------------------------------------------------------------

@@ -962,13 +962,14 @@ target_link_libraries(vgcpu_tests PRIVATE
     vgcpu_artifacts
 )
 
-# Define enabled backends for test registration
-target_compile_definitions(vgcpu_tests PRIVATE
-    $<$<BOOL:${ENABLE_NULL_BACKEND}>:VGCPU_ENABLE_NULL_BACKEND>
-    $<$<BOOL:${ENABLE_PLUTOVG}>:VGCPU_ENABLE_PLUTOVG>
-    $<$<BOOL:${ENABLE_BLEND2D}>:VGCPU_ENABLE_BLEND2D>
-    $<$<BOOL:${VGCPU_ENABLE_ALLOC_INSTRUMENTATION}>:VGCPU_ENABLE_ALLOC_INSTRUMENTATION>
-)
+# VGCPU_ENABLE_* (all backends) and VGCPU_ENABLE_ALLOC_INSTRUMENTATION are
+# already propagated here as PUBLIC compile definitions transitively via
+# vgcpu_adapters -> vgcpu_core (see target_compile_definitions(vgcpu_core
+# PUBLIC ...) above); no target-local redefinition needed. Fixed
+# 2026-08-30 (ADR-0004): a redundant PRIVATE redefinition limited to
+# null/plutovg/blend2d used to shadow-appear here, which read as if tests
+# were Tier-1-only by design -- they were not, tests/test_main.cpp already
+# registers every backend the build enables.
 
 # Apply sanitizers to test executable
 vgcpu_apply_sanitizers(vgcpu_tests)

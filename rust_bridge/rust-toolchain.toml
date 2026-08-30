@@ -1,5 +1,9 @@
 # Blueprint Reference: [DEC-BUILD-06] - Use pinned stable toolchain
+# Bumped 2026-08-30: 1.84.0 could not build vello_cpu (needs the
+# `edition2024` Cargo feature, stabilized in 1.85.0). 1.85.0 alone was
+# still insufficient: fearless_simd/vello_common/vello_cpu 0.0.4 declare
+# an MSRV of 1.86.0, so that is the pin.
 [toolchain]
-channel = "1.84.0"
+channel = "1.86.0"
 components = ["rust-src", "rustfmt", "clippy"]
 targets = ["x86_64-unknown-linux-gnu", "x86_64-apple-darwin", "aarch64-apple-darwin", "x86_64-pc-windows-msvc"]

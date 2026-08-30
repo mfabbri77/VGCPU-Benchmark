@@ -111,3 +111,90 @@ not a slide).
   here can fix, which is exactly the failure mode AGENTS.md's "Work and
   evidence" section warns against (a predicate that only ever fires is not
   evidence of a regression).
+
+## Update 2026-08-30 — full 11-backend run, `release` preset
+
+All optional backends were built and the census re-run
+(`cmake --preset release`, all `ENABLE_*` default ON). Two corrections to
+the claims above:
+
+- **"No test code changes needed" was wrong.** `tests/test_main.cpp`
+  registered only `null`/`plutovg`/`blend2d` regardless of which backends
+  the build compiled in, so every existing test using
+  `AdapterRegistry::GetAdapterIds()` — this oracle included — was silently
+  Tier-1-only even in a full build. Fixed by mirroring
+  `src/cli/main.cpp`'s registration list in `test_main.cpp`, gated by the
+  same `VGCPU_ENABLE_*` macros (already propagated PUBLIC from
+  `vgcpu_core`); the redundant Tier-1-only `target_compile_definitions`
+  block on the `vgcpu_tests` target was removed as misleading dead weight.
+- **Dependency pins were stale enough to block configure entirely**,
+  unrelated to this ADR but discovered while getting the full build
+  running: `VGCPU_DEP_AMANITHVG_COMMIT` pointed at a commit no longer
+  reachable upstream (history rewritten); `VGCPU_DEP_RUST_TOOLCHAIN` still
+  said `nightly` after the toolchain moved to stable, so Corrosion looked
+  for a nonexistent rustup toolchain; Corrosion `v0.5.0` cannot parse
+  `rustup >= 1.28.0`'s `toolchain list --verbose` output
+  (corrosion-rs#590); the stable pin needed bumping to 1.86.0 because
+  `vello_cpu` 0.0.4 needs `edition2024` (stable since 1.85.0) and declares
+  an MSRV of 1.86.0. All four fixed as routine dependency-pin maintenance
+  (VER-07, archived blueprint chapter 9), not architecture changes.
+
+### Full census result
+
+| backend | case A | case D (control) | case B | case C |
+| --- | --- | --- | --- | --- |
+| cairo | pass (0.502) | pass (0.604) | 0.502 — `exact-union` | 0.502 — `exact-union` |
+| skia | pass (0.502) | pass (0.592) | 0.502 — `exact-union` | 0.502 — `exact-union` |
+| blend2d | pass (0.498) | pass (0.596) | 1.000 — `sum-then-saturate` | 0.698 — `sum-then-saturate` |
+| plutovg | pass (0.502) | pass (0.596) | 1.000 — `sum-then-saturate` | 0.706 — `sum-then-saturate` |
+| qt | pass (0.502) | pass (0.596) | 1.000 — `sum-then-saturate` | 0.706 — `sum-then-saturate` |
+| agg | pass (0.502) | pass (0.604) | 1.000 — `sum-then-saturate` | 0.702 — `sum-then-saturate` |
+| vello | pass (0.502) | pass (0.600) | 1.000 — `sum-then-saturate` | 0.702 — `sum-then-saturate` |
+| amanithvg | pass (0.498) | **FAIL** (0.624, expected 0.600) | 0.498 — `exact-union` | 0.498 — `exact-union` |
+| raqote | pass (0.502) | **FAIL** (0.502, expected 0.600) | 0.502 — `exact-union`* | 0.502 — `exact-union`* |
+| thorvg | **FAIL** (1.000, expected 0.500) | pass (0.596) | 1.000 — `sum-then-saturate` | 0.706 — `sum-then-saturate` |
+
+`*` flagged, see below — the classification is arithmetically correct but
+the reading is suspect.
+
+### Confirmed
+
+- 7 of 10 non-null backends (blend2d, plutovg, qt, agg, vello, and now
+  **thorvg**) are `sum-then-saturate`. 3 are `exact-union` (cairo, skia,
+  amanithvg on cases B/C specifically).
+
+### Open follow-ups (not yet root-caused, not certified as findings)
+
+- **AmanithVG case D**: 0.624 vs 0.600 expected is a genuine miss against
+  this oracle's `kEpsilon` (3/255 ≈ 0.012), but is consistent with
+  AmanithVG's own documented 1/16 sub-pixel lattice on axis-aligned edges
+  (source document §4.3): snapping 70.3/70.6 to the nearest 1/16 gives
+  70.3125/70.625, i.e. a union of 0.625 pixel-widths — matching the
+  0.624 measurement almost exactly. This oracle's epsilon assumes
+  near-continuous precision and was not calibrated for a backend with a
+  coarser, documented lattice; not a defect, but the test does not yet
+  encode that distinction and will keep flagging it. Fix belongs in the
+  test (either a per-backend tolerance or a lattice-aware expected value),
+  tracked, not applied yet.
+- **Raqote cases B, C, D all read back identical to case A's pixel
+  value** (0.501961, byte-exact). That is not the signature of a
+  sum-then-saturate or an exact-union backend; it looks like
+  `raqote_adapter.cpp`/`raqote_ffi` only renders the first `FillPath` call
+  per surface, or `rqt_get_pixels` reads a stale/wrong region. Needs
+  adapter-level (possibly Rust FFI-level) debugging, not covered here.
+  Until resolved, raqote's classification above is not trustworthy for
+  cases B/C/D.
+- **ThorVG case A measures 1.000 (fully opaque) instead of ~0.5**, despite
+  case D (also a two-contour, no-overlap case) reading correctly at
+  0.596 and cases B/C showing graduated (non-binary) values. A single
+  isolated rectangle rendering with no antialiasing while more complex
+  paths in the same run get antialiased is inconsistent with "AA is off"
+  as an explanation; needs `thorvg_adapter.cpp`-level investigation
+  (possibly a ThorVG API call ordering or shape-flag issue specific to a
+  lone, small shape).
+
+These three are recorded here rather than silently fixed or silently
+ignored, per AGENTS.md's "Work and evidence": a failing control case is
+either a real backend defect or an oracle-calibration bug, and this run
+does not yet have enough evidence to tell which for two of the three.
+

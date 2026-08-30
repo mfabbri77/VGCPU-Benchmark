@@ -21,9 +21,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a self-overlap fill-nonzero coverage census, run against every wired
   adapter, distinguishing exact-union rasterizers from the
   sum-then-saturate architecture documented in the market-analysis project.
-  Both Tier-1 real rasterizers (`plutovg`, `blend2d`) currently classify as
-  sum-then-saturate on the overlap cases; two control cases with a single
-  correct answer are hard requirements for every backend.
+  Two control cases with a single correct answer are hard requirements for
+  every backend; the two self-overlap cases classify and report, never
+  fail the build.
+- Correctness oracle census extended to all 11 registered backends
+  (previously the test binary only ever registered Tier-1 adapters
+  regardless of build configuration; `tests/test_main.cpp` now mirrors
+  `src/cli/main.cpp`'s full registration list). Result: 7/10 non-null
+  backends (blend2d, plutovg, qt, agg, vello, thorvg) classify
+  sum-then-saturate; 3 (cairo, skia, amanithvg) classify exact-union.
+  Three open follow-ups recorded in ADR-0004 (amanithvg lattice-snap
+  epsilon calibration; raqote and thorvg adapter-level anomalies needing
+  further investigation, not yet certified as backend defects).
 - Blueprint v1.0 adoption with canonical documentation
 - CMake presets (dev, release, ci, asan, ubsan, tsan) per [REQ-92]
 - Centralized dependency management in `cmake/vgcpu_deps.cmake`
@@ -42,6 +51,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Floating dependency issues (asmjit, blend2d, agg, amanithvg)
+- `VGCPU_DEP_AMANITHVG_COMMIT` pointed at a commit no longer reachable
+  upstream (history rewritten in `Mazatech/amanithvg-sdk`); bumped to
+  current `master`.
+- `VGCPU_DEP_RUST_TOOLCHAIN` still said `nightly` after the toolchain
+  moved to stable (DEC-BUILD-06), which made Corrosion look for a
+  nonexistent rustup toolchain and fail configure outright for any build
+  with Raqote or vello_cpu enabled.
+- Corrosion `v0.5.0` cannot parse `rustup >= 1.28.0`'s
+  `toolchain list --verbose` output (upstream corrosion-rs#590); bumped to
+  `v0.5.2`.
+- Rust toolchain pin bumped 1.84.0 -> 1.86.0: `vello_cpu` 0.0.4 needs the
+  `edition2024` Cargo feature (stable since 1.85.0) and declares an MSRV
+  of 1.86.0.
 
 ### Security
 - Dependency pinning prevents supply chain attacks via floating branches
