@@ -17,6 +17,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- PAE (Peak Absolute Error, the L∞/Chebyshev norm) + AE bad-pixel ratio
+  as worst-case complements to SSIM — the industry-standard pair (cf.
+  ImageMagick `PAE`/`AE` metrics): SSIM averages structure, so a single
+  badly-wrong pixel (e.g. one channel off by 50%) hides inside a ~1.0
+  score; PAE is exactly that worst pixel. Implemented in both paths:
+  `artifacts::compute_ssim` (fields `pae`, `ae_ratio`, tolerance 8; JSON
+  `ssim` block extended additively) and `tools/html_report.py` (second
+  gallery chip `L∞ N` — green ≤ 8 fuzz, amber ≤ 64, red > 64 — plus
+  AE@8 percentage in the detail dialog). First regenerated report proved
+  the point immediately: on strokes_curves every backend scores SSIM
+  ≥ 0.9985, but PAE separates agg (L∞ 240, miter/corner divergence vs
+  cairo), qt (96), raqote (82), amanithvg (80) from blend2d/plutovg/
+  thorvg (17-19).
 - `--pin <cpuset>` (REQ-13-03): pins the process (and every backend worker
   thread created afterwards) to a logical CPU set -- a single CPU (`2`),
   a range (`0-11`) or a list (`0,2,4`); Linux/Windows, hard error if the

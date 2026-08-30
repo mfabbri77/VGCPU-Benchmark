@@ -160,6 +160,8 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
                     result.ssim_score = ssim_res.score;
                     result.ssim_passed = ssim_res.passed;
                     result.ssim_message = ssim_res.message;
+                    result.ssim_pae = ssim_res.pae;
+                    result.ssim_ae_ratio = ssim_res.ae_ratio;
                 } else {
                     result.ssim_passed = false;
                     result.ssim_message = "Dimension mismatch";

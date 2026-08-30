@@ -130,6 +130,8 @@ std::string JsonWriter::ToJson(const RunMetadata& metadata,
             oss << "        \"golden_path\": \"" << EscapeJson(r.golden_path) << "\",\n";
             oss << "        \"score\": " << r.ssim_score << ",\n";
             oss << "        \"passed\": " << (r.ssim_passed ? "true" : "false") << ",\n";
+            oss << "        \"pae\": " << r.ssim_pae << ",\n";
+            oss << "        \"ae_ratio\": " << r.ssim_ae_ratio << ",\n";
             oss << "        \"message\": \"" << EscapeJson(r.ssim_message) << "\"\n";
             oss << "      }";
         }

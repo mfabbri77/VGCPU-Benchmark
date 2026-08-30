@@ -155,8 +155,21 @@ def _luma_over_white(rgba, n):
     return luma
 
 
+AE_TOLERANCE = 8  # "fuzz" per-channel tolerance for the AE bad-pixel count
+
+
 def compare_images(width, height, rgba_a, rgba_b):
-    """Return dict(ssim, max_diff, diff_pct, diff_png_bytes)."""
+    """Return dict(ssim, pae, ae_pct, diff_pct, diff_png_bytes).
+
+    SSIM is structural and AVERAGES: one badly-wrong pixel hides inside a
+    ~1.0 score. The industry-standard complement (cf. ImageMagick metrics)
+    is the pair PAE + AE:
+    - pae: Peak Absolute Error = L-infinity norm, max per-channel |a-b|
+      over every pixel (worst case, 0..255);
+    - ae_pct: percentage of pixels whose worst channel diff exceeds
+      AE_TOLERANCE (how WIDESPREAD the disagreement is, ignoring
+      AA/rounding noise below the tolerance).
+    """
     n = width * height
     la = _luma_over_white(rgba_a, n)
     lb = _luma_over_white(rgba_b, n)
@@ -188,8 +201,9 @@ def compare_images(width, height, rgba_a, rgba_b):
             tiles += 1
     ssim = ssim_sum / tiles if tiles else 1.0
 
-    max_diff = 0
+    pae = 0
     diff_count = 0
+    ae_count = 0
     diff_rgb = bytearray(n * 3)
     for i in range(n):
         d = max(
@@ -197,15 +211,18 @@ def compare_images(width, height, rgba_a, rgba_b):
         )
         if d:
             diff_count += 1
-            if d > max_diff:
-                max_diff = d
+            if d > pae:
+                pae = d
+            if d > AE_TOLERANCE:
+                ae_count += 1
         amp = min(255, d * 8)
         diff_rgb[i * 3] = 255
         diff_rgb[i * 3 + 1] = 255 - amp
         diff_rgb[i * 3 + 2] = 255 - amp
     return {
         "ssim": ssim,
-        "max_diff": max_diff,
+        "pae": pae,
+        "ae_pct": 100.0 * ae_count / n if n else 0.0,
         "diff_pct": 100.0 * diff_count / n if n else 0.0,
         "diff_png": encode_png_rgb(width, height, bytes(diff_rgb)),
     }
@@ -346,6 +363,23 @@ def ssim_chip(score):
     else:
         cls, label = "bad", f"SSIM {score:.4f}"
     return f'<span class="chip {cls}">{label}</span>'
+
+
+def pae_chip(pae, ae_pct):
+    """Worst-case badge: PAE (L-infinity) colored by severity.
+
+    <= AE_TOLERANCE: within the AA/rounding fuzz -> green;
+    <= 64: visible localized divergence (typically edge AA) -> amber;
+    >  64: at least one pixel is badly wrong (e.g. a channel off by 25%+)
+           -> red, regardless of how good SSIM looks.
+    """
+    if pae <= AE_TOLERANCE:
+        cls = "ok"
+    elif pae <= 64:
+        cls = "warn"
+    else:
+        cls = "bad"
+    return f'<span class="chip {cls}">L∞ {pae}</span>'
 
 
 def classification_chip(cls_name):
@@ -519,13 +553,20 @@ def build_report(results, oracle, results_dir, reference):
 
     # ---------------- Gallery + SSIM ----------------
     if images:
-        w("<h2>Rendering gallery &amp; SSIM</h2>")
+        w("<h2>Rendering gallery — SSIM &amp; PAE (L∞)</h2>")
         w(
-            f"<p class='sub'>Every backend's untimed render per scene. SSIM is "
-            f"computed by this tool (luma over white, 8×8 windows) against "
-            f"<b>{esc(reference)}</b>'s render of the same scene — it measures "
-            f"agreement with the reference, not correctness. Click an image "
-            f"for full size and the amplified difference map (diff ×8, red).</p>"
+            f"<p class='sub'>Every backend's untimed render per scene, compared "
+            f"against <b>{esc(reference)}</b>'s render of the same scene. Two "
+            f"complementary metrics (industry pair, cf. ImageMagick): "
+            f"<b>SSIM</b> is structural and averages — a single badly-wrong "
+            f"pixel hides inside a ~1.0 score; <b>PAE</b> (peak absolute "
+            f"error, the L∞/Chebyshev norm) is the worst per-channel "
+            f"difference of any single pixel — it catches exactly that. "
+            f"Chips: L∞ ≤ {AE_TOLERANCE} within AA/rounding fuzz, ≤ 64 "
+            f"localized edge divergence, &gt; 64 at least one pixel badly "
+            f"wrong. Both measure agreement with the reference, not "
+            f"correctness. Click an image for the amplified difference map "
+            f"and the AE bad-pixel percentage.</p>"
         )
         dlg_id = 0
         dialogs = []
@@ -542,7 +583,9 @@ def build_report(results, oracle, results_dir, reference):
                 if b == reference:
                     badge = "<span class='chip ref'>reference</span>"
                 elif cmp_res:
-                    badge = ssim_chip(cmp_res["ssim"])
+                    badge = ssim_chip(cmp_res["ssim"]) + pae_chip(
+                        cmp_res["pae"], cmp_res["ae_pct"]
+                    )
                 else:
                     badge = "<span class='chip na'>no compare</span>"
                 c = by_key.get((b, s))
@@ -565,8 +608,9 @@ def build_report(results, oracle, results_dir, reference):
                 elif cmp_res:
                     d.append(
                         f"<p>SSIM {cmp_res['ssim']:.5f} vs {esc(reference)} · "
-                        f"max channel diff {cmp_res['max_diff']}/255 · "
-                        f"{cmp_res['diff_pct']:.2f}% pixels differ</p>"
+                        f"PAE (L∞) {cmp_res['pae']}/255 · "
+                        f"AE@{AE_TOLERANCE}: {cmp_res['ae_pct']:.3f}% px · "
+                        f"{cmp_res['diff_pct']:.2f}% px differ at all</p>"
                     )
                 d.append("<div class='drow'><div>")
                 d.append(f"<p>render</p><img src='{src}' alt='render'>")

@@ -45,6 +45,30 @@ SsimResult compute_ssim(int width, int height, std::span<const uint8_t> buf_a, i
     // Compute SSIM
     double score = ImageMetrics::SSIM(width, height, get_pixel_a, get_pixel_b);
 
+    // PAE (L-infinity) + AE ratio in one pass over all four channels.
+    int pae = 0;
+    size_t ae_count = 0;
+    for (int j = 0; j < height; ++j) {
+        const uint8_t* row_a = buf_a.data() + static_cast<size_t>(j) * stride_a;
+        const uint8_t* row_b = buf_b.data() + static_cast<size_t>(j) * stride_b;
+        for (int i = 0; i < width; ++i) {
+            int px_max = 0;
+            for (int c = 0; c < 4; ++c) {
+                int d = row_a[i * 4 + c] - row_b[i * 4 + c];
+                if (d < 0)
+                    d = -d;
+                if (d > px_max)
+                    px_max = d;
+            }
+            if (px_max > pae)
+                pae = px_max;
+            if (px_max > SsimResult::kAeTolerance)
+                ++ae_count;
+        }
+    }
+    double ae_ratio =
+        static_cast<double>(ae_count) / (static_cast<double>(width) * static_cast<double>(height));
+
     // Threshold for regression testing (configurable in future?)
     const double threshold = 0.99;
     bool passed = (score >= threshold);
@@ -54,7 +78,7 @@ SsimResult compute_ssim(int width, int height, std::span<const uint8_t> buf_a, i
         msg += " (score=" + std::to_string(score) + " < " + std::to_string(threshold) + ")";
     }
 
-    return {score, passed, msg};
+    return {score, passed, msg, pae, ae_ratio};
 }
 
 }  // namespace vgcpu::artifacts

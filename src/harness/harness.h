@@ -69,6 +69,8 @@ struct CaseResult {
     double ssim_score = 0.0;
     bool ssim_passed = true;  // Default true if not run
     std::string ssim_message;
+    int ssim_pae = 0;            ///< peak absolute error (L-infinity), 0..255
+    double ssim_ae_ratio = 0.0;  ///< fraction of pixels over the AE tolerance
 };
 
 /// Full benchmark run result.
