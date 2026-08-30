@@ -135,6 +135,162 @@
       "description": "Paris map (3056 polygons, ~41k vertices, evenodd building paths)"
     },
     {
+      "scene_id": "complex/boston",
+      "ir_path": "complex/boston.irbin",
+      "scene_hash": "c6c82565",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Boston map (1922 paths, thin strokes)"
+    },
+    {
+      "scene_id": "complex/car",
+      "ir_path": "complex/car.irbin",
+      "scene_hash": "aca4180d",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Car (420 paths, 236 gradients, elliptical arcs)"
+    },
+    {
+      "scene_id": "complex/contour",
+      "ir_path": "complex/contour.irbin",
+      "scene_hash": "362f59dd",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Contour plot (53k tiny paths)"
+    },
+    {
+      "scene_id": "complex/drops",
+      "ir_path": "complex/drops.irbin",
+      "scene_hash": "43e644a0",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Water drops (204 paths, 79 radial gradients)"
+    },
+    {
+      "scene_id": "complex/embrace",
+      "ir_path": "complex/embrace.irbin",
+      "scene_hash": "e18475af",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Embrace the World (225 paths, 57 gradients)"
+    },
+    {
+      "scene_id": "complex/hawaii",
+      "ir_path": "complex/hawaii.irbin",
+      "scene_hash": "441e841e",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Hawaii topographic map (1137 dense paths)"
+    },
+    {
+      "scene_id": "complex/paper1",
+      "ir_path": "complex/paper1.irbin",
+      "scene_hash": "37e02195",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Paper page 1 (5108 glyph-outline paths)"
+    },
+    {
+      "scene_id": "complex/paper2",
+      "ir_path": "complex/paper2.irbin",
+      "scene_hash": "815887de",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Paper page 2 (5691 paths, quads, figures)"
+    },
+    {
+      "scene_id": "complex/paris30k",
+      "ir_path": "complex/paris30k.irbin",
+      "scene_hash": "e90ef777",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Paris 30k (50690 paths, full map styling)"
+    },
+    {
+      "scene_id": "complex/paris50k",
+      "ir_path": "complex/paris50k.irbin",
+      "scene_hash": "11b2bca5",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Paris 50k (45796 paths, full map styling)"
+    },
+    {
+      "scene_id": "complex/paris70k",
+      "ir_path": "complex/paris70k.irbin",
+      "scene_hash": "74a420d0",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Paris 70k (45590 paths, full map styling)"
+    },
+    {
+      "scene_id": "complex/reschart",
+      "ir_path": "complex/reschart.irbin",
+      "scene_hash": "cd381e9d",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Resolution chart (747 paths)"
+    },
+    {
       "scene_id": "validation/noop",
       "ir_path": "validation/noop.irbin",
       "scene_hash": "85b7d3a0",

@@ -249,21 +249,20 @@ class IrBuilder:
         return data
     
     def _build_path_section(self) -> bytes:
-        data = struct.pack('<H', len(self.paths))
+        chunks = [struct.pack('<H', len(self.paths))]
         for path in self.paths:
-            data += struct.pack('<HH', len(path.verbs), len(path.points))
-            for verb in path.verbs:
-                data += struct.pack('<B', verb)
-            for pt in path.points:
-                data += struct.pack('<f', pt)
-        return data
-    
+            chunks.append(struct.pack('<HH', len(path.verbs), len(path.points)))
+            chunks.append(bytes(bytearray(int(v) for v in path.verbs)))
+            chunks.append(struct.pack(f'<{len(path.points)}f', *path.points))
+        return b''.join(chunks)
+
     def _build_command_section(self) -> bytes:
-        data = b''
+        chunks = []
         for cmd in self.commands:
-            data += struct.pack('<B', cmd.opcode) + cmd.args
-        data += struct.pack('<B', Opcode.END)
-        return data
+            chunks.append(struct.pack('<B', cmd.opcode))
+            chunks.append(cmd.args)
+        chunks.append(struct.pack('<B', Opcode.END))
+        return b''.join(chunks)
     
     def _build_section(self, section_type: SectionType, payload: bytes) -> bytes:
         header_size = 6
@@ -695,18 +694,30 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
                 t = (v[0], 0.0, 0.0, v[1] if len(v) > 1 else v[0], 0.0, 0.0)
             elif name == 'matrix':
                 t = tuple(v)
+            elif name == 'rotate':
+                a = math.radians(v[0])
+                t = (math.cos(a), math.sin(a), -math.sin(a), math.cos(a), 0.0, 0.0)
+                if len(v) > 2:
+                    t = mat_mul(mat_mul((1, 0, 0, 1, v[1], v[2]), t), (1, 0, 0, 1, -v[1], -v[2]))
             else:
                 raise ValueError(f'unsupported transform: {name}')
             m = mat_mul(m, t)
         return m
 
-    def hex_color(s):
-        h = s.strip().lstrip('#')
-        if len(h) in (3, 4):
-            h = ''.join(ch * 2 for ch in h)
-        if len(h) == 6:
-            h += 'ff'
-        return tuple(int(h[k:k + 2], 16) for k in (0, 2, 4, 6))
+    def parse_color(s, opacity=1.0):
+        """#hex or rgb(r,g,b) -> (r,g,b,a) with opacity multiplied in."""
+        s = s.strip()
+        if s.startswith('rgb'):
+            v = [float(x) for x in NUM.findall(s)]
+            r, g, b, a = int(v[0]), int(v[1]), int(v[2]), 255
+        else:
+            h = s.lstrip('#')
+            if len(h) in (3, 4):
+                h = ''.join(ch * 2 for ch in h)
+            if len(h) == 6:
+                h += 'ff'
+            r, g, b, a = (int(h[k:k + 2], 16) for k in (0, 2, 4, 6))
+        return (r, g, b, max(0, min(255, int(round(a * opacity)))))
 
     def parse_style(el):
         style = {}
@@ -714,16 +725,156 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
             if ':' in part:
                 k, v = part.split(':', 1)
                 style[k.strip()] = v.strip()
-        for k in ('fill', 'stroke', 'stroke-width', 'stroke-linecap', 'fill-rule'):
+        for k in ('fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
+                  'fill-rule', 'fill-opacity', 'stroke-opacity', 'opacity'):
             if el.get(k) is not None:
                 style[k] = el.get(k)
         return style
+
+    # --- Gradient definitions (userSpaceOnUse + gradientTransform only, as
+    # required by the vendored corpus). xlink:href chains inherit both
+    # attributes and stops from the referenced gradient.
+    XLINK = '{http://www.w3.org/1999/xlink}href'
+    grad_index = {}
+    for el in root.iter():
+        tag = el.tag.split('}')[-1]
+        if tag in ('linearGradient', 'radialGradient') and el.get('id'):
+            grad_index[el.get('id')] = el
+
+    def resolve_gradient(gid, depth=0):
+        """Returns (kind, attrs, stops) with href inheritance applied."""
+        el = grad_index.get(gid)
+        if el is None or depth > 8:
+            return None
+        kind = el.tag.split('}')[-1]
+        attrs = dict(el.attrib)
+        stops = []
+        for stop in el:
+            if stop.tag.split('}')[-1] == 'stop':
+                sstyle = dict(pair.split(':', 1) for pair in
+                              (stop.get('style') or '').split(';') if ':' in pair)
+                off = float(stop.get('offset', sstyle.get('offset', '0')))
+                col = stop.get('stop-color', sstyle.get('stop-color', '#000000'))
+                sop = float(stop.get('stop-opacity', sstyle.get('stop-opacity', '1')))
+                stops.append((off, col, sop))
+        href = el.get(XLINK) or el.get('href')
+        if href and href.startswith('#'):
+            parent = resolve_gradient(href[1:], depth + 1)
+            if parent:
+                merged = dict(parent[1])
+                merged.update(attrs)
+                attrs = merged
+                if not stops:
+                    stops = parent[2]
+                if kind == 'linearGradient' and parent[0] == 'radialGradient':
+                    kind = 'radialGradient' if 'x1' not in el.attrib else kind
+        return (kind, attrs, stops)
+
+    def gradient_paint(gid, m, opacity):
+        g = resolve_gradient(gid)
+        if g is None or not g[2]:
+            return None
+        kind, attrs, raw_stops = g
+        gm = mat_mul(m, parse_transform(attrs.get('gradientTransform')))
+        stops = [GradientStop(off, rgba(*parse_color(col, sop * opacity)))
+                 for off, col, sop in raw_stops]
+        if kind == 'linearGradient':
+            x1 = float(attrs.get('x1', '0')); y1 = float(attrs.get('y1', '0'))
+            x2 = float(attrs.get('x2', '1')); y2 = float(attrs.get('y2', '0'))
+            # Exact affine mapping: level sets stay parallel lines. With
+            # d = P1-P0, value(P') = (P' - M P0) . (M^-T d)/|d|^2, so the
+            # device-space axis is A' = M P0, B' = A' + w/|w|^2 with
+            # w = M^-T d / |d|^2.
+            a, b, c, d_, e, f = gm
+            det = a * d_ - b * c
+            if det == 0:
+                return None
+            dx, dy = x2 - x1, y2 - y1
+            l2 = dx * dx + dy * dy
+            if l2 == 0:
+                return None
+            # M^-T * d  (inverse-transpose of the 2x2 linear part)
+            wx = (d_ * dx - b * dy) / det / l2
+            wy = (-c * dx + a * dy) / det / l2
+            ax = a * x1 + c * y1 + e
+            ay = b * x1 + d_ * y1 + f
+            w2 = wx * wx + wy * wy
+            return Paint.linear(ax, ay, ax + wx / w2, ay + wy / w2, stops)
+        else:
+            cx = float(attrs.get('cx', '0')); cy = float(attrs.get('cy', '0'))
+            r = float(attrs.get('r', '1'))
+            # IR radial paints are circles: transform the center exactly and
+            # scale the radius by the uniform factor sqrt(|det|). Skewed
+            # radial gradients are approximated (focal point ignored; the
+            # corpus always has fx==cx, fy==cy). Uniform across backends.
+            a, b, c, d_, e, f = gm
+            dcx = a * cx + c * cy + e
+            dcy = b * cx + d_ * cy + f
+            dr = r * math.sqrt(abs(a * d_ - b * c))
+            return Paint.radial(dcx, dcy, dr, stops)
 
     # Fit: viewBox -> 800x600 canvas, uniform scale, centered.
     vb = [float(x) for x in NUM.findall(root.get('viewBox'))]
     W, H = 800, 600
     s = min(W / vb[2], H / vb[3])
     fit = (s, 0.0, 0.0, s, (W - vb[2] * s) / 2 - vb[0] * s, (H - vb[3] * s) / 2 - vb[1] * s)
+
+    def arc_to_cubics(x1, y1, rx, ry, phi_deg, large, sweep, x2, y2):
+        """SVG F.6.5 endpoint -> center conversion; <= 90-degree cubics."""
+        if rx == 0 or ry == 0 or (x1 == x2 and y1 == y2):
+            return []
+        phi = math.radians(phi_deg)
+        rx, ry = abs(rx), abs(ry)
+        cosp, sinp = math.cos(phi), math.sin(phi)
+        dx2, dy2 = (x1 - x2) / 2.0, (y1 - y2) / 2.0
+        x1p = cosp * dx2 + sinp * dy2
+        y1p = -sinp * dx2 + cosp * dy2
+        lam = x1p ** 2 / rx ** 2 + y1p ** 2 / ry ** 2
+        if lam > 1:
+            sc = math.sqrt(lam)
+            rx *= sc; ry *= sc
+        num = rx * rx * ry * ry - rx * rx * y1p * y1p - ry * ry * x1p * x1p
+        den = rx * rx * y1p * y1p + ry * ry * x1p * x1p
+        co = math.sqrt(max(0.0, num / den)) if den else 0.0
+        if large == sweep:
+            co = -co
+        cxp = co * rx * y1p / ry
+        cyp = -co * ry * x1p / rx
+        cx = cosp * cxp - sinp * cyp + (x1 + x2) / 2
+        cy = sinp * cxp + cosp * cyp + (y1 + y2) / 2
+
+        def ang(ux, uy, vx, vy):
+            d = math.hypot(ux, uy) * math.hypot(vx, vy)
+            cv = max(-1.0, min(1.0, (ux * vx + uy * vy) / d))
+            a = math.acos(cv)
+            return -a if ux * vy - uy * vx < 0 else a
+
+        th1 = ang(1, 0, (x1p - cxp) / rx, (y1p - cyp) / ry)
+        dth = ang((x1p - cxp) / rx, (y1p - cyp) / ry, (-x1p - cxp) / rx, (-y1p - cyp) / ry)
+        if not sweep and dth > 0:
+            dth -= 2 * math.pi
+        elif sweep and dth < 0:
+            dth += 2 * math.pi
+
+        def pt(a):
+            ca, sa = math.cos(a), math.sin(a)
+            return (cx + rx * ca * cosp - ry * sa * sinp, cy + rx * ca * sinp + ry * sa * cosp)
+
+        def dpt(a):
+            ca, sa = math.cos(a), math.sin(a)
+            return (-rx * sa * cosp - ry * ca * sinp, -rx * sa * sinp + ry * ca * cosp)
+
+        nseg = max(1, int(math.ceil(abs(dth) / (math.pi / 2))))
+        out = []
+        for i in range(nseg):
+            a0 = th1 + dth * i / nseg
+            a1 = th1 + dth * (i + 1) / nseg
+            k = 4.0 / 3.0 * math.tan((a1 - a0) / 4)
+            p0, p3 = pt(a0), pt(a1)
+            d0, d3 = dpt(a0), dpt(a1)
+            out.append(((p0[0] + k * d0[0], p0[1] + k * d0[1]),
+                        (p3[0] - k * d3[0], p3[1] - k * d3[1]), p3))
+        return out
 
     def parse_path_data(d, m):
         p = Path()
@@ -732,6 +883,7 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
         cmd = None
         cx = cy = sx = sy = 0.0  # current point / subpath start (user units)
         pcx = pcy = None         # last cubic control (for s/S reflection)
+        pqx = pqy = None         # last quad control (for t/T reflection)
 
         def nums(n):
             nonlocal i
@@ -754,7 +906,7 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
             if c == 'z':
                 p.close()
                 cx, cy = sx, sy
-                pcx = pcy = None
+                pcx = pcy = pqx = pqy = None
                 continue
             if c == 'm':
                 x, y = nums(2)
@@ -762,31 +914,32 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
                 cx, cy = sx, sy = x, y
                 emit(p.move_to, (x, y))
                 cmd = 'l' if rel else 'L'  # extra pairs are implicit linetos
-                pcx = pcy = None
+                pcx = pcy = pqx = pqy = None
             elif c == 'l':
                 x, y = nums(2)
                 if rel: x += cx; y += cy
                 cx, cy = x, y
                 emit(p.line_to, (x, y))
-                pcx = pcy = None
+                pcx = pcy = pqx = pqy = None
             elif c == 'h':
                 (x,) = nums(1)
                 if rel: x += cx
                 cx = x
                 emit(p.line_to, (x, cy))
-                pcx = pcy = None
+                pcx = pcy = pqx = pqy = None
             elif c == 'v':
                 (y,) = nums(1)
                 if rel: y += cy
                 cy = y
                 emit(p.line_to, (cx, y))
-                pcx = pcy = None
+                pcx = pcy = pqx = pqy = None
             elif c == 'c':
                 x1, y1, x2, y2, x, y = nums(6)
                 if rel:
                     x1 += cx; y1 += cy; x2 += cx; y2 += cy; x += cx; y += cy
                 emit(p.cubic_to, (x1, y1), (x2, y2), (x, y))
                 pcx, pcy = x2, y2
+                pqx = pqy = None
                 cx, cy = x, y
             elif c == 's':
                 x2, y2, x, y = nums(4)
@@ -796,6 +949,35 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
                 y1 = 2 * cy - pcy if pcy is not None else cy
                 emit(p.cubic_to, (x1, y1), (x2, y2), (x, y))
                 pcx, pcy = x2, y2
+                pqx = pqy = None
+                cx, cy = x, y
+            elif c == 'q':
+                x1, y1, x, y = nums(4)
+                if rel:
+                    x1 += cx; y1 += cy; x += cx; y += cy
+                emit(p.quad_to, (x1, y1), (x, y))
+                pqx, pqy = x1, y1
+                pcx = pcy = None
+                cx, cy = x, y
+            elif c == 't':
+                x, y = nums(2)
+                if rel: x += cx; y += cy
+                x1 = 2 * cx - pqx if pqx is not None else cx
+                y1 = 2 * cy - pqy if pqy is not None else cy
+                emit(p.quad_to, (x1, y1), (x, y))
+                pqx, pqy = x1, y1
+                pcx = pcy = None
+                cx, cy = x, y
+            elif c == 'a':
+                rx, ry, rot, large, sweep, x, y = nums(7)
+                if rel: x += cx; y += cy
+                segs = arc_to_cubics(cx, cy, rx, ry, rot, bool(large), bool(sweep), x, y)
+                if segs:
+                    for c1, c2, end in segs:
+                        emit(p.cubic_to, c1, c2, end)
+                else:
+                    emit(p.line_to, (x, y))
+                pcx = pcy = pqx = pqy = None
                 cx, cy = x, y
             else:
                 raise ValueError(f'unsupported path command: {cmd}')
@@ -805,31 +987,51 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
     paint_cache = {}
     path_cache = {}
 
-    def paint_id(rgba):
-        if rgba not in paint_cache:
-            paint_cache[rgba] = builder.add_paint(Paint.solid(*rgba))
-        return paint_cache[rgba]
+    def solid_paint_id(rgba_tuple):
+        key = ('solid', rgba_tuple)
+        if key not in paint_cache:
+            paint_cache[key] = builder.add_paint(Paint.solid(*rgba_tuple))
+        return paint_cache[key]
 
-    draws = []  # (kind, paint_rgba, path_id, width_or_rule, cap) in document order
+    def resolve_paint_id(spec, m, opacity):
+        """spec is a fill/stroke value: #color, rgb(...), or url(#id)."""
+        um = re.match(r'url\(\s*#([^) ]+)\s*\)', spec)
+        if um:
+            key = ('grad', um.group(1), m, round(opacity, 6))
+            if key not in paint_cache:
+                paint = gradient_paint(um.group(1), m, opacity)
+                paint_cache[key] = (builder.add_paint(paint)
+                                    if paint is not None else solid_paint_id((0, 0, 0, 255)))
+            return paint_cache[key]
+        return solid_paint_id(parse_color(spec, opacity))
+
+    JOIN_MAP = {'round': StrokeJoin.ROUND, 'bevel': StrokeJoin.BEVEL}
+    draws = []  # ('fill', paint_id, path_id, rule) | ('stroke', paint_id, path_id, width, cap, join)
 
     def add_draws(el, m, pid):
         style = parse_style(el)
+        base_opacity = float(style.get('opacity', '1'))
         fill = style.get('fill', '#000000')
         if fill != 'none':
             rule = FillRule.EVEN_ODD if style.get('fill-rule') == 'evenodd' else FillRule.NON_ZERO
-            draws.append(('fill', hex_color(fill), pid, rule, None))
+            op = base_opacity * float(style.get('fill-opacity', '1'))
+            draws.append(('fill', resolve_paint_id(fill, m, op), pid, rule))
         stroke = style.get('stroke', 'none')
         if stroke != 'none':
             wscale = math.sqrt(abs(m[0] * m[3] - m[1] * m[2]))
             width = float(style.get('stroke-width', '1')) * wscale
             cap = StrokeCap.ROUND if style.get('stroke-linecap') == 'round' else StrokeCap.BUTT
-            draws.append(('stroke', hex_color(stroke), pid, width, cap))
+            join = JOIN_MAP.get(style.get('stroke-linejoin'), StrokeJoin.MITER)
+            op = base_opacity * float(style.get('stroke-opacity', '1'))
+            draws.append(('stroke', resolve_paint_id(stroke, m, op), pid, width, cap, join))
 
     def apply_pt(m, x, y):
         return (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5])
 
     def walk(el, m):
         tag = el.tag.split('}')[-1]
+        if tag in ('defs', 'linearGradient', 'radialGradient', 'clipPath', 'symbol'):
+            return
         m = mat_mul(m, parse_transform(el.get('transform')))
         if tag == 'path':
             d = el.get('d')
@@ -859,12 +1061,14 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
     walk(root, fit)
 
     builder.clear(255, 255, 255)
-    for kind, rgba, pid, arg, cap in draws:
-        if kind == 'fill':
-            builder.set_fill(paint_id(rgba), arg).fill_path(pid)
+    for entry in draws:
+        if entry[0] == 'fill':
+            _, pid_paint, pid_path, rule = entry
+            builder.set_fill(pid_paint, rule).fill_path(pid_path)
         else:
-            builder.set_stroke(paint_id(rgba), arg, cap, StrokeJoin.MITER)
-            builder.stroke_path(pid)
+            _, pid_paint, pid_path, width, cap, join = entry
+            builder.set_stroke(pid_paint, width, cap, join)
+            builder.stroke_path(pid_path)
 
     return builder.build(), {
         "scene_id": scene_id,
@@ -884,6 +1088,32 @@ def create_paris_scene() -> Tuple[bytes, dict]:
         'paris.svg', 'complex/paris',
         "Paris map (3056 polygons, ~41k vertices, evenodd building paths)",
         {"needs_nonzero": True})
+
+
+# MPVG benchmark corpus (Ganacim et al., "Massively-Parallel Vector
+# Graphics", SIGGRAPH Asia 2014). Vendored under assets/svg/ with the
+# upstream attribution file (MPVG_README.txt). The corpus tiger is a
+# duplicate of complex/tiger and is not imported.
+MPVG_SCENES = [
+    ('boston.svg', 'complex/boston', "Boston map (1922 paths, thin strokes)"),
+    ('car.svg', 'complex/car', "Car (420 paths, 236 gradients, elliptical arcs)"),
+    ('contour.svg', 'complex/contour', "Contour plot (53k tiny paths)"),
+    ('drops.svg', 'complex/drops', "Water drops (204 paths, 79 radial gradients)"),
+    ('embrace.svg', 'complex/embrace', "Embrace the World (225 paths, 57 gradients)"),
+    ('hawaii.svg', 'complex/hawaii', "Hawaii topographic map (1137 dense paths)"),
+    ('paper-1.svg', 'complex/paper1', "Paper page 1 (5108 glyph-outline paths)"),
+    ('paper-2.svg', 'complex/paper2', "Paper page 2 (5691 paths, quads, figures)"),
+    ('paris-30k.svg', 'complex/paris30k', "Paris 30k (50690 paths, full map styling)"),
+    ('paris-50k.svg', 'complex/paris50k', "Paris 50k (45796 paths, full map styling)"),
+    ('paris-70k.svg', 'complex/paris70k', "Paris 70k (45590 paths, full map styling)"),
+    ('reschart.svg', 'complex/reschart', "Resolution chart (747 paths)"),
+]
+
+def make_mpvg_scene(svg, sid, desc):
+    def create():
+        return convert_svg_scene(svg, sid, desc,
+                                 {"needs_nonzero": True, "needs_stroke": True})
+    return create
 
 def create_noop_scene() -> Tuple[bytes, dict]:
     builder = IrBuilder(800, 600)
@@ -917,6 +1147,10 @@ def main():
         (create_degen_reversal_scene, 'strokes/degen_reversal.irbin'),
         (create_tiger_scene, 'complex/tiger.irbin'),
         (create_paris_scene, 'complex/paris.irbin'),
+    ]
+    scenes += [(make_mpvg_scene(svg, sid, desc), sid.replace('complex/', 'complex/') + '.irbin')
+               for svg, sid, desc in MPVG_SCENES]
+    scenes += [
         (create_noop_scene, 'validation/noop.irbin'),
     ]
     

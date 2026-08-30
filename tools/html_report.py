@@ -7,9 +7,12 @@
 # Reads a benchmark output directory (results.json + the PNG artifacts a
 # `vgcpu-benchmark run --png` pass wrote) and, optionally, the correctness
 # census JSON emitted by `VGCPU_ORACLE_JSON=... vgcpu_tests`, and publishes
-# ONE self-contained HTML file: performance leaderboards, a rendering
-# gallery with cross-backend SSIM against a chosen reference backend,
-# amplified difference images, and the correctness-oracle census matrix.
+# an HTML file plus a `png/` asset folder next to it (renders and
+# amplified difference maps, linked relatively -- owner decision
+# 2026-08-30, replacing base64 inlining that ballooned with the MPVG
+# corpus): performance leaderboards, a rendering gallery with
+# cross-backend SSIM against a chosen reference backend, amplified
+# difference images, and the correctness-oracle census matrix.
 #
 # Design constraints (mirrors the reporting-harness discipline adopted in
 # AGENTS.md): Python 3 stdlib only, no network, no CDN asset, deterministic
@@ -345,9 +348,6 @@ def esc(s):
     )
 
 
-def b64img(png_bytes):
-    return "data:image/png;base64," + base64.b64encode(png_bytes).decode("ascii")
-
 
 def fmt_ms(ns):
     return f"{ns / 1e6:.3f}"
@@ -394,7 +394,7 @@ def classification_chip(cls_name):
     return f'<span class="chip {c}">{esc(label)}</span>'
 
 
-def build_report(results, oracle, results_dir, reference):
+def build_report(results, oracle, results_dir, reference, assets_dir):
     meta = results.get("run_metadata", {})
     env = meta.get("environment", {})
     policy = meta.get("policy", {})
@@ -416,7 +416,6 @@ def build_report(results, oracle, results_dir, reference):
             reference = real_backends[0] if real_backends else None
     if reference not in real_backends:
         sys.exit(f"error: reference backend '{reference}' not in results ({', '.join(real_backends)})")
-
     by_key = {(c["backend_id"], c["scene_id"]): c for c in cases}
 
     # Load artifacts + compute comparisons
@@ -602,7 +601,13 @@ def build_report(results, oracle, results_dir, reference):
                     if c and c.get("decision") == "EXECUTE"
                     else "—"
                 )
-                src = b64img(img[3])
+                # External assets (owner decision, 2026-08-30): images live in
+                # <output_dir>/png/ and are linked relatively, replacing the
+                # base64 inlining that ballooned the report to ~200 MB once
+                # the MPVG map corpus landed.
+                name = f"{b}_{s.replace('/', '_')}.png"
+                (assets_dir / name).write_bytes(img[3])
+                src = f"png/{name}"
                 w(
                     f"<figure class='shot' style='margin:0'>"
                     f"<img src='{src}' alt='{esc(b)} / {esc(s)}' loading='lazy' onclick=\"zoom('{did}')\">"
@@ -624,9 +629,11 @@ def build_report(results, oracle, results_dir, reference):
                 d.append(f"<p>render</p><img src='{src}' alt='render'>")
                 d.append("</div>")
                 if cmp_res:
+                    diff_name = f"diff_{b}_{s.replace('/', '_')}.png"
+                    (assets_dir / diff_name).write_bytes(cmp_res["diff_png"])
                     d.append(
                         f"<div><p>difference ×8 vs {esc(reference)}</p>"
-                        f"<img src='{b64img(cmp_res['diff_png'])}' alt='diff'></div>"
+                        f"<img src='png/{diff_name}' alt='diff'></div>"
                     )
                 d.append("</div><button onclick='this.closest(\"dialog\").close()'>Close</button>")
                 d.append("</div></dialog>")
@@ -693,7 +700,7 @@ def build_report(results, oracle, results_dir, reference):
 
 def main():
     ap = argparse.ArgumentParser(
-        description="Generate a self-contained HTML report from a vgcpu-benchmark output directory."
+        description="Generate an HTML report (with a png/ asset folder) from a vgcpu-benchmark output directory."
     )
     ap.add_argument("results_dir", help="directory containing results.json and PNG artifacts")
     ap.add_argument("-o", "--output", default=None, help="output HTML path (default: <results_dir>/report.html)")
@@ -703,12 +710,19 @@ def main():
 
     results_dir = Path(args.results_dir)
     results, oracle = load_inputs(results_dir, args.oracle_json)
-    html = build_report(results, oracle, results_dir, args.reference)
 
     out_path = Path(args.output) if args.output else results_dir / "report.html"
+    # Owner decision (2026-08-30): gallery images are NOT inlined; they are
+    # written to <output_dir>/png/ and linked relatively. Keeps the HTML
+    # small with the heavyweight MPVG corpus in the suite.
+    assets_dir = out_path.parent / "png"
+    assets_dir.mkdir(parents=True, exist_ok=True)
+
+    html = build_report(results, oracle, results_dir, args.reference, assets_dir)
     out_path.write_text(html, encoding="utf-8")
     size_kb = out_path.stat().st_size / 1024
-    print(f"report: {out_path} ({size_kb:.0f} KiB)")
+    n_assets = len(list(assets_dir.glob("*.png")))
+    print(f"report: {out_path} ({size_kb:.0f} KiB, {n_assets} images in {assets_dir})")
 
 
 if __name__ == "__main__":

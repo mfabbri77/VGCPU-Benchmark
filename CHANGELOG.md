@@ -8,6 +8,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- HTML report no longer inlines images: renders and difference maps are
+  written to a `png/` folder next to the report and linked relatively
+  (the MPVG corpus had ballooned the self-contained file to ~200 MB;
+  now ~256 KiB of HTML plus on-disk assets).
 - Harness: repetitions are now scheduled repetition-major across
   backends (owner policy) -- for each scene, every backend is prepared
   and warmed once, then all backends run repetition 1, then all run
@@ -27,6 +31,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- MPVG benchmark corpus (Ganacim et al., SIGGRAPH Asia 2014) imported
+  as 12 `complex/*` scenes: boston, car, contour (53k paths), drops,
+  embrace, hawaii, paper-1/2, paris-30k/50k/70k (up to 50690 paths,
+  full OSM styling with glyph-outline street labels), reschart. SVG
+  converter extended with everything the corpus needs: rotate
+  transforms, rgb() colors, fill/stroke/group opacity, stroke-linejoin,
+  linear/radial gradients (userSpaceOnUse + gradientTransform, xlink
+  href inheritance; linear mapped exactly through the affine transform,
+  radial center exact with radius scaled by sqrt|det|), elliptical
+  arcs (F.6.5 endpoint->center, <=90-degree cubics), Q/T quadratics.
+  Known approximations, uniform across backends: clip-path ignored
+  (paper-2 figures), dasharray rendered solid (paris street casings),
+  radial focal points ignored (corpus always has fx==cx). Generator
+  serialization made linear-time (was quadratic bytes-concat; paris-30k
+  conversion 1.9s, was >10min). First corpus verdict (internal 4/32/2,
+  pinned): paris-30k blend2d 84ms, agg 110ms, vello 128ms, raqote
+  186ms, plutovg 203ms, skia 207ms, qt 208ms, thorvg 211ms, amanithvg
+  225ms, cairo 269ms -- no engine holds a 60fps frame budget on 50k
+  paths at 800x600 on a desktop P-core.
 - Stroke scene redesign (owner layout): three red waves on the top row
   built from line segments, quadratic beziers and cubic beziers (first
   scene ever to exercise `QUAD_TO`); the blue spiral centered; three
