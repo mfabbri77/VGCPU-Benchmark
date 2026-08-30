@@ -323,22 +323,23 @@ def create_solid_basic_scene() -> Tuple[bytes, dict]:
     }
 
 def create_nested_rects_scene() -> Tuple[bytes, dict]:
-    """16 nested squares: the outermost is opaque, every following pass
+    """32 nested squares: the outermost is opaque, every following pass
     blends at alpha 0.25 (64/255, the closest 8-bit value). Pixel-aligned
     (even sizes around an integer center) per the alignment policy."""
     builder = IrBuilder(800, 600)
+    N = 32
     paints = []
-    for i in range(16):
-        r = int(255 * (1 - i / 16))
-        g = int(128 * (i / 16))
-        b = int(255 * (i / 16))
+    for i in range(N):
+        r = int(255 * (1 - i / N))
+        g = int(128 * (i / N))
+        b = int(255 * (i / N))
         alpha = 255 if i == 0 else 64
         paints.append(builder.add_paint(Paint.solid(r, g, b, alpha)))
 
     paths = []
     cx, cy = 400, 300
-    for i in range(16):
-        size = 384 - i * 24  # 384, 360, ... 24: even -> integer edges
+    for i in range(N):
+        size = 384 - i * 12  # 384, 372, ... 12: even -> integer edges
         paths.append(builder.add_path(Path().rect(cx - size / 2, cy - size / 2, size, size)))
 
     builder.clear(32, 32, 32)
@@ -347,7 +348,7 @@ def create_nested_rects_scene() -> Tuple[bytes, dict]:
 
     return builder.build(), {
         "scene_id": "fills/nested_rects",
-        "description": "16 nested squares, opaque base + 15 passes at alpha 0.25",
+        "description": "32 nested squares, opaque base + 31 passes at alpha 0.25",
         "default_width": 800, "default_height": 600,
         "required_features": {"needs_nonzero": True}
     }

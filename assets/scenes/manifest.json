@@ -16,14 +16,14 @@
     {
       "scene_id": "fills/nested_rects",
       "ir_path": "fills/nested_rects.irbin",
-      "scene_hash": "b8e720db",
+      "scene_hash": "b2e7cba6",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_nonzero": true
       },
-      "description": "16 nested squares, opaque base + 15 passes at alpha 0.25"
+      "description": "32 nested squares, opaque base + 31 passes at alpha 0.25"
     },
     {
       "scene_id": "fills/spiral_circles",
