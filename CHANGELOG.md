@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- Stroke support implemented in cairo and plutovg (kSetStroke/kStrokePath
+  with width, cap and join; paint set through the shared solid/gradient
+  helper). Root cause was worse than a missing feature: unhandled opcodes
+  fell into `default:` WITHOUT consuming their operand bytes, so the
+  first kSetStroke desynchronized the whole command stream. Both adapters
+  also gained kSetMatrix/kConcatMatrix, and `default:` now stops parsing
+  instead of desynchronizing. vello's FFI stroke additionally honored
+  neither width nor cap/join (underscore-ignored args) -- fixed via
+  kurbo::Stroke. Verified: non-background pixel count on
+  strokes/strokes_curves lands all 10 backends in the same cluster
+  (21.4k-22.4k px; before: cairo/plutovg ~0, vello 9.8k), gallery SSIM vs
+  cairo >= 0.9985 everywhere.
 - Linear and radial gradient support implemented in the five adapters that
   silently fell back to opaque black (cairo, plutovg, agg, raqote, vello;
   the libraries all support gradients natively -- only the adapters/FFI

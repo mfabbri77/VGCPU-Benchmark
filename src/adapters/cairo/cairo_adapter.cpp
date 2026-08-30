@@ -14,6 +14,95 @@
 
 namespace vgcpu {
 
+namespace {
+
+// Set the cairo source from an IR paint. Returns a pattern the caller must
+// destroy after drawing, or nullptr for solid colors. Gradient stop colors
+// get the same R<->B swap as solids (ARGB32 output; interpolation is
+// channel-symmetric, so the relabeling stays exact).
+cairo_pattern_t* SetSourceFromPaint(cairo_t* cr, const Paint& paint) {
+    if (paint.type == ir::PaintType::kSolid) {
+        double r = static_cast<double>((paint.color >> 0) & 0xFF) / 255.0;
+        double g = static_cast<double>((paint.color >> 8) & 0xFF) / 255.0;
+        double b = static_cast<double>((paint.color >> 16) & 0xFF) / 255.0;
+        double a = static_cast<double>((paint.color >> 24) & 0xFF) / 255.0;
+        cairo_set_source_rgba(cr, b, g, r, a);  // R<->B swap: ARGB32 output
+        return nullptr;
+    }
+    cairo_pattern_t* pat = nullptr;
+    if (paint.type == ir::PaintType::kLinear) {
+        pat = cairo_pattern_create_linear(paint.linear_start_x, paint.linear_start_y,
+                                          paint.linear_end_x, paint.linear_end_y);
+    } else {
+        pat = cairo_pattern_create_radial(paint.radial_center_x, paint.radial_center_y, 0.0,
+                                          paint.radial_center_x, paint.radial_center_y,
+                                          paint.radial_radius);
+    }
+    for (const auto& s : paint.stops) {
+        double r = static_cast<double>((s.color >> 0) & 0xFF) / 255.0;
+        double g = static_cast<double>((s.color >> 8) & 0xFF) / 255.0;
+        double b = static_cast<double>((s.color >> 16) & 0xFF) / 255.0;
+        double a = static_cast<double>((s.color >> 24) & 0xFF) / 255.0;
+        cairo_pattern_add_color_stop_rgba(pat, s.offset, b, g, r, a);  // R<->B swap
+    }
+    cairo_set_source(cr, pat);
+    return pat;
+}
+
+// Rebuild the cairo current path from IR path data.
+void BuildPath(cairo_t* cr, const Path& path) {
+    cairo_new_path(cr);
+    size_t pt_idx = 0;
+    for (auto verb : path.verbs) {
+        switch (verb) {
+            case ir::PathVerb::kMoveTo:
+                if (pt_idx + 1 <= path.points.size() / 2) {
+                    cairo_move_to(cr, path.points[pt_idx * 2], path.points[pt_idx * 2 + 1]);
+                    pt_idx++;
+                }
+                break;
+            case ir::PathVerb::kLineTo:
+                if (pt_idx + 1 <= path.points.size() / 2) {
+                    cairo_line_to(cr, path.points[pt_idx * 2], path.points[pt_idx * 2 + 1]);
+                    pt_idx++;
+                }
+                break;
+            case ir::PathVerb::kQuadTo:
+                // Cairo doesn't have native quad bezier, convert to cubic
+                if (pt_idx + 2 <= path.points.size() / 2) {
+                    double x0, y0;
+                    cairo_get_current_point(cr, &x0, &y0);
+                    double x1 = path.points[pt_idx * 2];
+                    double y1 = path.points[pt_idx * 2 + 1];
+                    double x2 = path.points[(pt_idx + 1) * 2];
+                    double y2 = path.points[(pt_idx + 1) * 2 + 1];
+                    // Quad to cubic: P1 = P0 + 2/3*(C - P0), P2 = P2 + 2/3*(C - P2)
+                    double cx1 = x0 + (2.0 / 3.0) * (x1 - x0);
+                    double cy1 = y0 + (2.0 / 3.0) * (y1 - y0);
+                    double cx2 = x2 + (2.0 / 3.0) * (x1 - x2);
+                    double cy2 = y2 + (2.0 / 3.0) * (y1 - y2);
+                    cairo_curve_to(cr, cx1, cy1, cx2, cy2, x2, y2);
+                    pt_idx += 2;
+                }
+                break;
+            case ir::PathVerb::kCubicTo:
+                if (pt_idx + 3 <= path.points.size() / 2) {
+                    cairo_curve_to(cr, path.points[pt_idx * 2], path.points[pt_idx * 2 + 1],
+                                   path.points[(pt_idx + 1) * 2], path.points[(pt_idx + 1) * 2 + 1],
+                                   path.points[(pt_idx + 2) * 2],
+                                   path.points[(pt_idx + 2) * 2 + 1]);
+                    pt_idx += 3;
+                }
+                break;
+            case ir::PathVerb::kClose:
+                cairo_close_path(cr);
+                break;
+        }
+    }
+}
+
+}  // namespace
+
 Status CairoAdapter::Initialize(const AdapterArgs& args) {
     (void)args;
     initialized_ = true;
@@ -87,6 +176,10 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
     // Current state
     uint16_t current_paint_id = 0;
     ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
+    uint16_t current_stroke_paint_id = 0;
+    float current_stroke_width = 1.0f;
+    ir::StrokeCap current_stroke_cap = ir::StrokeCap::kButt;
+    ir::StrokeJoin current_stroke_join = ir::StrokeJoin::kMiter;
 
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
@@ -132,6 +225,19 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 break;
             }
 
+            case ir::Opcode::kSetStroke: {
+                if (cmd + 7 > end)
+                    goto done;
+                current_stroke_paint_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                current_stroke_width = *reinterpret_cast<const float*>(cmd);
+                cmd += 4;
+                uint8_t opts = *cmd++;
+                current_stroke_cap = ir::UnpackStrokeCap(opts);
+                current_stroke_join = ir::UnpackStrokeJoin(opts);
+                break;
+            }
+
             case ir::Opcode::kFillPath: {
                 if (cmd + 2 > end)
                     goto done;
@@ -143,95 +249,9 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 if (current_paint_id >= scene.paints.size())
                     break;
 
-                const auto& path = scene.paths[path_id];
-                const auto& paint = scene.paints[current_paint_id];
+                cairo_pattern_t* grad_pat = SetSourceFromPaint(cr, scene.paints[current_paint_id]);
+                BuildPath(cr, scene.paths[path_id]);
 
-                // Set paint source. Gradient stop colors get the same R<->B
-                // swap as solids (ARGB32 output; interpolation is
-                // channel-symmetric, so the relabeling stays exact).
-                cairo_pattern_t* grad_pat = nullptr;
-                if (paint.type == ir::PaintType::kSolid) {
-                    double r = static_cast<double>((paint.color >> 0) & 0xFF) / 255.0;
-                    double g = static_cast<double>((paint.color >> 8) & 0xFF) / 255.0;
-                    double b = static_cast<double>((paint.color >> 16) & 0xFF) / 255.0;
-                    double a = static_cast<double>((paint.color >> 24) & 0xFF) / 255.0;
-                    cairo_set_source_rgba(cr, b, g, r, a);  // R<->B swap: ARGB32 output
-                } else {
-                    if (paint.type == ir::PaintType::kLinear) {
-                        grad_pat =
-                            cairo_pattern_create_linear(paint.linear_start_x, paint.linear_start_y,
-                                                        paint.linear_end_x, paint.linear_end_y);
-                    } else {
-                        grad_pat = cairo_pattern_create_radial(
-                            paint.radial_center_x, paint.radial_center_y, 0.0,
-                            paint.radial_center_x, paint.radial_center_y, paint.radial_radius);
-                    }
-                    for (const auto& s : paint.stops) {
-                        double r = static_cast<double>((s.color >> 0) & 0xFF) / 255.0;
-                        double g = static_cast<double>((s.color >> 8) & 0xFF) / 255.0;
-                        double b = static_cast<double>((s.color >> 16) & 0xFF) / 255.0;
-                        double a = static_cast<double>((s.color >> 24) & 0xFF) / 255.0;
-                        cairo_pattern_add_color_stop_rgba(grad_pat, s.offset, b, g, r,
-                                                          a);  // R<->B swap
-                    }
-                    cairo_set_source(cr, grad_pat);
-                }
-
-                // Build path
-                cairo_new_path(cr);
-                size_t pt_idx = 0;
-                for (auto verb : path.verbs) {
-                    switch (verb) {
-                        case ir::PathVerb::kMoveTo:
-                            if (pt_idx + 1 <= path.points.size() / 2) {
-                                cairo_move_to(cr, path.points[pt_idx * 2],
-                                              path.points[pt_idx * 2 + 1]);
-                                pt_idx++;
-                            }
-                            break;
-                        case ir::PathVerb::kLineTo:
-                            if (pt_idx + 1 <= path.points.size() / 2) {
-                                cairo_line_to(cr, path.points[pt_idx * 2],
-                                              path.points[pt_idx * 2 + 1]);
-                                pt_idx++;
-                            }
-                            break;
-                        case ir::PathVerb::kQuadTo:
-                            // Cairo doesn't have native quad bezier, convert to cubic
-                            if (pt_idx + 2 <= path.points.size() / 2) {
-                                double x0, y0;
-                                cairo_get_current_point(cr, &x0, &y0);
-                                double x1 = path.points[pt_idx * 2];
-                                double y1 = path.points[pt_idx * 2 + 1];
-                                double x2 = path.points[(pt_idx + 1) * 2];
-                                double y2 = path.points[(pt_idx + 1) * 2 + 1];
-                                // Quad to cubic: P1 = P0 + 2/3*(C - P0), P2 = P2 + 2/3*(C - P2)
-                                double cx1 = x0 + (2.0 / 3.0) * (x1 - x0);
-                                double cy1 = y0 + (2.0 / 3.0) * (y1 - y0);
-                                double cx2 = x2 + (2.0 / 3.0) * (x1 - x2);
-                                double cy2 = y2 + (2.0 / 3.0) * (y1 - y2);
-                                cairo_curve_to(cr, cx1, cy1, cx2, cy2, x2, y2);
-                                pt_idx += 2;
-                            }
-                            break;
-                        case ir::PathVerb::kCubicTo:
-                            if (pt_idx + 3 <= path.points.size() / 2) {
-                                cairo_curve_to(cr, path.points[pt_idx * 2],
-                                               path.points[pt_idx * 2 + 1],
-                                               path.points[(pt_idx + 1) * 2],
-                                               path.points[(pt_idx + 1) * 2 + 1],
-                                               path.points[(pt_idx + 2) * 2],
-                                               path.points[(pt_idx + 2) * 2 + 1]);
-                                pt_idx += 3;
-                            }
-                            break;
-                        case ir::PathVerb::kClose:
-                            cairo_close_path(cr);
-                            break;
-                    }
-                }
-
-                // Set fill rule and fill
                 cairo_fill_rule_t rule = (current_fill_rule == ir::FillRule::kEvenOdd)
                                              ? CAIRO_FILL_RULE_EVEN_ODD
                                              : CAIRO_FILL_RULE_WINDING;
@@ -240,6 +260,79 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 if (grad_pat != nullptr) {
                     cairo_pattern_destroy(grad_pat);
                 }
+                break;
+            }
+
+            case ir::Opcode::kStrokePath: {
+                if (cmd + 2 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+
+                if (path_id >= scene.paths.size())
+                    break;
+                if (current_stroke_paint_id >= scene.paints.size())
+                    break;
+
+                cairo_pattern_t* grad_pat =
+                    SetSourceFromPaint(cr, scene.paints[current_stroke_paint_id]);
+                BuildPath(cr, scene.paths[path_id]);
+
+                cairo_set_line_width(cr, current_stroke_width);
+                cairo_line_cap_t cap = CAIRO_LINE_CAP_BUTT;
+                switch (current_stroke_cap) {
+                    case ir::StrokeCap::kButt:
+                        cap = CAIRO_LINE_CAP_BUTT;
+                        break;
+                    case ir::StrokeCap::kRound:
+                        cap = CAIRO_LINE_CAP_ROUND;
+                        break;
+                    case ir::StrokeCap::kSquare:
+                        cap = CAIRO_LINE_CAP_SQUARE;
+                        break;
+                }
+                cairo_set_line_cap(cr, cap);
+                cairo_line_join_t join = CAIRO_LINE_JOIN_MITER;
+                switch (current_stroke_join) {
+                    case ir::StrokeJoin::kMiter:
+                        join = CAIRO_LINE_JOIN_MITER;
+                        break;
+                    case ir::StrokeJoin::kRound:
+                        join = CAIRO_LINE_JOIN_ROUND;
+                        break;
+                    case ir::StrokeJoin::kBevel:
+                        join = CAIRO_LINE_JOIN_BEVEL;
+                        break;
+                }
+                cairo_set_line_join(cr, join);
+                cairo_stroke(cr);
+                if (grad_pat != nullptr) {
+                    cairo_pattern_destroy(grad_pat);
+                }
+                break;
+            }
+
+            case ir::Opcode::kSetMatrix: {
+                if (cmd + 24 > end)
+                    goto done;
+                // IR [a b c d e f] = [m00 m01 m10 m11 m02 m12]:
+                // cairo_matrix_init(xx, yx, xy, yy, x0, y0)
+                const float* m = reinterpret_cast<const float*>(cmd);
+                cmd += 24;
+                cairo_matrix_t mtx;
+                cairo_matrix_init(&mtx, m[0], m[2], m[1], m[3], m[4], m[5]);
+                cairo_set_matrix(cr, &mtx);
+                break;
+            }
+
+            case ir::Opcode::kConcatMatrix: {
+                if (cmd + 24 > end)
+                    goto done;
+                const float* m = reinterpret_cast<const float*>(cmd);
+                cmd += 24;
+                cairo_matrix_t mtx;
+                cairo_matrix_init(&mtx, m[0], m[2], m[1], m[3], m[4], m[5]);
+                cairo_transform(cr, &mtx);
                 break;
             }
 
@@ -252,8 +345,9 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 break;
 
             default:
-                // Skip unknown opcodes
-                break;
+                // Unknown opcode: cannot know its operand size, stop parsing
+                // rather than desynchronize the stream.
+                goto done;
         }
     }
 

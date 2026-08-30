@@ -2,7 +2,7 @@
 // Blueprint Reference: backends/vello.md
 
 use vello_cpu::{RenderContext, Pixmap, PaintType};
-use vello_cpu::kurbo::{BezPath, Rect};
+use vello_cpu::kurbo::{BezPath, Cap, Join, Rect, Stroke};
 use vello_cpu::peniko::{Color, ColorStop, Gradient};
 use vello_cpu::peniko::color::DynamicColor;
 
@@ -188,14 +188,26 @@ pub extern "C" fn vlo_stroke_path(
     surf: *mut VloSurface,
     path_ptr: *mut VloPath,
     r: u8, g: u8, b: u8, a: u8,
-    _width: f32,
-    _cap: i32,
-    _join: i32
+    width: f32,
+    cap: i32,
+    join: i32
 ) {
     if surf.is_null() || path_ptr.is_null() { return; }
     let surface = unsafe { &mut *surf };
     let p = unsafe { &*path_ptr };
-    
+
+    let stroke = Stroke::new(width as f64)
+        .with_caps(match cap {
+            1 => Cap::Round,
+            2 => Cap::Square,
+            _ => Cap::Butt,
+        })
+        .with_join(match join {
+            1 => Join::Round,
+            2 => Join::Bevel,
+            _ => Join::Miter,
+        });
+    surface.ctx.set_stroke(stroke);
     surface.ctx.set_paint(Color::from_rgba8(r, g, b, a));
     surface.ctx.stroke_path(&p.path);
 }
