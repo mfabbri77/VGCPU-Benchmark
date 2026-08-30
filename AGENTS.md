@@ -88,6 +88,11 @@ buffer -> harness stats + optional PNG/SSIM/oracle checks -> report.
   is not a measurement for this project: report the same environment
   metadata fields the harness already emits whenever a result is quoted
   outside the tool (e.g. in the market analysis document).
+- Run budgets (owner policy, 2026-08-30): internal iteration/verification
+  runs use `--warmup-iters 4 --iters 32 --repetitions 2`;
+  publication-grade numbers use `--warmup-iters 16 --iters 256
+  --repetitions 8 --threads 1 --pin <P-core>` with the `performance`
+  governor (see QUICKSTART's rigorous protocol).
 
 ## Correctness contract
 
