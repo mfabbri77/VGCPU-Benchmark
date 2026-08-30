@@ -61,6 +61,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Fixed
 - Floating dependency issues (asmjit, blend2d, agg, amanithvg)
+- Adapter-contract conformance (owner review of the HTML report gallery):
+  R<->B channel swap fixed in blend2d, cairo, plutovg, raqote, thorvg and
+  amanithvg (ARGB32-native backends; fixed at zero per-pixel cost via
+  swapped input colors, or thorvg's native ABGR8888 target); amanithvg
+  Y-flip fixed via an OpenVG base flip matrix (benchmark-neutral by
+  construction, verified: p50 unchanged within noise on all six).
+  Post-fix probe: all 10 backends return exact scene colors. The adapter
+  contract in AGENTS.md now states byte order and origin explicitly. New
+  precise gaps recorded: cairo and plutovg do not implement kStrokePath.
 - `VGCPU_DEP_AMANITHVG_COMMIT` pointed at a commit no longer reachable
   upstream (history rewritten in `Mazatech/amanithvg-sdk`); bumped to
   current `master`.

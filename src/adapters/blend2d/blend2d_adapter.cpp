@@ -35,13 +35,17 @@ BLGradient CreateGradient(const Paint& paint) {
         gradient.create(values, BL_EXTEND_MODE_PAD);
     }
 
-    // Add stops
+    // Add stops. Channel-swap note: Blend2D's only 32-bit output format is
+    // PRGB32 (bytes B,G,R,A on little-endian); the adapter contract wants
+    // bytes R,G,B,A. Feeding red<->blue-swapped colors makes the rendered
+    // bytes come out in contract order at zero per-pixel cost (SRC_OVER,
+    // coverage and gradient interpolation treat channels symmetrically).
     for (const auto& stop : paint.stops) {
         uint8_t r = (stop.color >> 0) & 0xFF;
         uint8_t g = (stop.color >> 8) & 0xFF;
         uint8_t b = (stop.color >> 16) & 0xFF;
         uint8_t a = (stop.color >> 24) & 0xFF;
-        gradient.add_stop(stop.offset, BLRgba32(r, g, b, a));
+        gradient.add_stop(stop.offset, BLRgba32(b, g, r, a));
     }
 
     return gradient;
@@ -131,7 +135,7 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
             uint8_t g = (paint.color >> 8) & 0xFF;
             uint8_t b = (paint.color >> 16) & 0xFF;
             uint8_t a = (paint.color >> 24) & 0xFF;
-            BLRgba32 c(r, g, b, a);
+            BLRgba32 c(b, g, r, a);  // R<->B swap: PRGB32 output, see CreateGradient
             if (is_stroke)
                 ctx.set_stroke_style(c);
             else
@@ -212,7 +216,7 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 uint8_t a = (rgba >> 24) & 0xFF;
                 ctx.save();
                 ctx.reset_transform();
-                ctx.set_fill_style(BLRgba32(r, g, b, a));
+                ctx.set_fill_style(BLRgba32(b, g, r, a));  // R<->B swap: PRGB32 output
                 ctx.fill_all();
                 ctx.restore();
                 break;

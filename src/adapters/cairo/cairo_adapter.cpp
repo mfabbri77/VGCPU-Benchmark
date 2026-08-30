@@ -111,7 +111,11 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 cairo_save(cr);
                 cairo_identity_matrix(cr);
                 cairo_rectangle(cr, 0, 0, config.width, config.height);
-                cairo_set_source_rgba(cr, r, g, b, a);
+                // R<->B swap: CAIRO_FORMAT_ARGB32 stores bytes B,G,R,A on
+                // little-endian; the contract wants R,G,B,A. Swapped input
+                // colors make the output bytes land in contract order at
+                // zero per-pixel cost (blending is channel-symmetric).
+                cairo_set_source_rgba(cr, b, g, r, a);
                 cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
                 cairo_fill(cr);
                 cairo_restore(cr);
@@ -148,7 +152,7 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                     double g = static_cast<double>((paint.color >> 8) & 0xFF) / 255.0;
                     double b = static_cast<double>((paint.color >> 16) & 0xFF) / 255.0;
                     double a = static_cast<double>((paint.color >> 24) & 0xFF) / 255.0;
-                    cairo_set_source_rgba(cr, r, g, b, a);
+                    cairo_set_source_rgba(cr, b, g, r, a);  // R<->B swap: ARGB32 output
                 }
 
                 // Build path

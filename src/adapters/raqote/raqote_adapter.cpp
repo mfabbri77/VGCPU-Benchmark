@@ -166,7 +166,12 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 uint8_t g = (rgba >> 8) & 0xFF;
                 uint8_t b = (rgba >> 16) & 0xFF;
                 uint8_t a = (rgba >> 24) & 0xFF;
-                rqt_clear(surf, r, g, b, a);
+                // R<->B swap: raqote's DrawTarget is ARGB32 premultiplied
+                // (bytes B,G,R,A on little-endian) and rqt_get_pixels copies
+                // it verbatim; the contract wants R,G,B,A. Swapped input
+                // colors make output bytes land in contract order at zero
+                // per-pixel cost.
+                rqt_clear(surf, b, g, r, a);
                 break;
             }
 
@@ -211,7 +216,7 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 uint8_t a = (paint.color >> 24) & 0xFF;
                 int32_t fill_rule = (current_fill_rule == ir::FillRule::kEvenOdd) ? 1 : 0;
 
-                rqt_fill_path(surf, path, r, g, b, a, fill_rule);
+                rqt_fill_path(surf, path, b, g, r, a, fill_rule);  // R<->B swap: ARGB32 output
                 // Note: path is consumed by rqt_fill_path (Box::from_raw)
                 break;
             }
@@ -259,7 +264,8 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                         break;
                 }
 
-                rqt_stroke_path(surf, path, r, g, b, a, current_stroke_width, cap, join);
+                rqt_stroke_path(surf, path, b, g, r, a, current_stroke_width, cap,
+                                join);  // R<->B swap: ARGB32 output
                 break;
             }
 

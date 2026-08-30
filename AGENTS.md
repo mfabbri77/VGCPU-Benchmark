@@ -59,7 +59,13 @@ buffer -> harness stats + optional PNG/SSIM/oracle checks -> report.
 
 - Implement `IBackendAdapter` (`src/adapters/adapter_interface.h`); render
   into a caller-owned `RGBA8` premultiplied buffer, tightly packed
-  (`stride == width * 4`).
+  (`stride == width * 4`), byte order `R,G,B,A` per pixel, row 0 = top
+  scanline (top-left/NW origin, Y down). A backend whose native output is
+  `ARGB32`/BGRA or bottom-up (e.g. OpenVG) must normalize at zero
+  per-pixel cost: feed red/blue-swapped colors so the native bytes land in
+  contract order, and fold the Y-flip into the backend's base transform --
+  never post-process the buffer inside `Render()`, that would contaminate
+  the measured time.
 - Declare thread-safety only if the backend genuinely supports concurrent
   `Render()` calls on distinct instances; otherwise mark single-thread-only.
 - No scene-specific special-casing inside an adapter: it must render every

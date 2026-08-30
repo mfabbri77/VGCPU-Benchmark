@@ -165,11 +165,13 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
         return Status::Fail("Failed to create ThorVG SwCanvas");
     }
 
-    // Target the output buffer (ARGB8888 format)
+    // Target the output buffer. ABGR8888 as a little-endian u32 stores
+    // bytes R,G,B,A -- exactly the adapter contract's RGBA8 byte order
+    // (ARGB8888 would store B,G,R,A and swap red/blue for consumers).
     auto result =
         canvas->target(reinterpret_cast<uint32_t*>(output_buffer.data()),
                        static_cast<uint32_t>(config.width), static_cast<uint32_t>(config.width),
-                       static_cast<uint32_t>(config.height), tvg::SwCanvas::ARGB8888);
+                       static_cast<uint32_t>(config.height), tvg::SwCanvas::ABGR8888);
     if (result != tvg::Result::Success) {
         return Status::Fail("Failed to set ThorVG canvas target");
     }

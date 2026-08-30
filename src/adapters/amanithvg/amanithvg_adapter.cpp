@@ -23,12 +23,17 @@ namespace vgcpu {
 
 namespace {
 
-// Convert IR color (RGBA) to OpenVG color (RGBA as floats)
+// Convert IR color (RGBA) to OpenVG paint color.
+// R<->B swap: the AmanithVG SRE surface created by
+// vgPrivSurfaceCreateByPointerMZT stores bytes B,G,R,A on little-endian;
+// the adapter contract wants R,G,B,A. Swapped input colors make the
+// rendered bytes land in contract order at zero per-pixel cost (blending,
+// coverage and gradient interpolation treat channels symmetrically).
 void SetPaintColor(VGPaint paint, uint32_t rgba) {
     VGfloat color[4];
-    color[0] = ((rgba >> 0) & 0xFF) / 255.0f;   // R
+    color[0] = ((rgba >> 16) & 0xFF) / 255.0f;  // B fed as R
     color[1] = ((rgba >> 8) & 0xFF) / 255.0f;   // G
-    color[2] = ((rgba >> 16) & 0xFF) / 255.0f;  // B
+    color[2] = ((rgba >> 0) & 0xFF) / 255.0f;   // R fed as B
     color[3] = ((rgba >> 24) & 0xFF) / 255.0f;  // A
     vgSetParameterfv(paint, VG_PAINT_COLOR, 4, color);
 }
@@ -125,9 +130,9 @@ void ApplyGradientPaint(VGPaint paint, const Paint& ir_paint) {
         stops.reserve(ir_paint.stops.size() * 5);  // offset + RGBA for each stop
         for (const auto& s : ir_paint.stops) {
             stops.push_back(s.offset);
-            stops.push_back(((s.color >> 0) & 0xFF) / 255.0f);   // R
+            stops.push_back(((s.color >> 16) & 0xFF) / 255.0f);  // B fed as R (see SetPaintColor)
             stops.push_back(((s.color >> 8) & 0xFF) / 255.0f);   // G
-            stops.push_back(((s.color >> 16) & 0xFF) / 255.0f);  // B
+            stops.push_back(((s.color >> 0) & 0xFF) / 255.0f);   // R fed as B
             stops.push_back(((s.color >> 24) & 0xFF) / 255.0f);  // A
         }
         vgSetParameterfv(paint, VG_PAINT_COLOR_RAMP_STOPS, static_cast<VGint>(stops.size()),
@@ -210,7 +215,21 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
     // Set default rendering state
     vgSeti(VG_RENDERING_QUALITY, VG_RENDERING_QUALITY_BETTER);
     vgSeti(VG_BLEND_MODE, VG_BLEND_SRC_OVER);
-    vgLoadIdentity();
+
+    // OpenVG surfaces have a bottom-left (SW) origin with Y up; the adapter
+    // contract is top-left (NW) origin with Y down. Load a Y-flip
+    // (translate(0, H) * scale(1, -1)) as the BASE path-user-to-surface
+    // matrix instead of identity. Benchmark-neutral by construction: OpenVG
+    // applies this matrix to every path vertex regardless of its value, so
+    // a flip costs exactly what identity costs -- no per-pixel work is
+    // added. Column-major 3x3.
+    const VGfloat flip_matrix[9] = {1.0f, 0.0f,
+                                    0.0f,  // column 0
+                                    0.0f, -1.0f,
+                                    0.0f,  // column 1
+                                    0.0f, static_cast<VGfloat>(config.height),
+                                    1.0f};  // column 2
+    vgLoadMatrix(flip_matrix);
 
     // Create reusable paint handles
     VGPaint fill_paint = vgCreatePaint();
@@ -241,9 +260,9 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                 cmd += 4;
 
                 VGfloat color[4];
-                color[0] = ((rgba >> 0) & 0xFF) / 255.0f;
+                color[0] = ((rgba >> 16) & 0xFF) / 255.0f;  // B fed as R (see SetPaintColor)
                 color[1] = ((rgba >> 8) & 0xFF) / 255.0f;
-                color[2] = ((rgba >> 16) & 0xFF) / 255.0f;
+                color[2] = ((rgba >> 0) & 0xFF) / 255.0f;  // R fed as B
                 color[3] = ((rgba >> 24) & 0xFF) / 255.0f;
                 vgSetfv(VG_CLEAR_COLOR, 4, color);
                 vgClear(0, 0, config.width, config.height);
@@ -383,10 +402,13 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                 const float* m = reinterpret_cast<const float*>(cmd);
                 cmd += 24;
 
+                // Compose on top of the base Y-flip (never overwrite it):
+                // resulting transform = flip * scene_matrix.
                 VGfloat matrix[9] = {m[0], m[2], m[4],   // column 0
                                      m[1], m[3], m[5],   // column 1
                                      0.0f, 0.0f, 1.0f};  // column 2
-                vgLoadMatrix(matrix);
+                vgLoadMatrix(flip_matrix);
+                vgMultMatrix(matrix);
                 break;
             }
 

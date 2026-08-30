@@ -109,7 +109,11 @@ Status PlutoVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 plutovg_canvas_reset_matrix(canvas);
                 plutovg_canvas_rect(canvas, 0, 0, static_cast<float>(config.width),
                                     static_cast<float>(config.height));
-                plutovg_canvas_set_rgba(canvas, r, g, b, a);
+                // R<->B swap: PlutoVG surfaces are premultiplied ARGB32
+                // (bytes B,G,R,A on little-endian); the contract wants
+                // R,G,B,A. Swapped input colors make output bytes land in
+                // contract order at zero per-pixel cost.
+                plutovg_canvas_set_rgba(canvas, b, g, r, a);
                 plutovg_canvas_set_operator(canvas, PLUTOVG_OPERATOR_SRC);
                 plutovg_canvas_fill(canvas);
                 plutovg_canvas_restore(canvas);
@@ -146,7 +150,7 @@ Status PlutoVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                     float g = static_cast<float>((paint.color >> 8) & 0xFF) / 255.0f;
                     float b = static_cast<float>((paint.color >> 16) & 0xFF) / 255.0f;
                     float a = static_cast<float>((paint.color >> 24) & 0xFF) / 255.0f;
-                    plutovg_canvas_set_rgba(canvas, r, g, b, a);
+                    plutovg_canvas_set_rgba(canvas, b, g, r, a);  // R<->B swap: ARGB32 output
                 }
 
                 // Build path

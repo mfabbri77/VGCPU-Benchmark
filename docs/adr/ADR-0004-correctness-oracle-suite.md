@@ -176,14 +176,17 @@ the reading is suspect.
   encode that distinction and will keep flagging it. Fix belongs in the
   test (either a per-backend tolerance or a lattice-aware expected value),
   tracked, not applied yet.
-- **Raqote cases B, C, D all read back identical to case A's pixel
-  value** (0.501961, byte-exact). That is not the signature of a
-  sum-then-saturate or an exact-union backend; it looks like
-  `raqote_adapter.cpp`/`raqote_ffi` only renders the first `FillPath` call
-  per surface, or `rqt_get_pixels` reads a stale/wrong region. Needs
-  adapter-level (possibly Rust FFI-level) debugging, not covered here.
-  Until resolved, raqote's classification above is not trustworthy for
-  cases B/C/D.
+- **Raqote cases B, C, D all read 0.502** — initially read as "only the
+  first FillPath renders", **retracted** (second update, below): with the
+  nonzero fill rule, the correct union coverage of case B (coincident
+  contours) and case C (partial overlap, union [50.0, 50.5]) is exactly
+  0.5 — raqote's 0.502 on B/C is the *exact-union correct answer*, not a
+  stuck value. [INFERENCE] Case D's 0.502 (expected 0.600) fits a
+  1/4-pixel horizontal coverage quantization (each 0.3-wide contour
+  quantized to 0.25, sum 0.5): the same lattice-artifact family as
+  AmanithVG's case-D miss, at coarser pitch. Consistent with every
+  measured value but not yet proven from raqote source; keep the FAIL
+  flag until the quantization is confirmed upstream.
 - **ThorVG case A measures 1.000 (fully opaque) instead of ~0.5**, despite
   case D (also a two-contour, no-overlap case) reading correctly at
   0.596 and cases B/C showing graduated (non-binary) values. A single
@@ -197,4 +200,37 @@ These three are recorded here rather than silently fixed or silently
 ignored, per AGENTS.md's "Work and evidence": a failing control case is
 either a real backend defect or an oracle-calibration bug, and this run
 does not yet have enough evidence to tell which for two of the three.
+
+## Second update 2026-08-30 — adapter-contract conformance (owner review of the HTML report)
+
+The owner's review of the ADR-0005 report gallery identified two systematic
+adapter bugs, confirmed by a two-pixel probe against `fills/solid_basic`'s
+scene-definition colors (red rect at (150,125), blue rect at (650,125)):
+
+- **R<->B swap** in every backend whose only native output is
+  ARGB32-little-endian (bytes B,G,R,A): blend2d, cairo, plutovg, raqote,
+  thorvg, amanithvg. Fixed at zero per-pixel cost: thorvg switched to its
+  native `ABGR8888` target (bytes R,G,B,A on LE); the others feed
+  red/blue-swapped colors so the native bytes land in contract order
+  (SRC_OVER, coverage and gradient interpolation are channel-symmetric,
+  so the relabeling is exact). agg, qt, skia, vello were already correct.
+- **Y-flip** in amanithvg: OpenVG surfaces are bottom-left-origin. Fixed
+  by loading `translate(0,H)*scale(1,-1)` as the base
+  path-user-to-surface matrix instead of identity, composed under any
+  scene `kSetMatrix`. Benchmark-neutral by construction — OpenVG applies
+  that matrix to every path vertex regardless of its value.
+
+Neutrality verified: p50 on `fills/nested_rects` before/after — amanithvg
+0.82→0.78 ms, thorvg 0.35→0.33, blend2d 0.25→0.25, cairo 0.37→0.33,
+plutovg 0.79→0.77, raqote 2.60→2.50 (within run-to-run noise, no
+regression). Post-fix probe: all 10 backends return the exact scene colors
+at both probe pixels. The oracle census is unchanged (alpha-only,
+full-height geometry — invariant under both fixes), as expected.
+
+The corrected gallery also made two adapter *feature gaps* precise
+(coverage gaps, not rendering bugs): cairo and plutovg do not implement
+`kStrokePath` (blank canvas on `strokes/strokes_curves`; their stroke
+timings measure clear+nothing), in addition to the gradient gaps already
+recorded in ADR-0005. The AGENTS.md adapter contract now states byte
+order and origin explicitly.
 
