@@ -529,39 +529,43 @@ def create_strokes_curves_scene() -> Tuple[bytes, dict]:
 # "Converting Stroked Primitives to Filled Primitives", SIGGRAPH 2020.
 # ---------------------------------------------------------------------------
 
+# Shared stroke-test palette (owner request): green, orange, teal, purple.
+DEGEN_PALETTE = ((0, 160, 0), (255, 140, 0), (0, 150, 160), (150, 0, 200))
+
 def create_degen_cusps_scene() -> Tuple[bytes, dict]:
     """Cubic/quadratic cusps: points where the tangent vanishes mid-curve.
     Exact cusp, near-cusp (curvature blowup without singularity), a loop
     (the cusp is the degenerate boundary of the loop family), and a
-    quadratic that retraces its own chord (cusp at t=0.5)."""
+    quadratic that retraces its own chord (cusp at t=0.5).
+    Layout: 2x2 grid, each drawing centered in its 400x300 cell."""
     builder = IrBuilder(800, 600)
-    green = builder.add_paint(Paint.solid(0, 160, 0))
-    orange = builder.add_paint(Paint.solid(255, 140, 0))
-    teal = builder.add_paint(Paint.solid(0, 150, 160))
-    purple = builder.add_paint(Paint.solid(150, 0, 200))
+    paints = [builder.add_paint(Paint.solid(*rgb)) for rgb in DEGEN_PALETTE]
 
     # Exact cusp at t=0.5: P3+P2-P1-P0 == 0 makes B'(0.5) vanish.
-    exact = builder.add_path(Path().move_to(70, 80)
-                             .cubic_to(370, 280, 70, 280, 370, 80))
+    # Curve spans x in [cx-150, cx+150], y in [cy-75, cy+75].
+    exact = builder.add_path(Path().move_to(50, 75)
+                             .cubic_to(350, 275, 50, 275, 350, 75))
     # Near-cusp: same polygon with P2 perturbed 12px -- extreme curvature,
     # no singularity; stresses robustness near the cusp condition.
-    near = builder.add_path(Path().move_to(430, 80)
-                            .cubic_to(730, 280, 430, 268, 730, 80))
+    near = builder.add_path(Path().move_to(450, 75)
+                            .cubic_to(750, 275, 450, 263, 750, 75))
     # Loop: X-crossing control polygon, self-intersecting offset curves.
-    loop = builder.add_path(Path().move_to(150, 340)
-                            .cubic_to(550, 560, 50, 560, 450, 340))
+    # Curve spans y in [cy-75, cy+90], symmetric about cx.
+    loop = builder.add_path(Path().move_to(50, 375)
+                            .cubic_to(450, 595, -50, 595, 350, 375))
     # Quadratic retrace: control collinear beyond both endpoints; the
     # curve runs out and back over its own chord, cusp at the far end.
-    retrace = builder.add_path(Path().move_to(560, 450).quad_to(760, 450, 560, 450))
+    # Visible span x in [cx-50, cx+50].
+    retrace = builder.add_path(Path().move_to(550, 450).quad_to(750, 450, 550, 450))
 
     builder.clear(240, 240, 240)
-    for pid, paint in ((exact, green), (near, orange), (loop, teal), (retrace, purple)):
+    for pid, paint in zip((exact, near, loop, retrace), paints):
         builder.set_stroke(paint, 24.0, StrokeCap.ROUND, StrokeJoin.ROUND)
         builder.stroke_path(pid)
 
     return builder.build(), {
         "scene_id": "strokes/degen_cusps",
-        "description": "Cusp/near-cusp/loop cubics and a retraced quadratic, wide round strokes",
+        "description": "Cusp/near-cusp/loop cubics and a retraced quadratic on a centered 2x2 grid",
         "default_width": 800, "default_height": 600,
         "required_features": {"needs_stroke": True}
     }
@@ -570,31 +574,30 @@ def create_degen_empty_scene() -> Tuple[bytes, dict]:
     """Zero-length geometry where caps must synthesize ALL the ink.
     Round/square caps on empty segments should produce a dot/square of
     stroke-width size; butt caps should produce nothing (a classic
-    cross-engine divergence)."""
+    cross-engine divergence). Same 2x2 layout and stroke widths as
+    degen_short_wide."""
     builder = IrBuilder(800, 600)
-    c = [builder.add_paint(Paint.solid(*rgb)) for rgb in
-         ((200, 0, 0), (0, 0, 200), (0, 140, 0), (200, 0, 160), (255, 140, 0), (0, 150, 160))]
+    paints = [builder.add_paint(Paint.solid(*rgb)) for rgb in DEGEN_PALETTE]
 
-    # Uniform 3x2 grid (same landmarks as solid_basic): columns at 1/6,
-    # 3/6, 5/6 of the width, rows at 1/4 and 3/4 of the height.
     cases = [
-        # (path, cap) -- width 72 everywhere
-        (Path().move_to(133, 150).line_to(133, 150), StrokeCap.ROUND),   # dot
-        (Path().move_to(400, 150).line_to(400, 150), StrokeCap.SQUARE),  # square dot
-        (Path().move_to(667, 150).line_to(667, 150), StrokeCap.BUTT),    # nothing (spec-wise)
-        (Path().move_to(133, 450).cubic_to(133, 450, 133, 450, 133, 450), StrokeCap.ROUND),  # all-coincident cubic
-        (Path().move_to(400, 450).close(), StrokeCap.SQUARE),            # empty closed subpath
-        (Path().move_to(667, 450).line_to(667.05, 450), StrokeCap.BUTT), # sub-epsilon segment
+        # zero-length line, width 120, round: a 120px dot
+        (Path().move_to(200, 150).line_to(200, 150), 120.0, StrokeCap.ROUND),
+        # zero-length line, width 120, square: a 120px square dot
+        (Path().move_to(600, 150).line_to(600, 150), 120.0, StrokeCap.SQUARE),
+        # zero-length line, width 100, butt: nothing (spec-wise)
+        (Path().move_to(200, 430).line_to(200, 430), 100.0, StrokeCap.BUTT),
+        # all-coincident cubic, width 80, round: dot iff caps synthesized
+        (Path().move_to(600, 430).cubic_to(600, 430, 600, 430, 600, 430), 80.0, StrokeCap.ROUND),
     ]
     builder.clear(240, 240, 240)
-    for paint, (path, cap) in zip(c, cases):
+    for paint, (path, width, cap) in zip(paints, cases):
         pid = builder.add_path(path)
-        builder.set_stroke(paint, 72.0, cap, StrokeJoin.ROUND)
+        builder.set_stroke(paint, width, cap, StrokeJoin.ROUND)
         builder.stroke_path(pid)
 
     return builder.build(), {
         "scene_id": "strokes/degen_empty",
-        "description": "Zero-length segments/subpaths: caps must synthesize the geometry",
+        "description": "Zero-length segments: caps must synthesize the geometry",
         "default_width": 800, "default_height": 600,
         "required_features": {"needs_stroke": True}
     }
@@ -604,8 +607,7 @@ def create_degen_short_wide_scene() -> Tuple[bytes, dict]:
     length (ratios 13:1 up to 40:1). The offset construction degenerates;
     engines differ in wafer orientation and cap dominance."""
     builder = IrBuilder(800, 600)
-    c = [builder.add_paint(Paint.solid(*rgb)) for rgb in
-         ((200, 0, 0), (0, 0, 200), (0, 140, 0), (200, 0, 160))]
+    paints = [builder.add_paint(Paint.solid(*rgb)) for rgb in DEGEN_PALETTE]
 
     cases = [
         # 3px line, width 120, butt: a 3x120 wafer perpendicular to the line
@@ -618,7 +620,7 @@ def create_degen_short_wide_scene() -> Tuple[bytes, dict]:
         (Path().move_to(600, 430).quad_to(602, 426, 604, 430), 80.0, StrokeCap.SQUARE),
     ]
     builder.clear(240, 240, 240)
-    for paint, (path, width, cap) in zip(c, cases):
+    for paint, (path, width, cap) in zip(paints, cases):
         pid = builder.add_path(path)
         builder.set_stroke(paint, width, cap, StrokeJoin.ROUND)
         builder.stroke_path(pid)
@@ -635,8 +637,7 @@ def create_degen_reversal_scene() -> Tuple[bytes, dict]:
     turns where the miter length ~ 1/sin(theta/2) explodes and must be
     clamped by the miter limit. Round join as the stable control."""
     builder = IrBuilder(800, 600)
-    c = [builder.add_paint(Paint.solid(*rgb)) for rgb in
-         ((200, 0, 0), (0, 0, 200), (0, 140, 0))]
+    paints = [builder.add_paint(Paint.solid(*rgb)) for rgb in DEGEN_PALETTE[:3]]
 
     cases = [
         # exact 180: out 400px and straight back, miter join
@@ -647,7 +648,7 @@ def create_degen_reversal_scene() -> Tuple[bytes, dict]:
         (Path().move_to(150, 480).line_to(550, 480).line_to(154, 466), StrokeJoin.ROUND),
     ]
     builder.clear(240, 240, 240)
-    for paint, (path, join) in zip(c, cases):
+    for paint, (path, join) in zip(paints, cases):
         pid = builder.add_path(path)
         builder.set_stroke(paint, 30.0, StrokeCap.BUTT, join)
         builder.stroke_path(pid)

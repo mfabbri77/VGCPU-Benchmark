@@ -64,31 +64,31 @@
     {
       "scene_id": "strokes/degen_cusps",
       "ir_path": "strokes/degen_cusps.irbin",
-      "scene_hash": "8d60126d",
+      "scene_hash": "79162817",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_stroke": true
       },
-      "description": "Cusp/near-cusp/loop cubics and a retraced quadratic, wide round strokes"
+      "description": "Cusp/near-cusp/loop cubics and a retraced quadratic on a centered 2x2 grid"
     },
     {
       "scene_id": "strokes/degen_empty",
       "ir_path": "strokes/degen_empty.irbin",
-      "scene_hash": "226626c8",
+      "scene_hash": "15988b95",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_stroke": true
       },
-      "description": "Zero-length segments/subpaths: caps must synthesize the geometry"
+      "description": "Zero-length segments: caps must synthesize the geometry"
     },
     {
       "scene_id": "strokes/degen_short_wide",
       "ir_path": "strokes/degen_short_wide.irbin",
-      "scene_hash": "d460b76e",
+      "scene_hash": "46b1f74f",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
@@ -100,7 +100,7 @@
     {
       "scene_id": "strokes/degen_reversal",
       "ir_path": "strokes/degen_reversal.irbin",
-      "scene_hash": "4a1d13bb",
+      "scene_hash": "f504d80a",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
