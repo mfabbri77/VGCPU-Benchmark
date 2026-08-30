@@ -75,3 +75,4 @@ vcpkg/
 # Rust
 target/
 **/*.rs.bk
+__pycache__/
