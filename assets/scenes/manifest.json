@@ -52,14 +52,14 @@
     {
       "scene_id": "strokes/strokes_curves",
       "ir_path": "strokes/strokes_curves.irbin",
-      "scene_hash": "ad5378e2",
+      "scene_hash": "e333004f",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_stroke": true
       },
-      "description": "Waves (lines/quads/cubics), centered spiral, join squares"
+      "description": "Stacked full-width waves (lines/quads/cubics), large spiral, join squares"
     },
     {
       "scene_id": "strokes/degen_cusps",

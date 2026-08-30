@@ -434,57 +434,65 @@ def create_gradients_linear_scene() -> Tuple[bytes, dict]:
     }
 
 def create_strokes_curves_scene() -> Tuple[bytes, dict]:
-    """Owner layout (2026-08-30): top row has three red waves -- line
-    segments, quadratic beziers, cubic beziers (first-ever QUAD_TO use);
-    the blue spiral sits in the center; bottom row has three thick black
-    squares with bevel, miter and round joins."""
+    """Owner layout (2026-08-30, rev 2): three full-width red waves
+    stacked on three rows (lines / quadratic beziers / cubic beziers),
+    uniformly distributed above the squares -- interpenetration with the
+    spiral is fine; a LARGE blue spiral centered on the canvas; three
+    thick black squares on the bottom row with bevel, miter and round
+    joins."""
     builder = IrBuilder(800, 600)
 
     red = builder.add_paint(Paint.solid(255, 0, 0))
     blue = builder.add_paint(Paint.solid(0, 0, 255))
     black = builder.add_paint(Paint.solid(0, 0, 0))
 
-    # --- Top row: three waves, y center 90, amplitude 40, two periods ---
-    def wave_lines(x0, x1):
+    # --- Three stacked waves: full width, amplitude 40, six periods.
+    # Rows at y = 90 / 210 / 330: uniform vertical spacing, the third
+    # row's trough (370) stays clear of the squares (top edge 452).
+    X0, X1 = 30, 770
+    HALVES = 12  # six periods, ~123px each: same density as before
+    AMP = 40
+
+    def wave_lines(yc):
         p = Path()
-        n = 16  # coarse on purpose: segments must read as straight
+        n = 4 * HALVES  # four straight segments per half period
         for i in range(n + 1):
             t = i / n
-            x = x0 + (x1 - x0) * t
-            y = 90 - 40 * math.sin(t * 2 * math.pi * 2)
+            x = X0 + (X1 - X0) * t
+            y = yc - AMP * math.sin(t * math.pi * HALVES)
             (p.move_to if i == 0 else p.line_to)(x, y)
         return p
 
-    def wave_quads(x0, x1):
-        # one quadratic per half period; apex deviation of a quad is half
-        # the control offset, so control offset 80 -> amplitude 40
-        p = Path().move_to(x0, 90)
-        w = (x1 - x0) / 4
-        for i in range(4):
+    def wave_quads(yc):
+        # one quadratic per half period; a quad's apex deviation is half
+        # the control offset, so control offset 2*AMP -> amplitude AMP
+        p = Path().move_to(X0, yc)
+        w = (X1 - X0) / HALVES
+        for i in range(HALVES):
             sign = -1 if i % 2 == 0 else 1
-            p.quad_to(x0 + w * (i + 0.5), 90 + sign * 80, x0 + w * (i + 1), 90)
+            p.quad_to(X0 + w * (i + 0.5), yc + sign * 2 * AMP, X0 + w * (i + 1), yc)
         return p
 
-    def wave_cubics(x0, x1):
+    def wave_cubics(yc):
         # one cubic per half period; both controls offset h deviate 3h/4
-        # at t=0.5, so h = 40*4/3 keeps amplitude 40
-        p = Path().move_to(x0, 90)
-        w = (x1 - x0) / 4
-        h = 40 * 4 / 3
-        for i in range(4):
+        # at t=0.5, so h = AMP*4/3 keeps amplitude AMP
+        p = Path().move_to(X0, yc)
+        w = (X1 - X0) / HALVES
+        h = AMP * 4 / 3
+        for i in range(HALVES):
             sign = -1 if i % 2 == 0 else 1
-            xa = x0 + w * i
-            p.cubic_to(xa + w / 3, 90 + sign * h,
-                       xa + 2 * w / 3, 90 + sign * h,
-                       xa + w, 90)
+            xa = X0 + w * i
+            p.cubic_to(xa + w / 3, yc + sign * h,
+                       xa + 2 * w / 3, yc + sign * h,
+                       xa + w, yc)
         return p
 
-    p_lines = builder.add_path(wave_lines(30, 250))
-    p_quads = builder.add_path(wave_quads(290, 510))
-    p_cubics = builder.add_path(wave_cubics(550, 770))
+    p_lines = builder.add_path(wave_lines(90))
+    p_quads = builder.add_path(wave_quads(210))
+    p_cubics = builder.add_path(wave_cubics(330))
 
-    # --- Center: spiral ---
-    spiral = builder.add_path(Path().spiral(400, 300, 10, 130, 5))
+    # --- Large centered spiral: reaches into waves and squares (allowed).
+    spiral = builder.add_path(Path().spiral(400, 300, 10, 280, 6))
 
     # --- Bottom row: three squares, joins bevel / miter / round.
     # Width 16 (even) on integer edges keeps stroke boundaries
@@ -507,7 +515,7 @@ def create_strokes_curves_scene() -> Tuple[bytes, dict]:
 
     return builder.build(), {
         "scene_id": "strokes/strokes_curves",
-        "description": "Waves (lines/quads/cubics), centered spiral, join squares",
+        "description": "Stacked full-width waves (lines/quads/cubics), large spiral, join squares",
         "default_width": 800, "default_height": 600,
         "required_features": {"needs_stroke": True}
     }
