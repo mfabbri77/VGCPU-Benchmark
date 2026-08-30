@@ -17,6 +17,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- Correctness oracle suite (`tests/test_correctness_oracle.cpp`, ADR-0004):
+  a self-overlap fill-nonzero coverage census, run against every wired
+  adapter, distinguishing exact-union rasterizers from the
+  sum-then-saturate architecture documented in the market-analysis project.
+  Both Tier-1 real rasterizers (`plutovg`, `blend2d`) currently classify as
+  sum-then-saturate on the overlap cases; two control cases with a single
+  correct answer are hard requirements for every backend.
 - Blueprint v1.0 adoption with canonical documentation
 - CMake presets (dev, release, ci, asan, ubsan, tsan) per [REQ-92]
 - Centralized dependency management in `cmake/vgcpu_deps.cmake`

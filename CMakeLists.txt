@@ -949,6 +949,7 @@ add_executable(vgcpu_tests
     tests/test_concurrency.cpp
     tests/test_hotpath.cpp
     tests/test_artifacts.cpp
+    tests/test_correctness_oracle.cpp
 )
 
 target_include_directories(vgcpu_tests PRIVATE
