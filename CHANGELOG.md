@@ -84,6 +84,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Release workflow modernized with preset-based builds
 
 ### Fixed
+- Harness: `--repetitions` was parsed, stored in the policy and reported
+  in run metadata but NEVER executed -- every run measured exactly one
+  repetition regardless of the flag. Now runs `repetitions` measured
+  blocks of `iters` samples aggregated into one pool
+  (`sample_count = iters * repetitions`); warmup runs once.
+- ThorVG adapter initialized the engine with 1 async worker thread
+  hardcoded, so in the `--threads 1` column ThorVG alone rendered on a
+  second thread (visible as wall < cpu in every report, and as unstable
+  timings under sustained load). Now honors `AdapterArgs.thread_count`
+  (N-1 workers, 0 = fully synchronous). Post-fix, ThorVG's wall == cpu.
 - Floating dependency issues (asmjit, blend2d, agg, amanithvg)
 - Adapter-contract conformance (owner review of the HTML report gallery):
   R<->B channel swap fixed in blend2d, cairo, plutovg, raqote, thorvg and

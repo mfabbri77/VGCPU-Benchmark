@@ -115,9 +115,16 @@ void ApplyGradientFill(tvg::Shape* shape, const Paint& paint) {
 
 }  // namespace
 
-Status ThorVGAdapter::Initialize(const AdapterArgs& /*args*/) {
-    // ThorVG v0.15.16 API: init(CanvasEngine, threads)
-    if (tvg::Initializer::init(tvg::CanvasEngine::Sw, 1) != tvg::Result::Success) {
+Status ThorVGAdapter::Initialize(const AdapterArgs& args) {
+    // ThorVG v0.15.16 API: init(CanvasEngine, threads) where `threads` is
+    // the number of ASYNC WORKER threads in ThorVG's task scheduler, on top
+    // of the calling thread; 0 = fully synchronous on the caller. The
+    // harness's --threads N is a total budget, so pass N-1 workers.
+    // Fixed 2026-08-30: this was hardcoded to 1 worker, so in the
+    // single-thread benchmark column ThorVG alone rendered on a second
+    // thread (visible as wall < cpu in every report).
+    unsigned workers = args.thread_count > 1 ? static_cast<unsigned>(args.thread_count - 1) : 0;
+    if (tvg::Initializer::init(tvg::CanvasEngine::Sw, workers) != tvg::Result::Success) {
         return Status::Fail("Failed to initialize ThorVG");
     }
     initialized_ = true;
