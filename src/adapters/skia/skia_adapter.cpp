@@ -13,8 +13,10 @@
 #include "include/core/SkImageInfo.h"
 #include "include/core/SkPaint.h"
 #include "include/core/SkPath.h"
+#include "include/core/SkPathEffect.h"
 #include "include/core/SkShader.h"
 #include "include/core/SkSurface.h"
+#include "include/effects/SkDashPathEffect.h"
 #include "include/effects/SkGradientShader.h"
 
 #include <vector>
@@ -192,6 +194,11 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
         SkPaint::Join join = SkPaint::kMiter_Join;
     } current_stroke;
 
+    // Dash state (device units; converted to an SkDashPathEffect at stroke
+    // time). Render-local, so every Render() starts solid per IR v1.1.
+    std::vector<SkScalar> dash_intervals;
+    SkScalar dash_phase = 0.0f;
+
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
 
@@ -293,13 +300,56 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
                 paint.setStyle(SkPaint::kStroke_Style);
                 paint.setStrokeWidth(current_stroke.width);
                 paint.setStrokeCap(current_stroke.cap);
-                paint.setStrokeJoin(current_stroke.join);
-                ApplyPaint(paint, scene.paints[current_stroke.paint_id]);
+            paint.setStrokeJoin(current_stroke.join);
+            if (!dash_intervals.empty()) {
+                paint.setPathEffect(SkDashPathEffect::Make(
+                    dash_intervals.data(), static_cast<int>(dash_intervals.size()), dash_phase));
+            }
+            ApplyPaint(paint, scene.paints[current_stroke.paint_id]);
 
                 SkPath path = CreatePath(scene.paths[path_id]);
                 canvas->drawPath(path, paint);
                 break;
             }
+
+            case ir::Opcode::kSetDash: {
+                if (cmd + 5 > end)
+                    goto done;
+                uint8_t count = *cmd++;
+                dash_phase = *reinterpret_cast<const float*>(cmd);
+                cmd += 4;
+                if (cmd + 4 * count > end)
+                    goto done;
+                const float* lengths = reinterpret_cast<const float*>(cmd);
+                cmd += 4 * count;
+                dash_intervals.assign(lengths, lengths + count);  // count==0 -> solid
+                break;
+            }
+
+            case ir::Opcode::kClipPush: {
+                if (cmd + 3 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
+
+                // Always save so kClipPop stays balanced even on a bogus id.
+                // The clip stack is independent of kSave/kRestore in the IR,
+                // but the generator keeps both balanced, so sharing Skia's
+                // save stack is safe.
+                canvas->save();
+                if (path_id < scene.paths.size()) {
+                    SkPath path = CreatePath(scene.paths[path_id]);
+                    path.setFillType(rule == ir::FillRule::kEvenOdd ? SkPathFillType::kEvenOdd
+                                                                    : SkPathFillType::kWinding);
+                    canvas->clipPath(path, SkClipOp::kIntersect, /*doAntiAlias=*/true);
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPop:
+                canvas->restore();
+                break;
 
             case ir::Opcode::kSave:
                 canvas->save();

@@ -18,7 +18,7 @@ import math
 # IR Format Constants
 IR_MAGIC = b'VGIR'
 IR_MAJOR_VERSION = 1
-IR_MINOR_VERSION = 0
+IR_MINOR_VERSION = 1
 
 # Section Types
 class SectionType(IntEnum):
@@ -38,8 +38,11 @@ class Opcode(IntEnum):
     CONCAT_MATRIX = 0x21
     SET_FILL = 0x30
     SET_STROKE = 0x31
+    SET_DASH = 0x32     # IR v1.1: count:u8, phase:f32, dashes:f32[count]
     FILL_PATH = 0x40
     STROKE_PATH = 0x41
+    CLIP_PUSH = 0x50    # IR v1.1: path_id:u16, rule:u8
+    CLIP_POP = 0x51     # IR v1.1: no args
 
 # Path Verbs
 class PathVerb(IntEnum):
@@ -224,6 +227,28 @@ class IrBuilder:
         self.commands.append(Command(Opcode.STROKE_PATH, args))
         return self
     
+
+    def set_dash(self, dashes, phase: float = 0.0):
+        """IR v1.1: set stroke dash pattern; empty list = solid. An odd
+        pattern is doubled (SVG semantics) so adapters always see an
+        even count."""
+        d = list(dashes)
+        if len(d) % 2 == 1:
+            d = d + d
+        args = struct.pack(f'<Bf{len(d)}f', len(d), phase, *d)
+        self.commands.append(Command(Opcode.SET_DASH, args))
+        return self
+
+    def clip_push(self, path_id: int, rule: FillRule = FillRule.NON_ZERO):
+        """IR v1.1: intersect the clip region with the filled path."""
+        args = struct.pack('<HB', path_id, rule)
+        self.commands.append(Command(Opcode.CLIP_PUSH, args))
+        return self
+
+    def clip_pop(self):
+        """IR v1.1: remove the most recent clip."""
+        self.commands.append(Command(Opcode.CLIP_POP))
+        return self
     def save(self):
         self.commands.append(Command(Opcode.SAVE))
         return self
@@ -726,7 +751,8 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
                 k, v = part.split(':', 1)
                 style[k.strip()] = v.strip()
         for k in ('fill', 'stroke', 'stroke-width', 'stroke-linecap', 'stroke-linejoin',
-                  'fill-rule', 'fill-opacity', 'stroke-opacity', 'opacity'):
+                  'fill-rule', 'fill-opacity', 'stroke-opacity', 'opacity',
+                  'stroke-dasharray', 'stroke-dashoffset', 'clip-path'):
             if el.get(k) is not None:
                 style[k] = el.get(k)
         return style
@@ -740,6 +766,13 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
         tag = el.tag.split('}')[-1]
         if tag in ('linearGradient', 'radialGradient') and el.get('id'):
             grad_index[el.get('id')] = el
+
+    # --- clipPath definitions (IR v1.1): the corpus only uses single-path
+    # clip definitions with userSpaceOnUse semantics.
+    clip_index = {}
+    for el in root.iter():
+        if el.tag.split('}')[-1] == 'clipPath' and el.get('id'):
+            clip_index[el.get('id')] = el
 
     def resolve_gradient(gid, depth=0):
         """Returns (kind, attrs, stops) with href inheritance applied."""
@@ -1008,14 +1041,33 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
     JOIN_MAP = {'round': StrokeJoin.ROUND, 'bevel': StrokeJoin.BEVEL}
     draws = []  # ('fill', paint_id, path_id, rule) | ('stroke', paint_id, path_id, width, cap, join)
 
+    def resolve_clip_pid(style, m):
+        """clip-path='url(#id)' -> IR path id of the clip geometry baked in
+        the element's CTM (userSpaceOnUse), or None."""
+        cm = re.match(r'url\(\s*#([^) ]+)\s*\)', style.get('clip-path', ''))
+        if not cm:
+            return None
+        cel = clip_index.get(cm.group(1))
+        if cel is None:
+            return None
+        for child in cel:
+            if child.tag.split('}')[-1] == 'path':
+                ccm = mat_mul(m, parse_transform(child.get('transform')))
+                key = (child.get('d'), ccm)
+                if key not in path_cache:
+                    path_cache[key] = builder.add_path(parse_path_data(child.get('d'), ccm))
+                return path_cache[key]
+        return None
+
     def add_draws(el, m, pid):
         style = parse_style(el)
         base_opacity = float(style.get('opacity', '1'))
+        clip_pid = resolve_clip_pid(style, m)
         fill = style.get('fill', '#000000')
         if fill != 'none':
             rule = FillRule.EVEN_ODD if style.get('fill-rule') == 'evenodd' else FillRule.NON_ZERO
             op = base_opacity * float(style.get('fill-opacity', '1'))
-            draws.append(('fill', resolve_paint_id(fill, m, op), pid, rule))
+            draws.append(('fill', resolve_paint_id(fill, m, op), pid, rule, clip_pid))
         stroke = style.get('stroke', 'none')
         if stroke != 'none':
             wscale = math.sqrt(abs(m[0] * m[3] - m[1] * m[2]))
@@ -1023,7 +1075,13 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
             cap = StrokeCap.ROUND if style.get('stroke-linecap') == 'round' else StrokeCap.BUTT
             join = JOIN_MAP.get(style.get('stroke-linejoin'), StrokeJoin.MITER)
             op = base_opacity * float(style.get('stroke-opacity', '1'))
-            draws.append(('stroke', resolve_paint_id(stroke, m, op), pid, width, cap, join))
+            # IR v1.1 dashing: pattern scaled into device units like the width.
+            dash = tuple(float(v) * wscale for v in
+                         NUM.findall(style.get('stroke-dasharray', ''))
+                         ) if style.get('stroke-dasharray', 'none') not in ('none', '') else ()
+            phase = float(style.get('stroke-dashoffset', '0') or '0') * wscale
+            draws.append(('stroke', resolve_paint_id(stroke, m, op), pid,
+                          width, cap, join, dash, phase, clip_pid))
 
     def apply_pt(m, x, y):
         return (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5])
@@ -1061,14 +1119,38 @@ def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes,
     walk(root, fit)
 
     builder.clear(255, 255, 255)
+    used_dash = used_clip = False
+    cur_clip = None   # currently pushed clip pid
+    cur_dash = ((), 0.0)  # currently set (pattern, phase) in device units
     for entry in draws:
+        clip_pid = entry[-1]
+        if clip_pid != cur_clip:
+            if cur_clip is not None:
+                builder.clip_pop()
+            if clip_pid is not None:
+                builder.clip_push(clip_pid)
+                used_clip = True
+            cur_clip = clip_pid
         if entry[0] == 'fill':
-            _, pid_paint, pid_path, rule = entry
+            _, pid_paint, pid_path, rule, _ = entry
             builder.set_fill(pid_paint, rule).fill_path(pid_path)
         else:
-            _, pid_paint, pid_path, width, cap, join = entry
+            _, pid_paint, pid_path, width, cap, join, dash, phase, _ = entry
+            want = (dash, phase if dash else 0.0)
+            if want != cur_dash:
+                builder.set_dash(*want)
+                cur_dash = want
+                used_dash = used_dash or bool(dash)
             builder.set_stroke(pid_paint, width, cap, join)
             builder.stroke_path(pid_path)
+    if cur_clip is not None:
+        builder.clip_pop()
+
+    features = dict(features)
+    if used_dash:
+        features["needs_dashes"] = True
+    if used_clip:
+        features["needs_clipping"] = True
 
     return builder.build(), {
         "scene_id": scene_id,

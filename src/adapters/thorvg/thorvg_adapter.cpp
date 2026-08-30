@@ -213,7 +213,12 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
     float current_stroke_width = 1.0f;
     tvg::StrokeCap current_stroke_cap = tvg::StrokeCap::Butt;
     tvg::StrokeJoin current_stroke_join = tvg::StrokeJoin::Miter;
-
+    std::vector<float> dash_lengths;
+    struct ClipEntry {
+        uint16_t path_id;
+        ir::FillRule rule;
+    };
+    std::vector<ClipEntry> clip_stack;
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
 
@@ -306,6 +311,17 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 shape->fill(current_fill_rule == ir::FillRule::kEvenOdd ? tvg::FillRule::EvenOdd
                                                                         : tvg::FillRule::Winding);
 
+                if (!clip_stack.empty()) {
+                    const auto& top_clip = clip_stack.back();
+                    if (top_clip.path_id < scene.paths.size()) {
+                        auto clipper = CreateShape(scene.paths[top_clip.path_id]);
+                        clipper->fill(top_clip.rule == ir::FillRule::kEvenOdd
+                                          ? tvg::FillRule::EvenOdd
+                                          : tvg::FillRule::Winding);
+                        shape->clip(std::move(clipper));
+                    }
+                }
+
                 canvas->push(std::move(shape));
                 break;
             }
@@ -335,6 +351,21 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 uint8_t b = (paint.color >> 16) & 0xFF;
                 uint8_t a = (paint.color >> 24) & 0xFF;
                 shape->stroke(r, g, b, a);
+                if (!dash_lengths.empty()) {
+                    shape->stroke(dash_lengths.data(),
+                                  static_cast<uint32_t>(dash_lengths.size()));
+                }
+
+                if (!clip_stack.empty()) {
+                    const auto& top_clip = clip_stack.back();
+                    if (top_clip.path_id < scene.paths.size()) {
+                        auto clipper = CreateShape(scene.paths[top_clip.path_id]);
+                        clipper->fill(top_clip.rule == ir::FillRule::kEvenOdd
+                                          ? tvg::FillRule::EvenOdd
+                                          : tvg::FillRule::Winding);
+                        shape->clip(std::move(clipper));
+                    }
+                }
 
                 canvas->push(std::move(shape));
                 break;
@@ -345,6 +376,34 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 break;
 
             case ir::Opcode::kRestore:
+                break;
+
+            case ir::Opcode::kSetDash: {
+                if (cmd + 5 > end)
+                    goto done;
+                uint8_t count = *cmd++;
+                cmd += 4;  // ThorVG stroke() takes pattern only, no phase offset
+                if (cmd + 4 * count > end)
+                    goto done;
+                const float* lengths = reinterpret_cast<const float*>(cmd);
+                cmd += 4 * count;
+                dash_lengths.assign(lengths, lengths + count);
+                break;
+            }
+
+            case ir::Opcode::kClipPush: {
+                if (cmd + 3 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
+                clip_stack.push_back({path_id, rule});
+                break;
+            }
+
+            case ir::Opcode::kClipPop:
+                if (!clip_stack.empty())
+                    clip_stack.pop_back();
                 break;
 
             case ir::Opcode::kSetMatrix:

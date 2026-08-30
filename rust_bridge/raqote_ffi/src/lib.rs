@@ -222,7 +222,10 @@ pub extern "C" fn rqt_stroke_path(
     r: u8, g: u8, b: u8, a: u8,
     width: f32,
     cap: i32,
-    join: i32
+    join: i32,
+    dashes: *const f32,
+    ndash: i32,
+    dash_phase: f32
 ) {
     if surf.is_null() || path_ptr.is_null() { return; }
     
@@ -244,13 +247,19 @@ pub extern "C" fn rqt_stroke_path(
         _ => LineJoin::Miter,
     };
     
+    let dash_vec = if !dashes.is_null() && ndash > 0 {
+        unsafe { std::slice::from_raw_parts(dashes, ndash as usize).to_vec() }
+    } else {
+        vec![]
+    };
+    
     let style = StrokeStyle {
         width,
         cap: line_cap,
         join: line_join,
         miter_limit: 4.0,
-        dash_array: vec![],
-        dash_offset: 0.0,
+        dash_array: dash_vec,
+        dash_offset: dash_phase,
     };
     
     let opts = DrawOptions {
@@ -280,4 +289,20 @@ pub extern "C" fn rqt_fill_rect(
     let opts = DrawOptions::default();
     
     surface.dt.fill(&path, &src, &opts);
+}
+
+#[no_mangle]
+pub extern "C" fn rqt_clip_push(surf: *mut RqtSurface, path_ptr: *mut RqtPath) {
+    if surf.is_null() || path_ptr.is_null() { return; }
+    let surface = unsafe { &mut *surf };
+    let path_box = unsafe { Box::from_raw(path_ptr) };
+    let finished_path = path_box.pb.finish();
+    surface.dt.push_clip(&finished_path);
+}
+
+#[no_mangle]
+pub extern "C" fn rqt_clip_pop(surf: *mut RqtSurface) {
+    if surf.is_null() { return; }
+    let surface = unsafe { &mut *surf };
+    surface.dt.pop_clip();
 }

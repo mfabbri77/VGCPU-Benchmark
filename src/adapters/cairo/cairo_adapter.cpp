@@ -180,7 +180,8 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
     float current_stroke_width = 1.0f;
     ir::StrokeCap current_stroke_cap = ir::StrokeCap::kButt;
     ir::StrokeJoin current_stroke_join = ir::StrokeJoin::kMiter;
-
+    std::vector<double> dash_lengths;
+    double dash_phase = 0.0;
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
 
@@ -305,6 +306,8 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                         break;
                 }
                 cairo_set_line_join(cr, join);
+                cairo_set_dash(cr, dash_lengths.empty() ? nullptr : dash_lengths.data(),
+                               static_cast<int>(dash_lengths.size()), dash_phase);
                 cairo_stroke(cr);
                 if (grad_pat != nullptr) {
                     cairo_pattern_destroy(grad_pat);
@@ -341,6 +344,42 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 break;
 
             case ir::Opcode::kRestore:
+                cairo_restore(cr);
+                break;
+
+            case ir::Opcode::kSetDash: {
+                if (cmd + 5 > end)
+                    goto done;
+                uint8_t count = *cmd++;
+                dash_phase = static_cast<double>(*reinterpret_cast<const float*>(cmd));
+                cmd += 4;
+                if (cmd + 4 * count > end)
+                    goto done;
+                const float* lengths = reinterpret_cast<const float*>(cmd);
+                cmd += 4 * count;
+                dash_lengths.assign(lengths, lengths + count);
+                break;
+            }
+
+            case ir::Opcode::kClipPush: {
+                if (cmd + 3 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
+
+                cairo_save(cr);
+                if (path_id < scene.paths.size()) {
+                    BuildPath(cr, scene.paths[path_id]);
+                    cairo_set_fill_rule(cr, rule == ir::FillRule::kEvenOdd
+                                                ? CAIRO_FILL_RULE_EVEN_ODD
+                                                : CAIRO_FILL_RULE_WINDING);
+                    cairo_clip(cr);
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPop:
                 cairo_restore(cr);
                 break;
 

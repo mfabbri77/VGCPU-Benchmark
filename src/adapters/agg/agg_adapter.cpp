@@ -12,6 +12,7 @@
 #endif
 
 #include "agg_conv_curve.h"
+#include "agg_conv_dash.h"
 #include "agg_conv_stroke.h"
 #include "agg_conv_transform.h"
 #include "agg_gradient_lut.h"
@@ -170,7 +171,12 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
     float current_stroke_width = 1.0f;
     uint8_t current_stroke_opts = 0;
     uint16_t current_stroke_paint_id = 0;
+    std::vector<float> dash_lengths;
+    float dash_phase = 0.0f;
 
+    struct RectClip { float x1, y1, x2, y2; };
+    std::vector<RectClip> clip_stack;
+    ras.clip_box(0, 0, width, height);
     while (ptr < end) {
         ir::Opcode op = static_cast<ir::Opcode>(*ptr++);
 
@@ -339,12 +345,107 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                             break;
                     }
 
-                    ras.add_path(stroke);
+                    if (!dash_lengths.empty()) {
+                        agg::conv_dash<agg::conv_transform<agg::conv_curve<agg::path_storage>>>
+                            dashed(trans_path);
+                        for (size_t di = 0; di + 1 < dash_lengths.size(); di += 2) {
+                            dashed.add_dash(dash_lengths[di], dash_lengths[di + 1]);
+                        }
+                        dashed.dash_start(dash_phase);
+                        agg::conv_stroke<
+                            agg::conv_dash<agg::conv_transform<agg::conv_curve<agg::path_storage>>>>
+                            dash_stroke(dashed);
+                        dash_stroke.width(current_stroke_width);
+                        switch (ir::UnpackStrokeCap(current_stroke_opts)) {
+                            case ir::StrokeCap::kButt:
+                                dash_stroke.line_cap(agg::butt_cap);
+                                break;
+                            case ir::StrokeCap::kRound:
+                                dash_stroke.line_cap(agg::round_cap);
+                                break;
+                            case ir::StrokeCap::kSquare:
+                                dash_stroke.line_cap(agg::square_cap);
+                                break;
+                        }
+                        switch (ir::UnpackStrokeJoin(current_stroke_opts)) {
+                            case ir::StrokeJoin::kMiter:
+                                dash_stroke.line_join(agg::miter_join);
+                                break;
+                            case ir::StrokeJoin::kRound:
+                                dash_stroke.line_join(agg::round_join);
+                                break;
+                            case ir::StrokeJoin::kBevel:
+                                dash_stroke.line_join(agg::bevel_join);
+                                break;
+                        }
+                        ras.add_path(dash_stroke);
+                    } else {
+                        ras.add_path(stroke);
+                    }
                     agg::render_scanlines_aa_solid(ras, sl, ren_base, color);
                 }
                 ras.reset();
                 break;
             }
+
+            case ir::Opcode::kSetDash: {
+                if (ptr + 5 > end)
+                    return Status::Ok();
+                uint8_t count = *ptr++;
+                dash_phase = ReadLE<float>(ptr);
+                if (ptr + 4 * count > end)
+                    return Status::Ok();
+                dash_lengths.clear();
+                for (uint8_t i = 0; i < count; ++i) {
+                    dash_lengths.push_back(ReadLE<float>(ptr));
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPush: {
+                if (ptr + 3 > end)
+                    return Status::Ok();
+                uint16_t path_id = ReadLE<uint16_t>(ptr);
+                ptr += 1;  // rule
+
+                if (path_id < scene.paths.size()) {
+                    const auto& cp = scene.paths[path_id];
+                    float x1 = 1e9f, y1 = 1e9f, x2 = -1e9f, y2 = -1e9f;
+                    for (size_t k = 0; k + 1 < cp.points.size(); k += 2) {
+                        float px = cp.points[k];
+                        float py = cp.points[k + 1];
+                        if (px < x1) x1 = px;
+                        if (px > x2) x2 = px;
+                        if (py < y1) y1 = py;
+                        if (py > y2) y2 = py;
+                    }
+                    if (!clip_stack.empty()) {
+                        const auto& top = clip_stack.back();
+                        if (top.x1 > x1) x1 = top.x1;
+                        if (top.y1 > y1) y1 = top.y1;
+                        if (top.x2 < x2) x2 = top.x2;
+                        if (top.y2 < y2) y2 = top.y2;
+                    }
+                    clip_stack.push_back({x1, y1, x2, y2});
+                    ras.clip_box(x1, y1, x2, y2);
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPop: {
+                if (!clip_stack.empty())
+                    clip_stack.pop_back();
+                if (!clip_stack.empty()) {
+                    const auto& top = clip_stack.back();
+                    ras.clip_box(top.x1, top.y1, top.x2, top.y2);
+                } else {
+                    ras.clip_box(0, 0, width, height);
+                }
+                break;
+            }
+
+            default:
+                break;
         }
     }
 

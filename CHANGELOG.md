@@ -31,6 +31,24 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- IR v1.1 format: stroke dashing (`kSetDash = 0x32`, count + phase +
+  pattern lengths in user units) and clipping (`kClipPush = 0x50` with
+  path_id and fill rule, `kClipPop = 0x51`). Scene `RequiredFeatures`
+  are now extracted directly from the command stream at Prepare time,
+  making capability gating (`supports_dashes`, `supports_clipping`)
+  functional end-to-end.
+- Dash and clip support implemented across all 10 backend adapters:
+  - Skia: `SkDashPathEffect` + `clipPath(kIntersect, aa)`
+  - Qt: `QPen::setDashPattern` (scaled by pen width) + `setClipPath(IntersectClip)`
+  - Cairo: `cairo_set_dash` + `cairo_clip`
+  - PlutoVG: `plutovg_canvas_set_dash` + `plutovg_canvas_clip`
+  - ThorVG: `Shape::stroke(dashPattern)` + `Shape::clip(clipper)`
+  - AmanithVG: `VG_STROKE_DASH_PATTERN/PHASE` + `vgClipPathPush/PopMZT` (MZT extension)
+  - AGG: `agg::conv_dash` + `ras.clip_box`
+  - Raqote: `StrokeStyle::dash_array` + `dt.push_clip` (extended FFI bridge)
+  - Vello: `kurbo::dash` + `RenderContext::push_layer` (extended FFI bridge)
+  - Blend2D: truthful `supports_dashes=false` (stroker lacks dash support) and `supports_clipping=false` (no path clip); skipped honestly by the harness on dash/clip scenes.
+- SVG converter re-exported all scenes with native dashes (Paris road network, rails) and clipping (Paper-2 figures).
 - MPVG benchmark corpus (Ganacim et al., SIGGRAPH Asia 2014) imported
   as 12 `complex/*` scenes: boston, car, contour (53k paths), drops,
   embrace, hawaii, paper-1/2, paris-30k/50k/70k (up to 50690 paths,

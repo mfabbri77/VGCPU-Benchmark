@@ -190,7 +190,10 @@ pub extern "C" fn vlo_stroke_path(
     r: u8, g: u8, b: u8, a: u8,
     width: f32,
     cap: i32,
-    join: i32
+    join: i32,
+    dashes: *const f32,
+    ndash: i32,
+    dash_phase: f32
 ) {
     if surf.is_null() || path_ptr.is_null() { return; }
     let surface = unsafe { &mut *surf };
@@ -207,9 +210,34 @@ pub extern "C" fn vlo_stroke_path(
             2 => Join::Bevel,
             _ => Join::Miter,
         });
-    surface.ctx.set_stroke(stroke);
-    surface.ctx.set_paint(Color::from_rgba8(r, g, b, a));
-    surface.ctx.stroke_path(&p.path);
+
+    if !dashes.is_null() && ndash > 0 {
+        let dashes_slice = unsafe { std::slice::from_raw_parts(dashes, ndash as usize) };
+        let dashes_f64: Vec<f64> = dashes_slice.iter().map(|&x| x as f64).collect();
+        let dashed_path: BezPath = vello_cpu::kurbo::dash(p.path.elements().iter().copied(), dash_phase as f64, &dashes_f64).collect();
+        surface.ctx.set_stroke(stroke);
+        surface.ctx.set_paint(Color::from_rgba8(r, g, b, a));
+        surface.ctx.stroke_path(&dashed_path);
+    } else {
+        surface.ctx.set_stroke(stroke);
+        surface.ctx.set_paint(Color::from_rgba8(r, g, b, a));
+        surface.ctx.stroke_path(&p.path);
+    }
+}
+
+#[no_mangle]
+pub extern "C" fn vlo_clip_push(surf: *mut VloSurface, path_ptr: *mut VloPath) {
+    if surf.is_null() || path_ptr.is_null() { return; }
+    let surface = unsafe { &mut *surf };
+    let p = unsafe { &*path_ptr };
+    surface.ctx.push_layer(Some(&p.path), None, None, None);
+}
+
+#[no_mangle]
+pub extern "C" fn vlo_clip_pop(surf: *mut VloSurface) {
+    if surf.is_null() { return; }
+    let surface = unsafe { &mut *surf };
+    surface.ctx.pop_layer();
 }
 
 #[no_mangle]

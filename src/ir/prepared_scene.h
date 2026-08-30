@@ -6,6 +6,7 @@
 
 #pragma once
 
+#include "common/capability_set.h"
 #include "ir/ir_format.h"
 
 #include <cstdint>
@@ -65,6 +66,11 @@ struct PreparedScene {
 
     // Command stream (raw bytes for adapter iteration)
     std::vector<uint8_t> command_stream;
+
+    // Feature requirements, extracted from the command stream and paint
+    // table at Prepare time (IR v1.1). Drives capability gating in the
+    // harness (previously a dead TODO).
+    RequiredFeatures required;
 
     /// Check if the scene is valid and ready for rendering.
     [[nodiscard]] bool IsValid() const {

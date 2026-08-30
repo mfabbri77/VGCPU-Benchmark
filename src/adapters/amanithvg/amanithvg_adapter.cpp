@@ -14,6 +14,7 @@
 #include <VG/openvg.h>
 #include <VG/vgu.h>
 // AmanithVG extensions for SRE (headless rendering)
+#define VG_VGEXT_PROTOTYPES
 #include <VG/vgext.h>
 
 #include <cstring>
@@ -215,6 +216,9 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
     // Set default rendering state
     vgSeti(VG_RENDERING_QUALITY, VG_RENDERING_QUALITY_BETTER);
     vgSeti(VG_BLEND_MODE, VG_BLEND_SRC_OVER);
+    vgSetfv(VG_STROKE_DASH_PATTERN, 0, nullptr);
+    vgSetf(VG_STROKE_DASH_PHASE, 0.0f);
+    vgClipPathClearMZT();
 
     // OpenVG surfaces have a bottom-left (SW) origin with Y up; the adapter
     // contract is top-left (NW) origin with Y down. Load a Y-flip
@@ -423,6 +427,51 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                 break;
             }
 
+            case ir::Opcode::kSetDash: {
+                if (cmd + 5 > end)
+                    goto done;
+                uint8_t count = *cmd++;
+                float phase = *reinterpret_cast<const float*>(cmd);
+                cmd += 4;
+                if (cmd + 4 * count > end)
+                    goto done;
+                const float* lengths = reinterpret_cast<const float*>(cmd);
+                cmd += 4 * count;
+                if (count > 0) {
+                    vgSetfv(VG_STROKE_DASH_PATTERN, count, lengths);
+                    vgSetf(VG_STROKE_DASH_PHASE, phase);
+                } else {
+                    vgSetfv(VG_STROKE_DASH_PATTERN, 0, nullptr);
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPush: {
+                if (cmd + 3 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
+
+                if (path_id < scene.paths.size()) {
+                    VGPath path = CreatePath(scene.paths[path_id]);
+                    if (path != VG_INVALID_HANDLE) {
+                        vgSeti(static_cast<VGParamType>(VG_CLIP_RULE_MZT),
+                               rule == ir::FillRule::kEvenOdd ? VG_EVEN_ODD : VG_NON_ZERO);
+                        vgSeti(VG_MATRIX_MODE,
+                               static_cast<VGMatrixMode>(VG_MATRIX_CLIP_USER_TO_SURFACE_MZT));
+                        vgLoadMatrix(flip_matrix);
+                        vgSeti(VG_MATRIX_MODE, VG_MATRIX_PATH_USER_TO_SURFACE);
+                        vgClipPathPushMZT(path, VG_TRUE);
+                        vgDestroyPath(path);
+                    }
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPop:
+                vgClipPathPopMZT();
+                break;
             default:
                 break;
         }

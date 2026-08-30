@@ -166,7 +166,8 @@ Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config
     float current_stroke_width = 1.0f;
     Qt::PenCapStyle current_stroke_cap = Qt::FlatCap;
     Qt::PenJoinStyle current_stroke_join = Qt::MiterJoin;
-
+    std::vector<float> dash_lengths;
+    float dash_phase = 0.0f;
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
 
@@ -251,10 +252,55 @@ Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config
                          (qreal)current_stroke_width);
                 pen.setCapStyle(current_stroke_cap);
                 pen.setJoinStyle(current_stroke_join);
+                if (!dash_lengths.empty() && current_stroke_width > 0.0f) {
+                    QList<qreal> pattern;
+                    pattern.reserve(dash_lengths.size());
+                    for (float len : dash_lengths) {
+                        pattern.append(static_cast<qreal>(len / current_stroke_width));
+                    }
+                    pen.setDashPattern(pattern);
+                    pen.setDashOffset(static_cast<qreal>(dash_phase / current_stroke_width));
+                }
 
                 painter.strokePath(path, pen);
                 break;
             }
+
+            case ir::Opcode::kSetDash: {
+                if (cmd + 5 > end)
+                    goto done;
+                uint8_t count = *cmd++;
+                dash_phase = *reinterpret_cast<const float*>(cmd);
+                cmd += 4;
+                if (cmd + 4 * count > end)
+                    goto done;
+                const float* lengths = reinterpret_cast<const float*>(cmd);
+                cmd += 4 * count;
+                dash_lengths.assign(lengths, lengths + count);
+                break;
+            }
+
+            case ir::Opcode::kClipPush: {
+                if (cmd + 3 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
+
+                painter.save();
+                if (path_id < scene.paths.size()) {
+                    QPainterPath path = CreateQPath(scene.paths[path_id]);
+                    path.setFillRule(rule == ir::FillRule::kEvenOdd ? Qt::OddEvenFill
+                                                                    : Qt::WindingFill);
+                    painter.setClipPath(path, Qt::IntersectClip);
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPop:
+                painter.restore();
+                break;
+
 
             case ir::Opcode::kSave:
                 painter.save();

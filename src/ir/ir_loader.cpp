@@ -202,6 +202,100 @@ bool ParsePathSection(const uint8_t* data, size_t len, std::vector<vgcpu::Path>&
 
 }  // namespace
 
+namespace {
+
+// Walk the command stream and derive the scene's RequiredFeatures
+// (IR v1.1). Exact by construction: requirements come from the commands
+// actually present, not from manifest metadata.
+void ExtractRequiredFeatures(PreparedScene& scene) {
+    RequiredFeatures& req = scene.required;
+    const uint8_t* cmd = scene.command_stream.data();
+    const uint8_t* end = cmd + scene.command_stream.size();
+
+    auto paint_used = [&](uint16_t paint_id) {
+        if (paint_id < scene.paints.size()) {
+            switch (scene.paints[paint_id].type) {
+                case PaintType::kLinear:
+                    req.needs_linear_gradient = true;
+                    break;
+                case PaintType::kRadial:
+                    req.needs_radial_gradient = true;
+                    break;
+                default:
+                    break;
+            }
+        }
+    };
+
+    while (cmd < end) {
+        Opcode op = static_cast<Opcode>(*cmd++);
+        switch (op) {
+            case Opcode::kEnd:
+                return;
+            case Opcode::kSave:
+            case Opcode::kRestore:
+            case Opcode::kClipPop:
+                break;
+            case Opcode::kClear:
+                cmd += 4;
+                break;
+            case Opcode::kSetMatrix:
+            case Opcode::kConcatMatrix:
+                cmd += 24;
+                break;
+            case Opcode::kSetFill: {
+                if (cmd + 3 > end) return;
+                uint16_t paint_id = ReadLE<uint16_t>(cmd);
+                if (static_cast<FillRule>(cmd[2]) == FillRule::kEvenOdd) {
+                    req.needs_evenodd = true;
+                } else {
+                    req.needs_nonzero = true;
+                }
+                paint_used(paint_id);
+                cmd += 3;
+                break;
+            }
+            case Opcode::kSetStroke: {
+                if (cmd + 7 > end) return;
+                uint16_t paint_id = ReadLE<uint16_t>(cmd);
+                uint8_t opts = cmd[6];
+                switch (UnpackStrokeCap(opts)) {
+                    case StrokeCap::kButt: req.needs_cap_butt = true; break;
+                    case StrokeCap::kRound: req.needs_cap_round = true; break;
+                    case StrokeCap::kSquare: req.needs_cap_square = true; break;
+                }
+                switch (UnpackStrokeJoin(opts)) {
+                    case StrokeJoin::kMiter: req.needs_join_miter = true; break;
+                    case StrokeJoin::kRound: req.needs_join_round = true; break;
+                    case StrokeJoin::kBevel: req.needs_join_bevel = true; break;
+                }
+                paint_used(paint_id);
+                cmd += 7;
+                break;
+            }
+            case Opcode::kSetDash: {
+                if (cmd + 5 > end) return;
+                uint8_t count = cmd[0];
+                if (count > 0) {
+                    req.needs_dashes = true;
+                }
+                cmd += 1 + 4 + static_cast<size_t>(count) * 4;
+                break;
+            }
+            case Opcode::kFillPath:
+            case Opcode::kStrokePath:
+                cmd += 2;
+                break;
+            case Opcode::kClipPush:
+                req.needs_clipping = true;
+                cmd += 3;
+                break;
+        }
+    }
+}
+
+}  // namespace
+
 Result<PreparedScene> IrLoader::Prepare(const std::vector<uint8_t>& bytes,
                                         const std::string& scene_id) {
     auto report = Validate(bytes);
@@ -276,6 +370,8 @@ Result<PreparedScene> IrLoader::Prepare(const std::vector<uint8_t>& bytes,
     if (scene.command_stream.empty()) {
         return Status::Fail("No Command section found");
     }
+
+    ExtractRequiredFeatures(scene);
 
     return scene;
 }

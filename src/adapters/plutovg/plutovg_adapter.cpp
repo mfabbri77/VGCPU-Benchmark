@@ -174,7 +174,8 @@ Status PlutoVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
     float current_stroke_width = 1.0f;
     ir::StrokeCap current_stroke_cap = ir::StrokeCap::kButt;
     ir::StrokeJoin current_stroke_join = ir::StrokeJoin::kMiter;
-
+    std::vector<float> dash_lengths;
+    float dash_phase = 0.0f;
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
 
@@ -296,6 +297,9 @@ Status PlutoVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                         break;
                 }
                 plutovg_canvas_set_line_join(canvas, join);
+                plutovg_canvas_set_dash(canvas, dash_phase,
+                                        dash_lengths.empty() ? nullptr : dash_lengths.data(),
+                                        static_cast<int>(dash_lengths.size()));
                 plutovg_canvas_stroke(canvas);
                 break;
             }
@@ -329,6 +333,42 @@ Status PlutoVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 break;
 
             case ir::Opcode::kRestore:
+                plutovg_canvas_restore(canvas);
+                break;
+
+            case ir::Opcode::kSetDash: {
+                if (cmd + 5 > end)
+                    goto done;
+                uint8_t count = *cmd++;
+                dash_phase = *reinterpret_cast<const float*>(cmd);
+                cmd += 4;
+                if (cmd + 4 * count > end)
+                    goto done;
+                const float* lengths = reinterpret_cast<const float*>(cmd);
+                cmd += 4 * count;
+                dash_lengths.assign(lengths, lengths + count);
+                break;
+            }
+
+            case ir::Opcode::kClipPush: {
+                if (cmd + 3 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
+
+                plutovg_canvas_save(canvas);
+                if (path_id < scene.paths.size()) {
+                    BuildPath(canvas, scene.paths[path_id]);
+                    plutovg_canvas_set_fill_rule(canvas, rule == ir::FillRule::kEvenOdd
+                                                             ? PLUTOVG_FILL_RULE_EVEN_ODD
+                                                             : PLUTOVG_FILL_RULE_NON_ZERO);
+                    plutovg_canvas_clip(canvas);
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPop:
                 plutovg_canvas_restore(canvas);
                 break;
 

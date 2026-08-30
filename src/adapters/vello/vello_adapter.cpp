@@ -44,7 +44,10 @@ void vlo_fill_path_gradient(VloSurface* surf, VloPath* path, int32_t kind, float
                             float x1, float y1, const float* offsets, const uint32_t* colors,
                             int32_t nstops, bool even_odd);
 void vlo_stroke_path(VloSurface* surf, VloPath* path, uint8_t r, uint8_t g, uint8_t b, uint8_t a,
-                     float width, int32_t cap, int32_t join);
+                     float width, int32_t cap, int32_t join, const float* dashes, int32_t ndash,
+                     float dash_phase);
+void vlo_clip_push(VloSurface* surf, VloPath* path);
+void vlo_clip_pop(VloSurface* surf);
 void vlo_fill_rect(VloSurface* surf, float x, float y, float w, float h, uint8_t r, uint8_t g,
                    uint8_t b, uint8_t a);
 }
@@ -130,8 +133,8 @@ CapabilitySet VelloAdapter::GetCapabilities() const {
     caps.supports_evenodd = false;         // vlo_fill_path ignores the even_odd flag
     caps.supports_linear_gradient = true;  // vlo_fill_path_gradient (2026-08-30)
     caps.supports_radial_gradient = true;
-    caps.supports_clipping = false;
-    caps.supports_dashes = false;
+    caps.supports_clipping = true;
+    caps.supports_dashes = true;
     return caps;
 }
 
@@ -156,10 +159,11 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
     float current_stroke_width = 1.0f;
     ir::StrokeCap current_stroke_cap = ir::StrokeCap::kButt;
     ir::StrokeJoin current_stroke_join = ir::StrokeJoin::kMiter;
+    std::vector<float> dash_lengths;
+    float dash_phase = 0.0f;
 
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
-
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
 
@@ -266,10 +270,45 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 uint8_t a = (paint.color >> 24) & 0xFF;
 
                 vlo_stroke_path(surf, path, r, g, b, a, current_stroke_width,
-                                (int)current_stroke_cap, (int)current_stroke_join);
+                                (int)current_stroke_cap, (int)current_stroke_join,
+                                dash_lengths.empty() ? nullptr : dash_lengths.data(),
+                                static_cast<int32_t>(dash_lengths.size()), dash_phase);
                 vlo_path_destroy(path);
                 break;
             }
+
+            case ir::Opcode::kSetDash: {
+                if (cmd + 5 > end)
+                    goto done;
+                uint8_t count = *cmd++;
+                dash_phase = *reinterpret_cast<const float*>(cmd);
+                cmd += 4;
+                if (cmd + 4 * count > end)
+                    goto done;
+                const float* lengths = reinterpret_cast<const float*>(cmd);
+                cmd += 4 * count;
+                dash_lengths.assign(lengths, lengths + count);
+                break;
+            }
+
+            case ir::Opcode::kClipPush: {
+                if (cmd + 3 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                cmd += 1;  // rule
+
+                if (path_id < scene.paths.size()) {
+                    VloPath* path = CreateVelloPath(scene.paths[path_id]);
+                    vlo_clip_push(surf, path);
+                    vlo_path_destroy(path);
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPop:
+                vlo_clip_pop(surf);
+                break;
 
             case ir::Opcode::kSave:
             case ir::Opcode::kRestore:

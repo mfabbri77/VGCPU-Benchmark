@@ -4,8 +4,8 @@
     {
       "scene_id": "fills/solid_basic",
       "ir_path": "fills/solid_basic.irbin",
-      "scene_hash": "42a99494",
-      "ir_version": "1.0.0",
+      "scene_hash": "f42ca61f",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -16,8 +16,8 @@
     {
       "scene_id": "fills/nested_rects",
       "ir_path": "fills/nested_rects.irbin",
-      "scene_hash": "b2e7cba6",
-      "ir_version": "1.0.0",
+      "scene_hash": "27e925c4",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -28,8 +28,8 @@
     {
       "scene_id": "fills/spiral_circles",
       "ir_path": "fills/spiral_circles.irbin",
-      "scene_hash": "eb748382",
-      "ir_version": "1.0.0",
+      "scene_hash": "74344f1e",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -40,8 +40,8 @@
     {
       "scene_id": "fills/gradients_linear",
       "ir_path": "fills/gradients_linear.irbin",
-      "scene_hash": "522178e4",
-      "ir_version": "1.0.0",
+      "scene_hash": "4e425e9f",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -52,8 +52,8 @@
     {
       "scene_id": "strokes/strokes_curves",
       "ir_path": "strokes/strokes_curves.irbin",
-      "scene_hash": "e333004f",
-      "ir_version": "1.0.0",
+      "scene_hash": "581ac148",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -64,8 +64,8 @@
     {
       "scene_id": "strokes/degen_cusps",
       "ir_path": "strokes/degen_cusps.irbin",
-      "scene_hash": "79162817",
-      "ir_version": "1.0.0",
+      "scene_hash": "46a16c11",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -76,8 +76,8 @@
     {
       "scene_id": "strokes/degen_empty",
       "ir_path": "strokes/degen_empty.irbin",
-      "scene_hash": "15988b95",
-      "ir_version": "1.0.0",
+      "scene_hash": "e3f63c47",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -88,8 +88,8 @@
     {
       "scene_id": "strokes/degen_short_wide",
       "ir_path": "strokes/degen_short_wide.irbin",
-      "scene_hash": "46b1f74f",
-      "ir_version": "1.0.0",
+      "scene_hash": "12d13cd7",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -100,8 +100,8 @@
     {
       "scene_id": "strokes/degen_reversal",
       "ir_path": "strokes/degen_reversal.irbin",
-      "scene_hash": "f504d80a",
-      "ir_version": "1.0.0",
+      "scene_hash": "2bb58215",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -112,8 +112,8 @@
     {
       "scene_id": "complex/tiger",
       "ir_path": "complex/tiger.irbin",
-      "scene_hash": "1d63ca3d",
-      "ir_version": "1.0.0",
+      "scene_hash": "efea5ef9",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -125,8 +125,8 @@
     {
       "scene_id": "complex/paris",
       "ir_path": "complex/paris.irbin",
-      "scene_hash": "08008809",
-      "ir_version": "1.0.0",
+      "scene_hash": "6c7e9043",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -137,8 +137,8 @@
     {
       "scene_id": "complex/boston",
       "ir_path": "complex/boston.irbin",
-      "scene_hash": "c6c82565",
-      "ir_version": "1.0.0",
+      "scene_hash": "c271cb7f",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -150,8 +150,8 @@
     {
       "scene_id": "complex/car",
       "ir_path": "complex/car.irbin",
-      "scene_hash": "aca4180d",
-      "ir_version": "1.0.0",
+      "scene_hash": "c29cc3cf",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -163,8 +163,8 @@
     {
       "scene_id": "complex/contour",
       "ir_path": "complex/contour.irbin",
-      "scene_hash": "362f59dd",
-      "ir_version": "1.0.0",
+      "scene_hash": "a82dee66",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -176,8 +176,8 @@
     {
       "scene_id": "complex/drops",
       "ir_path": "complex/drops.irbin",
-      "scene_hash": "43e644a0",
-      "ir_version": "1.0.0",
+      "scene_hash": "091b785c",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -189,8 +189,8 @@
     {
       "scene_id": "complex/embrace",
       "ir_path": "complex/embrace.irbin",
-      "scene_hash": "e18475af",
-      "ir_version": "1.0.0",
+      "scene_hash": "89819871",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -202,8 +202,8 @@
     {
       "scene_id": "complex/hawaii",
       "ir_path": "complex/hawaii.irbin",
-      "scene_hash": "441e841e",
-      "ir_version": "1.0.0",
+      "scene_hash": "df061956",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -215,8 +215,8 @@
     {
       "scene_id": "complex/paper1",
       "ir_path": "complex/paper1.irbin",
-      "scene_hash": "37e02195",
-      "ir_version": "1.0.0",
+      "scene_hash": "984d86e6",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -228,60 +228,65 @@
     {
       "scene_id": "complex/paper2",
       "ir_path": "complex/paper2.irbin",
-      "scene_hash": "815887de",
-      "ir_version": "1.0.0",
+      "scene_hash": "c061921e",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_nonzero": true,
-        "needs_stroke": true
+        "needs_stroke": true,
+        "needs_dashes": true,
+        "needs_clipping": true
       },
       "description": "Paper page 2 (5691 paths, quads, figures)"
     },
     {
       "scene_id": "complex/paris30k",
       "ir_path": "complex/paris30k.irbin",
-      "scene_hash": "e90ef777",
-      "ir_version": "1.0.0",
+      "scene_hash": "67d3a4fa",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_nonzero": true,
-        "needs_stroke": true
+        "needs_stroke": true,
+        "needs_dashes": true
       },
       "description": "Paris 30k (50690 paths, full map styling)"
     },
     {
       "scene_id": "complex/paris50k",
       "ir_path": "complex/paris50k.irbin",
-      "scene_hash": "11b2bca5",
-      "ir_version": "1.0.0",
+      "scene_hash": "bd5d6d82",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_nonzero": true,
-        "needs_stroke": true
+        "needs_stroke": true,
+        "needs_dashes": true
       },
       "description": "Paris 50k (45796 paths, full map styling)"
     },
     {
       "scene_id": "complex/paris70k",
       "ir_path": "complex/paris70k.irbin",
-      "scene_hash": "74a420d0",
-      "ir_version": "1.0.0",
+      "scene_hash": "f0015e84",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
         "needs_nonzero": true,
-        "needs_stroke": true
+        "needs_stroke": true,
+        "needs_dashes": true
       },
       "description": "Paris 70k (45590 paths, full map styling)"
     },
     {
       "scene_id": "complex/reschart",
       "ir_path": "complex/reschart.irbin",
-      "scene_hash": "cd381e9d",
-      "ir_version": "1.0.0",
+      "scene_hash": "2fa26f06",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
@@ -293,8 +298,8 @@
     {
       "scene_id": "validation/noop",
       "ir_path": "validation/noop.irbin",
-      "scene_hash": "85b7d3a0",
-      "ir_version": "1.0.0",
+      "scene_hash": "3ab8c3f7",
+      "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {},

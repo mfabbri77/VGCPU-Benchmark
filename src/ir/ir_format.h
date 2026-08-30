@@ -20,7 +20,7 @@ constexpr std::array<uint8_t, 4> kIrMagic = {'V', 'G', 'I', 'R'};
 
 /// Current IR format version.
 constexpr uint8_t kIrMajorVersion = 1;
-constexpr uint8_t kIrMinorVersion = 0;
+constexpr uint8_t kIrMinorVersion = 1;
 
 /// IR File Header (16 bytes, little-endian).
 /// Blueprint Reference: [ARCH-10-05] File Header (Chapter 3) / [API-06-04] Canonical IR (Chapter 4)
@@ -62,15 +62,30 @@ constexpr size_t kSectionHeaderBinarySize = 6;
 /// Blueprint Reference: [ARCH-14-B] IR Format Specifications (Chapter 3)
 enum class Opcode : uint8_t {
     kEnd = 0x00,           ///< End of stream
-    kSave = 0x01,          ///< Push state (matrix, clip, paints)
+    kSave = 0x01,          ///< Push state (matrix, paints)
     kRestore = 0x02,       ///< Pop state
     kClear = 0x10,         ///< Clear canvas (rgba:u32)
     kSetMatrix = 0x20,     ///< Set current transform (m:f32[6])
     kConcatMatrix = 0x21,  ///< Multiply current transform (m:f32[6])
     kSetFill = 0x30,       ///< Set fill paint & rule (paint_id:u16, rule:u8)
     kSetStroke = 0x31,     ///< Set stroke paint & params (paint_id:u16, width:f32, opts:u8)
+    // IR v1.1 (2026-08-30): stroke dashing.
+    // Args: count:u8, phase:f32, dashes:f32[count]. count == 0 turns
+    // dashing off (solid stroke). The generator always emits an even
+    // count; lengths and phase are in user units (transforms are baked
+    // by the generator). Dash state applies to subsequent kStrokePath
+    // commands until the next kSetDash; every Render() starts solid.
+    kSetDash = 0x32,
     kFillPath = 0x40,      ///< Fill path at index (path_id:u16)
     kStrokePath = 0x41,    ///< Stroke path at index (path_id:u16)
+    // IR v1.1 (2026-08-30): clipping.
+    // kClipPush args: path_id:u16, rule:u8 (FillRule). Intersects the
+    // current clip region with the filled path; nesting composes by
+    // intersection. kClipPop removes the most recent clip. Pushes and
+    // pops are balanced by the generator and are NOT affected by
+    // kSave/kRestore; every Render() starts with an empty clip stack.
+    kClipPush = 0x50,
+    kClipPop = 0x51,
 };
 
 /// Fill rule encoding (u8 in SetFill).

@@ -51,7 +51,9 @@ CaseRun Harness::BeginCase(IBackendAdapter& adapter, const PreparedScene& scene,
         return run;
     }
 
-    RequiredFeatures required;  // TODO: Extract from scene
+    // Feature gating: requirements extracted from the command stream at
+    // Prepare time (IR v1.1); replaces the former dead TODO.
+    const RequiredFeatures& required = scene.required;
     std::string compat_reason = CheckCompatibility(caps, required);
     if (!compat_reason.empty()) {
         run.result.decision = CaseDecision::kSkip;

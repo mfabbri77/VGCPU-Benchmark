@@ -90,6 +90,11 @@ AdapterInfo Blend2DAdapter::GetInfo() const {
 CapabilitySet Blend2DAdapter::GetCapabilities() const {
     CapabilitySet caps = CapabilitySet::All();
     caps.supports_parallel_render = true;
+    // Blend2D stroker does not implement dash patterns (dashArray is stored
+    // in BLStrokeOptions but not consumed by the pipeline stroker); context
+    // clipping supports only rectangular clipping (no arbitrary path clip).
+    caps.supports_dashes = false;
+    caps.supports_clipping = false;
     return caps;
 }
 
@@ -337,6 +342,26 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 break;
             }
 
+            case ir::Opcode::kSetDash: {
+                if (cmd + 5 > end)
+                    goto done;
+                uint8_t count = *cmd++;
+                cmd += 4;
+                if (cmd + 4 * count > end)
+                    goto done;
+                cmd += 4 * count;
+                break;
+            }
+
+            case ir::Opcode::kClipPush: {
+                if (cmd + 3 > end)
+                    goto done;
+                cmd += 3;
+                break;
+            }
+
+            case ir::Opcode::kClipPop:
+                break;
             default:
                 break;
         }
