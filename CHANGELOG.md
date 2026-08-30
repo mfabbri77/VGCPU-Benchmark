@@ -17,14 +17,28 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
-- `--pin <cpu>` (REQ-13-03): pins the process (and every backend worker
-  thread created afterwards) to one logical CPU; Linux/Windows, hard
-  error if the pin cannot be applied. The run records `pinned_cpu` and
-  the cpufreq `cpu_governor` in `run_metadata.environment` (additive JSON
-  fields), warns when the governor is not `performance`, and the HTML
-  report shows a "Discipline" row. QUICKSTART documents the rigorous
-  protocol. Pinned high-stats run confirms the unpinned rankings within
-  a few percent.
+- `--pin <cpuset>` (REQ-13-03): pins the process (and every backend worker
+  thread created afterwards) to a logical CPU set -- a single CPU (`2`),
+  a range (`0-11`) or a list (`0,2,4`); Linux/Windows, hard error if the
+  pin cannot be applied. The run records `pinned_cpus` and the cpufreq
+  `cpu_governor` in `run_metadata.environment` (additive JSON fields),
+  warns when the governor is not `performance`, and the HTML report shows
+  a "Discipline" row. QUICKSTART documents the rigorous protocol. Pinned
+  high-stats run confirms the unpinned rankings within a few percent.
+- Blend2D adapter: `--threads 1` now passes `thread_count = 0` to
+  `BLContextCreateInfo` (explicit synchronous rendering); passing 1 could
+  create one async worker -- a hidden second thread in the single-thread
+  column.
+- Vello adapter capabilities corrected: linear/radial gradients are
+  supported since the `vlo_fill_path_gradient` FFI landed; the capability
+  set still claimed otherwise.
+
+  Multi-thread benchmarking (a proper MT league across backends) is
+  DEFERRED by owner decision until Mazatech has an MT-capable engine of
+  its own to compare; a first probe also showed vello_cpu 0.0.4's
+  multithreaded dispatcher panicking under our FFI usage pattern
+  ("attempted to rasterize before flushing"), so the MT wiring was
+  backed out rather than shipped broken.
 - Qt adapter: cap `QThreadPool::globalInstance()` to the harness thread
   budget. Found via `--pin`: Qt's raster engine parallelizes gradient
   fills internally (+119% on fills/gradients_linear when everything

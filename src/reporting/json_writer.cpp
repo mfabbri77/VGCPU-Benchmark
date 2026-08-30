@@ -86,7 +86,7 @@ std::string JsonWriter::ToJson(const RunMetadata& metadata,
         << "\",\n";
     oss << "      \"compiler_version\": \"" << EscapeJson(metadata.environment.compiler_version)
         << "\",\n";
-    oss << "      \"pinned_cpu\": " << metadata.environment.pinned_cpu << ",\n";
+    oss << "      \"pinned_cpus\": \"" << EscapeJson(metadata.environment.pinned_cpus) << "\",\n";
     oss << "      \"cpu_governor\": \"" << EscapeJson(metadata.environment.cpu_governor) << "\"\n";
     oss << "    },\n";
     oss << "    \"policy\": {\n";

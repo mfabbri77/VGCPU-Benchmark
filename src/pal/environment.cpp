@@ -161,20 +161,33 @@ EnvironmentInfo CollectEnvironment() {
     return info;
 }
 
-bool PinToCpu(int cpu) {
-    if (cpu < 0) {
+bool PinToCpus(const std::vector<int>& cpus) {
+    if (cpus.empty()) {
         return false;
+    }
+    for (int cpu : cpus) {
+        if (cpu < 0) {
+            return false;
+        }
     }
 #if defined(__linux__)
     cpu_set_t set;
     CPU_ZERO(&set);
-    CPU_SET(static_cast<unsigned>(cpu), &set);
+    for (int cpu : cpus) {
+        CPU_SET(static_cast<unsigned>(cpu), &set);
+    }
     // pid 0 = calling thread; threads created afterwards (backend workers)
     // inherit the affinity mask, which is exactly what a pinned
-    // single-core measurement needs.
+    // measurement needs.
     return sched_setaffinity(0, sizeof(set), &set) == 0;
 #elif defined(_WIN32)
-    DWORD_PTR mask = static_cast<DWORD_PTR>(1) << cpu;
+    DWORD_PTR mask = 0;
+    for (int cpu : cpus) {
+        if (cpu >= 64) {
+            return false;  // beyond a single processor group
+        }
+        mask |= static_cast<DWORD_PTR>(1) << cpu;
+    }
     return SetProcessAffinityMask(GetCurrentProcess(), mask) != 0;
 #else
     // macOS has no strict affinity API (thread_policy_set is a hint only):
@@ -182,7 +195,6 @@ bool PinToCpu(int cpu) {
     return false;
 #endif
 }
-
 std::string GetCpuGovernor(int cpu) {
 #if defined(__linux__)
     if (cpu < 0) {

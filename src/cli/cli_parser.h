@@ -38,7 +38,7 @@ struct CliOptions {
     int measurement_iters = 10;
     int repetitions = 1;
     int threads = 1;
-    int pin_cpu = -1;  ///< Logical CPU to pin the process to; -1 = no pinning (REQ-13-03)
+    std::string pin_cpus;  ///< CPU set to pin to, e.g. "2" or "0-11" or "0,2,4"; empty = no pin
 
     // Output
     std::string output_dir = ".";

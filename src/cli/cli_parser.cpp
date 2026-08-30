@@ -50,8 +50,8 @@ void CliParser::PrintHelp() {
     std::cout << "  --iters <n>            Measurement iterations (default: 10)\n";
     std::cout << "  --repetitions <n>      Run repetitions (default: 1)\n";
     std::cout << "  --threads <n>          Thread count (default: 1)\n";
-    std::cout << "  --pin <cpu>            Pin the process to one logical CPU (measurement\n";
-    std::cout << "                         discipline; Linux/Windows; default: not pinned)\n";
+    std::cout << "  --pin <cpuset>         Pin the process to a CPU set, e.g. 2 or 0-11 or\n";
+    std::cout << "                         0,2,4 (measurement discipline; Linux/Windows)\n";
     std::cout << "  --out <path>           Output directory (default: .)\n";
     std::cout << "  --format <type>        Output format: json, csv, both (default: json)\n";
     std::cout << "  --fail-fast            Stop on first failure\n";
@@ -114,7 +114,7 @@ std::optional<CliOptions> CliParser::Parse(int argc, char* argv[]) {
         } else if (arg == "--threads" && i + 1 < argc) {
             options.threads = std::stoi(argv[++i]);
         } else if (arg == "--pin" && i + 1 < argc) {
-            options.pin_cpu = std::stoi(argv[++i]);
+            options.pin_cpus = argv[++i];
         } else if ((arg == "--out" || arg == "--output-dir") && i + 1 < argc) {
             options.output_dir = argv[++i];
         } else if (arg == "--format" && i + 1 < argc) {

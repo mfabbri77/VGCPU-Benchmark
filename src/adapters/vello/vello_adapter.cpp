@@ -124,12 +124,12 @@ AdapterInfo VelloAdapter::GetInfo() const {
 }
 
 CapabilitySet VelloAdapter::GetCapabilities() const {
-    // vello_cpu 0.0.4 is very limited in its public API
+    // vello_cpu 0.0.4 through our FFI bridge (rust_bridge/vello_ffi).
     CapabilitySet caps;
     caps.supports_nonzero = true;
-    caps.supports_evenodd = false;  // Not explicitly exposed in 0.0.4 FFI
-    caps.supports_linear_gradient = false;
-    caps.supports_radial_gradient = false;
+    caps.supports_evenodd = false;         // vlo_fill_path ignores the even_odd flag
+    caps.supports_linear_gradient = true;  // vlo_fill_path_gradient (2026-08-30)
+    caps.supports_radial_gradient = true;
     caps.supports_clipping = false;
     caps.supports_dashes = false;
     return caps;

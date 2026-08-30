@@ -114,7 +114,11 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
     }
 
     BLContextCreateInfo cci{};
-    cci.thread_count = thread_count_;
+    // thread_count 0 = fully synchronous rendering on the caller thread;
+    // N > 1 = Blend2D's own worker pool with N threads (caller batches
+    // commands and syncs on end()). Passing 1 would create one async
+    // worker -- a hidden second thread in the single-thread column.
+    cci.thread_count = thread_count_ > 1 ? static_cast<uint32_t>(thread_count_) : 0u;
     BLContext ctx(img, cci);
 
     const uint8_t* cmd = scene.command_stream.data();

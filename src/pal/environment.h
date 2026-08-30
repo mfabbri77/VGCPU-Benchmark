@@ -8,6 +8,7 @@
 
 #include <cstdint>
 #include <string>
+#include <vector>
 
 namespace vgcpu {
 namespace pal {
@@ -25,9 +26,10 @@ struct EnvironmentInfo {
     std::string compiler_name;
     std::string compiler_version;
     // Measurement discipline (REQ-13-03): filled by the CLI when --pin is
-    // used. pinned_cpu = -1 means "not pinned"; cpu_governor is empty where
-    // the platform does not expose one (non-Linux).
-    int pinned_cpu = -1;
+    // used. Empty = not pinned; otherwise the cpuset string as given
+    // (e.g. "2" or "0-11"). cpu_governor is empty where the platform does
+    // not expose one (non-Linux).
+    std::string pinned_cpus;
     std::string cpu_governor;
 };
 
@@ -35,9 +37,9 @@ struct EnvironmentInfo {
 [[nodiscard]] EnvironmentInfo CollectEnvironment();
 
 /// Pin the current process (calling thread + threads created afterwards)
-/// to one logical CPU. Best-effort per platform (REQ-13-03): Linux and
-/// Windows implement it; elsewhere returns false.
-[[nodiscard]] bool PinToCpu(int cpu);
+/// to a set of logical CPUs. Best-effort per platform (REQ-13-03): Linux
+/// and Windows implement it; elsewhere returns false. Empty set fails.
+[[nodiscard]] bool PinToCpus(const std::vector<int>& cpus);
 
 /// Read the cpufreq scaling governor of a logical CPU. Linux only; returns
 /// an empty string where unavailable.

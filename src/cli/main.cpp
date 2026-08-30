@@ -66,6 +66,35 @@ using namespace vgcpu;
 
 namespace {
 
+// Parse a cpuset string like "2", "0-11" or "0,2,4-7" into CPU indices.
+// Returns an empty vector on malformed input.
+std::vector<int> ParseCpuSet(const std::string& spec) {
+    std::vector<int> cpus;
+    size_t pos = 0;
+    while (pos < spec.size()) {
+        size_t comma = spec.find(',', pos);
+        std::string token = spec.substr(pos, comma == std::string::npos ? comma : comma - pos);
+        pos = comma == std::string::npos ? spec.size() : comma + 1;
+        try {
+            size_t dash = token.find('-');
+            if (dash == std::string::npos) {
+                cpus.push_back(std::stoi(token));
+            } else {
+                int lo = std::stoi(token.substr(0, dash));
+                int hi = std::stoi(token.substr(dash + 1));
+                if (lo > hi) {
+                    return {};
+                }
+                for (int c = lo; c <= hi; ++c) {
+                    cpus.push_back(c);
+                }
+            }
+        } catch (const std::exception&) {
+            return {};
+        }
+    }
+    return cpus;
+}
 // Default assets directory relative to executable
 const std::filesystem::path kDefaultAssetsDir = "assets/scenes";
 const std::filesystem::path kDefaultManifest = "assets/scenes/manifest.json";
@@ -280,16 +309,17 @@ int HandleRun(const CliOptions& options) {
     // backend worker threads created later inherit the affinity mask. A
     // requested pin that fails is a hard error -- silently unpinned numbers
     // would be mislabeled measurements.
-    if (options.pin_cpu >= 0) {
-        if (!pal::PinToCpu(options.pin_cpu)) {
-            VGCPU_LOG_ERROR("Failed to pin process to CPU " + std::to_string(options.pin_cpu) +
-                            " (--pin): unsupported platform or invalid CPU index");
+    if (!options.pin_cpus.empty()) {
+        auto cpus = ParseCpuSet(options.pin_cpus);
+        if (cpus.empty() || !pal::PinToCpus(cpus)) {
+            VGCPU_LOG_ERROR("Failed to pin process to CPU set '" + options.pin_cpus +
+                            "' (--pin): bad set, unsupported platform or invalid CPU index");
             return 3;
         }
-        VGCPU_LOG_INFO("Process pinned to logical CPU " + std::to_string(options.pin_cpu));
-        std::string governor = pal::GetCpuGovernor(options.pin_cpu);
+        VGCPU_LOG_INFO("Process pinned to logical CPU set " + options.pin_cpus);
+        std::string governor = pal::GetCpuGovernor(cpus.front());
         if (!governor.empty() && governor != "performance") {
-            VGCPU_LOG_WARN("CPU " + std::to_string(options.pin_cpu) + " governor is '" + governor +
+            VGCPU_LOG_WARN("CPU " + std::to_string(cpus.front()) + " governor is '" + governor +
                            "', not 'performance': sustained clocks may drift. Fix with: sudo "
                            "cpupower frequency-set -g performance");
         }
@@ -328,9 +358,11 @@ int HandleRun(const CliOptions& options) {
     metadata.suite_version = VGCPU_VERSION_STRING;
     metadata.git_commit = VGCPU_GIT_COMMIT;
     metadata.environment = pal::CollectEnvironment();
-    metadata.environment.pinned_cpu = options.pin_cpu;
-    metadata.environment.cpu_governor =
-        pal::GetCpuGovernor(options.pin_cpu >= 0 ? options.pin_cpu : 0);
+    metadata.environment.pinned_cpus = options.pin_cpus;
+    {
+        auto cpus = ParseCpuSet(options.pin_cpus);
+        metadata.environment.cpu_governor = pal::GetCpuGovernor(cpus.empty() ? 0 : cpus.front());
+    }
     metadata.policy = policy;
 
     // Print summary
