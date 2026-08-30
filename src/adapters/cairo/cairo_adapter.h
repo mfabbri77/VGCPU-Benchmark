@@ -7,6 +7,8 @@
 #pragma once
 
 #include "adapters/adapter_interface.h"
+#include <cairo.h>
+#include <vector>
 
 namespace vgcpu {
 
@@ -29,9 +31,14 @@ class CairoAdapter : public IBackendAdapter {
     // Rendering
     Status Render(const PreparedScene& scene, const SurfaceConfig& config,
                   std::vector<uint8_t>& output_buffer) override;
+    Status RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                           std::vector<uint8_t>& output_buffer) override;
 
    private:
+    void DestroyPaths();
+
     bool initialized_ = false;
+    std::vector<cairo_path_t*> prepared_paths_;
 };
 
 /// Register the Cairo adapter with the global registry.

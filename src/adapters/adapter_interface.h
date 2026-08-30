@@ -6,13 +6,15 @@
 
 #pragma once
 
-#include "common/capability_set.h"
-#include "common/status.h"
-
+#include <concepts>
 #include <cstdint>
+#include <functional>
+#include <memory>
 #include <string>
 #include <vector>
 
+#include "common/capability_set.h"
+#include "common/status.h"
 namespace vgcpu {
 
 // Forward declarations
@@ -81,14 +83,26 @@ class IBackendAdapter {
     // [REQ-56-02] CPU-Only Enforcement (Chapter 4)
     // -------------------------------------------------------------------------
 
-    /// Render the scene to an output buffer (hot path). [ARCH-14-F]
+    /// Render the scene to an output buffer in Pre-baked mode (draw time only).
+    /// Uses path/geometry objects pre-created in Prepare(). [ARCH-14-F]
     /// @param scene The prepared scene to render.
     /// @param config Surface configuration (width, height).
     /// @param output_buffer Output pixel buffer (RGBA8, premultiplied).
-    ///                      Will be resized to width * height * 4 bytes.
     /// @return Status indicating success or failure.
     virtual Status Render(const PreparedScene& scene, const SurfaceConfig& config,
                           std::vector<uint8_t>& output_buffer) = 0;
+
+    /// Render the scene in Full-Lifecycle mode (3 distinct loops:
+    /// 1. Create all native paths -> 2. Draw all -> 3. Destroy all).
+    /// Timed as a whole: T_create + T_draw + T_destroy.
+    /// @param scene The prepared scene to render.
+    /// @param config Surface configuration (width, height).
+    /// @param output_buffer Output pixel buffer (RGBA8, premultiplied).
+    /// @return Status indicating success or failure.
+    virtual Status RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                                   std::vector<uint8_t>& output_buffer) {
+        return Render(scene, config, output_buffer);
+    }
 };
 
 }  // namespace vgcpu

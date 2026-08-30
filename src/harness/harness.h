@@ -61,7 +61,8 @@ struct CaseResult {
     CaseDecision decision = CaseDecision::kSkip;
     std::vector<std::string> reasons;
 
-    TimingStats stats;
+    TimingStats stats;            ///< Pre-baked mode (draw time only)
+    TimingStats lifecycle_stats;  ///< Full-lifecycle mode (Create + Draw + Destroy)
 
     // Artifacts
     std::string artifact_path;
@@ -93,8 +94,10 @@ struct CaseRun {
     const PreparedScene* scene = nullptr;
     SurfaceConfig config;
     std::vector<uint8_t> output_buffer;
-    std::vector<int64_t> wall_samples;
-    std::vector<int64_t> cpu_samples;
+    std::vector<int64_t> wall_samples;            ///< Pre-baked wall time samples
+    std::vector<int64_t> cpu_samples;             ///< Pre-baked CPU time samples
+    std::vector<int64_t> lifecycle_wall_samples;  ///< Full-lifecycle wall time samples
+    std::vector<int64_t> lifecycle_cpu_samples;   ///< Full-lifecycle CPU time samples
     CaseResult result;
     bool active = false;  ///< prepared + warmed and no failure so far
 };

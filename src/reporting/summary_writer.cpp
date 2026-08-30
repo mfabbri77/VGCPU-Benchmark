@@ -4,10 +4,13 @@
 // Blueprint Reference: [ARCH-10-10] Reporting (Chapter 3) / [API-06-07] WriteSummaryToStdout
 // (Chapter 4)
 
-#include "reporting/reporter.h"
-
+#include <concepts>
 #include <iomanip>
 #include <iostream>
+#include <string>
+#include <vector>
+
+#include "reporting/reporter.h"
 
 namespace vgcpu {
 
@@ -80,20 +83,20 @@ void SummaryWriter::PrintSummary(const RunMetadata& metadata,
 
     // Results table
     if (!results.empty()) {
-        std::cout << std::left << std::setw(12) << "Backend" << std::setw(24) << "Scene"
-                  << std::setw(8) << "Status" << std::right << std::setw(12) << "Wall p50"
-                  << std::setw(12) << "CPU p50"
+        std::cout << std::left << std::setw(12) << "Backend" << std::setw(26) << "Scene"
+                  << std::setw(8) << "Status" << std::right << std::setw(14) << "Prebaked p50"
+                  << std::setw(16) << "Lifecycle p50"
                   << "\n";
-        std::cout << std::string(68, '-') << "\n";
+        std::cout << std::string(76, '-') << "\n";
 
         for (const auto& r : results) {
-            std::cout << std::left << std::setw(12) << r.backend_id << std::setw(24) << r.scene_id
+            std::cout << std::left << std::setw(12) << r.backend_id << std::setw(26) << r.scene_id
                       << std::setw(8) << DecisionToString(r.decision);
 
             if (r.decision == CaseDecision::kExecute) {
-                std::cout << std::right << std::fixed << std::setprecision(2) << std::setw(10)
-                          << NsToMs(r.stats.wall_p50_ns) << "ms" << std::setw(10)
-                          << NsToMs(r.stats.cpu_p50_ns) << "ms";
+                std::cout << std::right << std::fixed << std::setprecision(2) << std::setw(12)
+                          << NsToMs(r.stats.wall_p50_ns) << "ms" << std::setw(14)
+                          << NsToMs(r.lifecycle_stats.wall_p50_ns) << "ms";
             } else if (!r.reasons.empty()) {
                 std::cout << "  (" << r.reasons[0] << ")";
             }

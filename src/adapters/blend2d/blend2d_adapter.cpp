@@ -50,6 +50,50 @@ BLGradient CreateGradient(const Paint& paint) {
 
     return gradient;
 }
+void BuildBLPath(const Path& path_data, BLPath& out_path) {
+    size_t pt_idx = 0;
+    for (auto verb : path_data.verbs) {
+        switch (verb) {
+            case ir::PathVerb::kMoveTo:
+                if (pt_idx + 1 <= path_data.points.size() / 2) {
+                    out_path.move_to(path_data.points[pt_idx * 2],
+                                     path_data.points[pt_idx * 2 + 1]);
+                    pt_idx++;
+                }
+                break;
+            case ir::PathVerb::kLineTo:
+                if (pt_idx + 1 <= path_data.points.size() / 2) {
+                    out_path.line_to(path_data.points[pt_idx * 2],
+                                     path_data.points[pt_idx * 2 + 1]);
+                    pt_idx++;
+                }
+                break;
+            case ir::PathVerb::kQuadTo:
+                if (pt_idx + 2 <= path_data.points.size() / 2) {
+                    out_path.quad_to(path_data.points[pt_idx * 2],
+                                     path_data.points[pt_idx * 2 + 1],
+                                     path_data.points[(pt_idx + 1) * 2],
+                                     path_data.points[(pt_idx + 1) * 2 + 1]);
+                    pt_idx += 2;
+                }
+                break;
+            case ir::PathVerb::kCubicTo:
+                if (pt_idx + 3 <= path_data.points.size() / 2) {
+                    out_path.cubic_to(path_data.points[pt_idx * 2],
+                                      path_data.points[pt_idx * 2 + 1],
+                                      path_data.points[(pt_idx + 1) * 2],
+                                      path_data.points[(pt_idx + 1) * 2 + 1],
+                                      path_data.points[(pt_idx + 2) * 2],
+                                      path_data.points[(pt_idx + 2) * 2 + 1]);
+                    pt_idx += 3;
+                }
+                break;
+            case ir::PathVerb::kClose:
+                out_path.close();
+                break;
+        }
+    }
+}
 
 }  // namespace
 
@@ -62,14 +106,19 @@ Status Blend2DAdapter::Initialize(const AdapterArgs& args) {
 }
 
 Status Blend2DAdapter::Prepare(const PreparedScene& scene) {
-    (void)scene;
     if (!initialized_) {
         return Status::Fail("Blend2DAdapter not initialized");
+    }
+    prepared_paths_.clear();
+    prepared_paths_.resize(scene.paths.size());
+    for (size_t i = 0; i < scene.paths.size(); ++i) {
+        BuildBLPath(scene.paths[i], prepared_paths_[i]);
     }
     return Status::Ok();
 }
 
 void Blend2DAdapter::Shutdown() {
+    prepared_paths_.clear();
     initialized_ = false;
 }
 
@@ -98,40 +147,15 @@ CapabilitySet Blend2DAdapter::GetCapabilities() const {
     return caps;
 }
 
-Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
-                              std::vector<uint8_t>& output_buffer) {
-    if (!initialized_)
-        return Status::Fail("Blend2DAdapter not initialized");
-    if (!scene.IsValid())
-        return Status::InvalidArg("Invalid scene");
-    if (config.width <= 0 || config.height <= 0)
-        return Status::InvalidArg("Invalid surface configuration");
+namespace {
 
-    // Buffer is pre-sized by harness. Contents are undefined until kClear.
-
-    BLImage img;
-    BLResult result =
-        img.create_from_data(config.width, config.height, BL_FORMAT_PRGB32, output_buffer.data(),
-                             static_cast<intptr_t>(config.width * 4));
-
-    if (result != BL_SUCCESS) {
-        return Status::Fail("Failed to create Blend2D image from data");
-    }
-
-    BLContextCreateInfo cci{};
-    // thread_count 0 = fully synchronous rendering on the caller thread;
-    // N > 1 = Blend2D's own worker pool with N threads (caller batches
-    // commands and syncs on end()). Passing 1 would create one async
-    // worker -- a hidden second thread in the single-thread column.
-    cci.thread_count = thread_count_ > 1 ? static_cast<uint32_t>(thread_count_) : 0u;
-    BLContext ctx(img, cci);
-
+Status ExecuteBlend2DCommands(const PreparedScene& scene, const SurfaceConfig& /*config*/,
+                             const std::vector<BLPath>& paths, BLContext& ctx) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
     uint16_t current_paint_id = 0;
     ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
-    // Current stroke state (since Opcode::kSetStroke sets state for subsequent kStrokePath)
     uint16_t current_stroke_paint_id = 0;
 
     auto apply_paint_to_ctx = [&](uint16_t paint_id, bool is_stroke) {
@@ -144,7 +168,7 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
             uint8_t g = (paint.color >> 8) & 0xFF;
             uint8_t b = (paint.color >> 16) & 0xFF;
             uint8_t a = (paint.color >> 24) & 0xFF;
-            BLRgba32 c(b, g, r, a);  // R<->B swap: PRGB32 output, see CreateGradient
+            BLRgba32 c(b, g, r, a);
             if (is_stroke)
                 ctx.set_stroke_style(c);
             else
@@ -155,55 +179,6 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 ctx.set_stroke_style(grad);
             else
                 ctx.set_fill_style(grad);
-        }
-    };
-
-    // Helper to build path
-    auto build_path = [&](uint16_t path_id, BLPath& out_path) {
-        if (path_id >= scene.paths.size())
-            return;
-        const auto& path_data = scene.paths[path_id];
-        size_t pt_idx = 0;
-        for (auto verb : path_data.verbs) {
-            switch (verb) {
-                case ir::PathVerb::kMoveTo:
-                    if (pt_idx + 1 <= path_data.points.size() / 2) {
-                        out_path.move_to(path_data.points[pt_idx * 2],
-                                         path_data.points[pt_idx * 2 + 1]);
-                        pt_idx++;
-                    }
-                    break;
-                case ir::PathVerb::kLineTo:
-                    if (pt_idx + 1 <= path_data.points.size() / 2) {
-                        out_path.line_to(path_data.points[pt_idx * 2],
-                                         path_data.points[pt_idx * 2 + 1]);
-                        pt_idx++;
-                    }
-                    break;
-                case ir::PathVerb::kQuadTo:
-                    if (pt_idx + 2 <= path_data.points.size() / 2) {
-                        out_path.quad_to(path_data.points[pt_idx * 2],
-                                         path_data.points[pt_idx * 2 + 1],
-                                         path_data.points[(pt_idx + 1) * 2],
-                                         path_data.points[(pt_idx + 1) * 2 + 1]);
-                        pt_idx += 2;
-                    }
-                    break;
-                case ir::PathVerb::kCubicTo:
-                    if (pt_idx + 3 <= path_data.points.size() / 2) {
-                        out_path.cubic_to(path_data.points[pt_idx * 2],
-                                          path_data.points[pt_idx * 2 + 1],
-                                          path_data.points[(pt_idx + 1) * 2],
-                                          path_data.points[(pt_idx + 1) * 2 + 1],
-                                          path_data.points[(pt_idx + 2) * 2],
-                                          path_data.points[(pt_idx + 2) * 2 + 1]);
-                        pt_idx += 3;
-                    }
-                    break;
-                case ir::PathVerb::kClose:
-                    out_path.close();
-                    break;
-            }
         }
     };
 
@@ -225,7 +200,7 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 uint8_t a = (rgba >> 24) & 0xFF;
                 ctx.save();
                 ctx.reset_transform();
-                ctx.set_fill_style(BLRgba32(b, g, r, a));  // R<->B swap: PRGB32 output
+                ctx.set_fill_style(BLRgba32(b, g, r, a));
                 ctx.fill_all();
                 ctx.restore();
                 break;
@@ -242,7 +217,7 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
 
             case ir::Opcode::kSetStroke: {
                 if (cmd + 7 > end)
-                    goto done;  // u16(2) + f32(4) + u8(1)
+                    goto done;
                 current_stroke_paint_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
                 float width = *reinterpret_cast<const float*>(cmd);
@@ -254,7 +229,6 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 ir::StrokeCap cap = ir::UnpackStrokeCap(opts);
                 ir::StrokeJoin join = ir::UnpackStrokeJoin(opts);
 
-                // Map Cap
                 switch (cap) {
                     case ir::StrokeCap::kButt:
                         ctx.set_stroke_caps(BL_STROKE_CAP_BUTT);
@@ -267,7 +241,6 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                         break;
                 }
 
-                // Map Join
                 switch (join) {
                     case ir::StrokeJoin::kMiter:
                         ctx.set_stroke_join(BL_STROKE_JOIN_MITER_CLIP);
@@ -288,15 +261,14 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
+                if (path_id >= paths.size())
+                    break;
+
                 apply_paint_to_ctx(current_paint_id, false);
-
-                BLPath path;
-                build_path(path_id, path);
-
                 ctx.set_fill_rule(current_fill_rule == ir::FillRule::kEvenOdd
                                       ? BL_FILL_RULE_EVEN_ODD
                                       : BL_FILL_RULE_NON_ZERO);
-                ctx.fill_path(path);
+                ctx.fill_path(paths[path_id]);
                 break;
             }
 
@@ -306,12 +278,11 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
+                if (path_id >= paths.size())
+                    break;
+
                 apply_paint_to_ctx(current_stroke_paint_id, true);
-
-                BLPath path;
-                build_path(path_id, path);
-
-                ctx.stroke_path(path);
+                ctx.stroke_path(paths[path_id]);
                 break;
             }
 
@@ -323,24 +294,10 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 ctx.restore();
                 break;
 
-            case ir::Opcode::kSetMatrix: {
-                // Skipping actual implementation for brevity, IR doc says f32[6]
-                // Just advance pointer
-                if (cmd + 24 > end)
-                    goto done;
-                // float m[6]; memcpy(m, cmd, 24);
-                // BLMatrix2D mat(m[0], m[1], m[2], m[3], m[4], m[5]);
-                // ctx.set_transform(mat);
+            case ir::Opcode::kSetMatrix:
+            case ir::Opcode::kConcatMatrix:
                 cmd += 24;
                 break;
-            }
-
-            case ir::Opcode::kConcatMatrix: {
-                if (cmd + 24 > end)
-                    goto done;
-                cmd += 24;
-                break;
-            }
 
             case ir::Opcode::kSetDash: {
                 if (cmd + 5 > end)
@@ -362,6 +319,7 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
 
             case ir::Opcode::kClipPop:
                 break;
+
             default:
                 break;
         }
@@ -370,6 +328,68 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
 done:
     ctx.end();
     return Status::Ok();
+}
+
+}  // namespace
+
+Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
+                              std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("Blend2DAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
+
+    BLImage img;
+    BLResult result =
+        img.create_from_data(config.width, config.height, BL_FORMAT_PRGB32, output_buffer.data(),
+                             static_cast<intptr_t>(config.width * 4));
+    if (result != BL_SUCCESS) {
+        return Status::Fail("Failed to create Blend2D image from data");
+    }
+
+    BLContextCreateInfo cci{};
+    cci.thread_count = thread_count_ > 1 ? static_cast<uint32_t>(thread_count_) : 0u;
+    BLContext ctx(img, cci);
+
+    return ExecuteBlend2DCommands(scene, config, prepared_paths_, ctx);
+}
+
+Status Blend2DAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                                       std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("Blend2DAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
+
+    BLImage img;
+    BLResult result =
+        img.create_from_data(config.width, config.height, BL_FORMAT_PRGB32, output_buffer.data(),
+                             static_cast<intptr_t>(config.width * 4));
+    if (result != BL_SUCCESS) {
+        return Status::Fail("Failed to create Blend2D image from data");
+    }
+
+    BLContextCreateInfo cci{};
+    cci.thread_count = thread_count_ > 1 ? static_cast<uint32_t>(thread_count_) : 0u;
+    BLContext ctx(img, cci);
+
+    // Loop 1: Create all native paths
+    std::vector<BLPath> paths(scene.paths.size());
+    for (size_t i = 0; i < scene.paths.size(); ++i) {
+        BuildBLPath(scene.paths[i], paths[i]);
+    }
+
+    // Loop 2: Draw all
+    Status s = ExecuteBlend2DCommands(scene, config, paths, ctx);
+
+    // Loop 3: Destroy all
+    paths.clear();
+
+    return s;
 }
 
 void RegisterBlend2DAdapter() {

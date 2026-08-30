@@ -5,8 +5,12 @@
 
 #include "adapters/adapter_registry.h"
 
-#include <memory>
+extern "C" {
+struct RqtPathBuf;
+}
 
+#include <memory>
+#include <vector>
 namespace vgcpu {
 
 class RaqoteAdapter : public IBackendAdapter {
@@ -18,11 +22,15 @@ class RaqoteAdapter : public IBackendAdapter {
     [[nodiscard]] CapabilitySet GetCapabilities() const override;
     Status Render(const PreparedScene& scene, const SurfaceConfig& config,
                   std::vector<uint8_t>& output_buffer) override;
+    Status RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                           std::vector<uint8_t>& output_buffer) override;
 
    private:
-    bool initialized_ = false;
-};
+    void DestroyPaths();
 
+    bool initialized_ = false;
+    std::vector<RqtPathBuf*> prepared_paths_;
+};
 void RegisterRaqoteAdapter();
 
 }  // namespace vgcpu

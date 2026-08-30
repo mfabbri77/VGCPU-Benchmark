@@ -122,14 +122,19 @@ Status QtAdapter::Initialize(const AdapterArgs& args) {
 }
 
 Status QtAdapter::Prepare(const PreparedScene& scene) {
-    (void)scene;
     if (!initialized_) {
         return Status::Fail("QtAdapter not initialized");
+    }
+    prepared_paths_.clear();
+    prepared_paths_.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        prepared_paths_.push_back(CreateQPath(p));
     }
     return Status::Ok();
 }
 
 void QtAdapter::Shutdown() {
+    prepared_paths_.clear();
     initialized_ = false;
 }
 
@@ -142,20 +147,10 @@ CapabilitySet QtAdapter::GetCapabilities() const {
     return CapabilitySet::All();
 }
 
-Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
-                         std::vector<uint8_t>& output_buffer) {
-    if (!initialized_)
-        return Status::Fail("QtAdapter not initialized");
+namespace {
 
-    // Wrap the output buffer in a QImage
-    // We use Format_ARGB32_Premultiplied which is the native fast format for Qt's raster engine
-    QImage image(output_buffer.data(), config.width, config.height, config.width * 4,
-                 QImage::Format_ARGB32_Premultiplied);
-
-    QPainter painter(&image);
-    painter.setRenderHint(QPainter::Antialiasing, true);
-
-    // Command Loop
+Status ExecuteQtCommands(const PreparedScene& scene, const SurfaceConfig& /*config*/,
+                         const std::vector<QPainterPath>& paths, QPainter& painter) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
@@ -168,6 +163,7 @@ Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config
     Qt::PenJoinStyle current_stroke_join = Qt::MiterJoin;
     std::vector<float> dash_lengths;
     float dash_phase = 0.0f;
+
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
 
@@ -178,7 +174,7 @@ Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config
             case ir::Opcode::kClear: {
                 uint32_t rgba = *reinterpret_cast<const uint32_t*>(cmd);
                 cmd += 4;
-                painter.fillRect(image.rect(), ToQColor(rgba));
+                painter.fillRect(painter.viewport(), ToQColor(rgba));
                 break;
             }
 
@@ -229,10 +225,10 @@ Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size() || current_fill_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_fill_paint_id >= scene.paints.size())
                     break;
 
-                QPainterPath path = CreateQPath(scene.paths[path_id]);
+                QPainterPath path = paths[path_id];
                 path.setFillRule(current_fill_rule == ir::FillRule::kEvenOdd ? Qt::OddEvenFill
                                                                              : Qt::WindingFill);
 
@@ -244,17 +240,17 @@ Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size() || current_stroke_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
                     break;
 
-                QPainterPath path = CreateQPath(scene.paths[path_id]);
+                QPainterPath path = paths[path_id];
                 QPen pen(CreateBrush(scene.paints[current_stroke_paint_id]),
                          (qreal)current_stroke_width);
                 pen.setCapStyle(current_stroke_cap);
                 pen.setJoinStyle(current_stroke_join);
                 if (!dash_lengths.empty() && current_stroke_width > 0.0f) {
                     QList<qreal> pattern;
-                    pattern.reserve(dash_lengths.size());
+                    pattern.reserve(static_cast<qsizetype>(dash_lengths.size()));
                     for (float len : dash_lengths) {
                         pattern.append(static_cast<qreal>(len / current_stroke_width));
                     }
@@ -288,8 +284,8 @@ Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config
                 ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
 
                 painter.save();
-                if (path_id < scene.paths.size()) {
-                    QPainterPath path = CreateQPath(scene.paths[path_id]);
+                if (path_id < paths.size()) {
+                    QPainterPath path = paths[path_id];
                     path.setFillRule(rule == ir::FillRule::kEvenOdd ? Qt::OddEvenFill
                                                                     : Qt::WindingFill);
                     painter.setClipPath(path, Qt::IntersectClip);
@@ -300,7 +296,6 @@ Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config
             case ir::Opcode::kClipPop:
                 painter.restore();
                 break;
-
 
             case ir::Opcode::kSave:
                 painter.save();
@@ -323,6 +318,9 @@ Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config
                 painter.setTransform(QTransform(m[0], m[1], m[2], m[3], m[4], m[5]), true);
                 break;
             }
+
+            default:
+                break;
         }
     }
 
@@ -330,9 +328,51 @@ done:
     return Status::Ok();
 }
 
+}  // namespace
+
+Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
+                         std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("QtAdapter not initialized");
+
+    QImage image(output_buffer.data(), config.width, config.height, config.width * 4,
+                 QImage::Format_ARGB32_Premultiplied);
+
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    return ExecuteQtCommands(scene, config, prepared_paths_, painter);
+}
+
+Status QtAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                                  std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("QtAdapter not initialized");
+
+    QImage image(output_buffer.data(), config.width, config.height, config.width * 4,
+                 QImage::Format_ARGB32_Premultiplied);
+
+    QPainter painter(&image);
+    painter.setRenderHint(QPainter::Antialiasing, true);
+
+    // Loop 1: Create all native paths
+    std::vector<QPainterPath> paths;
+    paths.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        paths.push_back(CreateQPath(p));
+    }
+
+    // Loop 2: Draw all
+    Status s = ExecuteQtCommands(scene, config, paths, painter);
+
+    // Loop 3: Destroy all
+    paths.clear();
+
+    return s;
+}
+
 void RegisterQtAdapter() {
     AdapterRegistry::Instance().Register("qt", "Qt Raster Engine",
                                          []() { return std::make_unique<QtAdapter>(); });
 }
-
 }  // namespace vgcpu

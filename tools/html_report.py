@@ -339,6 +339,12 @@ dialog button{margin:12px auto 0;display:block;padding:7px 22px;border-radius:6p
 .legend{font-size:15px;color:var(--muted);margin:10px 0 0}
 .footnote{font-size:15.5px;color:var(--muted)}
 code{background:var(--nabg);border-radius:4px;padding:1px 6px;font-size:15px}
+.tab-nav{display:flex;gap:10px;margin:20px 0 16px;border-bottom:1px solid var(--line);padding-bottom:12px}
+.tab-btn{background:var(--card);border:1px solid var(--line);color:var(--fg);padding:9px 20px;border-radius:8px;cursor:pointer;font-weight:600;font-size:16px;transition:all .15s ease}
+.tab-btn:hover{background:var(--nabg)}
+.tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
+.tab-panel{display:none}
+.tab-panel.active{display:block}
 """
 
 _JS = """
@@ -346,6 +352,14 @@ function zoom(id){document.getElementById(id).showModal();}
 document.addEventListener('click',e=>{
   if(e.target.tagName==='DIALOG')e.target.close();
 });
+function showTab(panelId, btn){
+  const parent = btn.closest('.tab-container');
+  parent.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
+  parent.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
+  btn.classList.add('active');
+  const target = parent.querySelector('#' + panelId);
+  if(target) target.classList.add('active');
+}
 """
 
 
@@ -521,62 +535,71 @@ def build_report(results, oracle, memory, results_dir, reference, assets_dir):
     w("<h2>Performance</h2>")
     w(
         "<p class='sub'>Median wall-clock time per frame (p50, lower is "
-        "better); p90 alongside. Single measurement host, see metadata; "
-        "cross-machine comparisons are not meaningful.</p>"
+        "better); p90 alongside. Two distinct benchmarking modes below:</p>"
     )
 
-    # Matrix
-    w("<div class='card' style='overflow-x:auto'><table><thead><tr><th>scene \\ backend</th>")
-    for b in real_backends:
-        mark = " (ref)" if b == reference else ""
-        w(f"<th>{esc(b)}{esc(mark)}</th>")
-    w("</tr></thead><tbody>")
-    for s in scenes:
-        vals = {}
+    def render_perf_tab(stat_key, desc_text):
+        w(f"<p class='sub'>{desc_text}</p>")
+        w("<div class='card' style='overflow-x:auto'><table><thead><tr><th>scene \\ backend</th>")
         for b in real_backends:
-            c = by_key.get((b, s))
-            if c and c.get("decision") == "EXECUTE":
-                vals[b] = c["stats"]["wall_p50_ns"]
-        best = min(vals.values()) if vals else None
-        w(f"<tr><td>{esc(s)}</td>")
-        for b in real_backends:
-            if b in vals:
-                cell = fmt_ms(vals[b]) + " ms"
-                if vals[b] == best:
-                    cell = f"<b style='color:var(--ok)'>{cell}</b>"
-                w(f"<td class='num'>{cell}</td>")
-            else:
-                w("<td class='num'>—</td>")
-        w("</tr>")
-    w("</tbody></table>")
-    w(
-        "<p class='legend'>Bold green = fastest for the scene. The "
-        "<code>null</code> backend (harness overhead baseline) is excluded.</p>"
-    )
+            mark = " (ref)" if b == reference else ""
+            w(f"<th>{esc(b)}{esc(mark)}</th>")
+        w("</tr></thead><tbody>")
+        for s in scenes:
+            vals = {}
+            for b in real_backends:
+                c = by_key.get((b, s))
+                if c and c.get("decision") == "EXECUTE" and stat_key in c and c[stat_key].get("wall_p50_ns", 0) > 0:
+                    vals[b] = c[stat_key]["wall_p50_ns"]
+            best = min(vals.values()) if vals else None
+            w(f"<tr><td>{esc(s)}</td>")
+            for b in real_backends:
+                if b in vals:
+                    cell = fmt_ms(vals[b]) + " ms"
+                    if vals[b] == best:
+                        cell = f"<b style='color:var(--ok)'>{cell}</b>"
+                    w(f"<td class='num'>{cell}</td>")
+                else:
+                    w("<td class='num'>—</td>")
+            w("</tr>")
+        w("</tbody></table>")
+        w("<p class='legend'>Bold green = fastest for the scene. The <code>null</code> backend is excluded.</p></div>")
+
+        for s in scenes:
+            entries = []
+            for b in real_backends:
+                c = by_key.get((b, s))
+                if c and c.get("decision") == "EXECUTE" and stat_key in c and c[stat_key].get("wall_p50_ns", 0) > 0:
+                    entries.append((b, c[stat_key]["wall_p50_ns"], c[stat_key]["wall_p90_ns"]))
+            if not entries:
+                continue
+            entries.sort(key=lambda e: e[1])
+            max_ns = max(e[1] for e in entries)
+            w(f"<h3>{esc(s)}</h3><div class='card'>")
+            for i, (b, p50, p90) in enumerate(entries):
+                pct = 100.0 * p50 / max_ns if max_ns else 0
+                best_cls = " is-best" if i == 0 else ""
+                w(
+                    f"<div class='bar-row{best_cls}'><div class='bar-name'>{esc(b)}</div>"
+                    f"<div class='bar-track'><div class='bar-fill' style='width:{pct:.1f}%'></div></div>"
+                    f"<div class='bar-val'>{fmt_ms(p50)} ms <span style='opacity:.65'>(p90 {fmt_ms(p90)})</span></div></div>"
+                )
+            w("</div>")
+
+    w("<div class='tab-container'>")
+    w("<div class='tab-nav'>")
+    w("<button class='tab-btn active' onclick=\"showTab('tab-prebaked', this)\">Pre-baked (Draw time only)</button>")
+    w("<button class='tab-btn' onclick=\"showTab('tab-lifecycle', this)\">Full-lifecycle (Create + Draw + Destroy)</button>")
     w("</div>")
 
-    # Bar charts per scene
-    for s in scenes:
-        entries = []
-        for b in real_backends:
-            c = by_key.get((b, s))
-            if c and c.get("decision") == "EXECUTE":
-                entries.append((b, c["stats"]["wall_p50_ns"], c["stats"]["wall_p90_ns"]))
-        if not entries:
-            continue
-        entries.sort(key=lambda e: e[1])
-        max_ns = max(e[1] for e in entries)
-        w(f"<h3>{esc(s)}</h3><div class='card'>")
-        for i, (b, p50, p90) in enumerate(entries):
-            pct = 100.0 * p50 / max_ns if max_ns else 0
-            best_cls = " is-best" if i == 0 else ""
-            w(
-                f"<div class='bar-row{best_cls}'><div class='bar-name'>{esc(b)}</div>"
-                f"<div class='bar-track'><div class='bar-fill' style='width:{pct:.1f}%'></div></div>"
-                f"<div class='bar-val'>{fmt_ms(p50)} ms <span style='opacity:.65'>(p90 {fmt_ms(p90)})</span></div></div>"
-            )
-        w("</div>")
+    w("<div id='tab-prebaked' class='tab-panel active'>")
+    render_perf_tab("stats", "<b>Mode A — Pre-baked geometry (Retained):</b> All path and geometry objects are pre-created during <code>Prepare()</code> outside the benchmark loop. The timed measurement contains <b>only the drawing/rasterization loop</b> (pure drawing throughput).")
+    w("</div>")
 
+    w("<div id='tab-lifecycle' class='tab-panel'>")
+    render_perf_tab("lifecycle_stats", "<b>Mode B — Full lifecycle:</b> Benchmark measures the complete frame lifecycle executed in 3 sequential loops: <b>Loop 1: Create all native paths</b> &rarr; <b>Loop 2: Draw all</b> &rarr; <b>Loop 3: Destroy all</b> (metric is the sum $T_{\\text{create}} + T_{\\text{draw}} + T_{\\text{destroy}}$).")
+    w("</div>")
+    w("</div>")
     # ---------------- Gallery + SSIM ----------------
     if images:
         w("<h2>Rendering gallery — SSIM &amp; PAE (L∞)</h2>")

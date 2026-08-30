@@ -2,9 +2,18 @@
  * Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
  * SPDX-License-Identifier: MIT
  */
-#include "adapters/agg/agg_adapter.h"
+#include <algorithm>
+#include <cmath>
+#include <concepts>
+#include <cstdint>
+#include <cstring>
+#include <functional>
+#include <memory>
+#include <optional>
+#include <string>
+#include <vector>
 
-// AGG includes
+#include "adapters/agg/agg_adapter.h"
 #include "adapters/adapter_registry.h"
 #if defined(_MSC_VER)
 #pragma warning(push)
@@ -93,76 +102,49 @@ void RenderGradientFill(Rasterizer& ras, Scanline& sl, RenBase& ren_base,
         agg::render_scanlines_aa(ras, sl, ren_base, alloc, sg);
     }
 }
-}  // namespace
 
-AggAdapter::AggAdapter() = default;
-AggAdapter::~AggAdapter() = default;
-
-Status AggAdapter::Initialize(const AdapterArgs& args) {
-    (void)args;
-    initialized_ = true;
-    return Status::Ok();
-}
-
-Status AggAdapter::Prepare(const PreparedScene& scene) {
-    (void)scene;
-    if (!initialized_) {
-        return Status::Fail("AggAdapter not initialized");
+agg::path_storage CreateAggPath(const Path& ir_path) {
+    agg::path_storage p;
+    size_t pt_idx = 0;
+    for (auto verb : ir_path.verbs) {
+        switch (verb) {
+            case ir::PathVerb::kMoveTo:
+                p.move_to(ir_path.points[pt_idx], ir_path.points[pt_idx + 1]);
+                pt_idx += 2;
+                break;
+            case ir::PathVerb::kLineTo:
+                p.line_to(ir_path.points[pt_idx], ir_path.points[pt_idx + 1]);
+                pt_idx += 2;
+                break;
+            case ir::PathVerb::kQuadTo:
+                p.curve3(ir_path.points[pt_idx], ir_path.points[pt_idx + 1],
+                         ir_path.points[pt_idx + 2], ir_path.points[pt_idx + 3]);
+                pt_idx += 4;
+                break;
+            case ir::PathVerb::kCubicTo:
+                p.curve4(ir_path.points[pt_idx], ir_path.points[pt_idx + 1],
+                         ir_path.points[pt_idx + 2], ir_path.points[pt_idx + 3],
+                         ir_path.points[pt_idx + 4], ir_path.points[pt_idx + 5]);
+                pt_idx += 6;
+                break;
+            case ir::PathVerb::kClose:
+                p.close_polygon();
+                break;
+        }
     }
-    return Status::Ok();
+    return p;
 }
 
-void AggAdapter::Shutdown() {
-    initialized_ = false;
-}
-
-AdapterInfo AggAdapter::GetInfo() const {
-    return AdapterInfo{.id = "agg",
-                       .detailed_name = "Anti-Grain Geometry 2.6",
-                       .version = "2.6",
-                       .is_cpu_only = true};
-}
-
-CapabilitySet AggAdapter::GetCapabilities() const {
-    return CapabilitySet::All();  // AGG supports most things
-}
-
-Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
-                          std::vector<uint8_t>& output_buffer) {
-    if (!initialized_)
-        return Status::Fail("Not initialized");
-    if (!scene.IsValid())
-        return Status::InvalidArg("Invalid scene");
-
+template <typename RenBase>
+Status ExecuteAggCommands(const PreparedScene& scene, const SurfaceConfig& config,
+                          const std::vector<agg::path_storage>& paths, RenBase& ren_base) {
     uint32_t width = config.width;
     uint32_t height = config.height;
-    uint32_t stride = width * 4;
 
-    // Resize buffer
-    if (output_buffer.size() != stride * height) {
-        output_buffer.resize(stride * height);
-    }
-
-    // 1. Setup AGG Rendering Pipeline
-    agg::rendering_buffer rbuf(output_buffer.data(), width, height, stride);
-
-    // Pixel format: AGG's rgba32 order.
-    // Assuming RGBA8888 (R=0, G=1, B=2, A=3).
-    // AGG pixfmt_rgba32 usually expects R-G-B-A byte order in memory.
-    using pixfmt_t = agg::pixfmt_rgba32;
-    pixfmt_t pixf(rbuf);
-
-    using ren_base_t = agg::renderer_base<pixfmt_t>;
-    ren_base_t ren_base(pixf);
-
-    // Rasterizer
     agg::rasterizer_scanline_aa<> ras;
     agg::scanline_p8 sl;
-
-    // State
     agg::trans_affine ctm;
 
-    // Commands
     const uint8_t* ptr = scene.command_stream.data();
     const uint8_t* end = ptr + scene.command_stream.size();
 
@@ -177,6 +159,7 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
     struct RectClip { float x1, y1, x2, y2; };
     std::vector<RectClip> clip_stack;
     ras.clip_box(0, 0, width, height);
+
     while (ptr < end) {
         ir::Opcode op = static_cast<ir::Opcode>(*ptr++);
 
@@ -186,11 +169,6 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
 
             case ir::Opcode::kClear: {
                 uint32_t c = ReadLE<uint32_t>(ptr);
-                // c is 0xAABBGGRR (little endian read of RGBA bytes) if stream was written as u32
-                // Or stream has R G B A bytes.
-                // IR Loader example: 0xFF, 0xFF, 0xFF, 0xFF.
-                // Let's assume input color is packed RGBA8.
-                // AGG color needs decomposiiton.
                 uint8_t r = c & 0xFF;
                 uint8_t g = (c >> 8) & 0xFF;
                 uint8_t b = (c >> 16) & 0xFF;
@@ -200,7 +178,6 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
             }
 
             case ir::Opcode::kSetMatrix: {
-                // m:f32[6]
                 float m[6];
                 std::memcpy(m, ptr, 24);
                 ptr += 24;
@@ -224,11 +201,6 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
             }
 
             case ir::Opcode::kSetStroke: {
-                // Fixed 2026-08-30: this used to clobber current_paint_id
-                // (the FILL paint) and to discard the cap/join opts byte
-                // entirely -- every stroke rendered with AGG's defaults
-                // (miter join, butt cap) regardless of the scene (the
-                // square asks for bevel+square and got miter).
                 current_stroke_paint_id = ReadLE<uint16_t>(ptr);
                 current_stroke_width = ReadLE<float>(ptr);
                 current_stroke_opts = *ptr++;
@@ -237,59 +209,18 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
 
             case ir::Opcode::kSave:
             case ir::Opcode::kRestore:
-                // TODO: Implement state stack
                 break;
 
             case ir::Opcode::kFillPath:
             case ir::Opcode::kStrokePath: {
                 uint16_t path_id = ReadLE<uint16_t>(ptr);
-                if (path_id >= scene.paths.size())
+                if (path_id >= paths.size())
                     break;
 
-                const auto& ir_path = scene.paths[path_id];
-
-                // Reconstruct path
-                agg::path_storage p;
-                size_t pt_idx = 0;
-                for (auto verb : ir_path.verbs) {
-                    switch (verb) {
-                        case ir::PathVerb::kMoveTo:
-                            p.move_to(ir_path.points[pt_idx], ir_path.points[pt_idx + 1]);
-                            pt_idx += 2;
-                            break;
-                        case ir::PathVerb::kLineTo:
-                            p.line_to(ir_path.points[pt_idx], ir_path.points[pt_idx + 1]);
-                            pt_idx += 2;
-                            break;
-                        case ir::PathVerb::kQuadTo:
-                            // AGG curve3
-                            p.curve3(ir_path.points[pt_idx], ir_path.points[pt_idx + 1],
-                                     ir_path.points[pt_idx + 2], ir_path.points[pt_idx + 3]);
-                            pt_idx += 4;
-                            break;
-                        case ir::PathVerb::kCubicTo:
-                            p.curve4(ir_path.points[pt_idx], ir_path.points[pt_idx + 1],
-                                     ir_path.points[pt_idx + 2], ir_path.points[pt_idx + 3],
-                                     ir_path.points[pt_idx + 4], ir_path.points[pt_idx + 5]);
-                            pt_idx += 6;
-                            break;
-                        case ir::PathVerb::kClose:
-                            p.close_polygon();
-                            break;
-                    }
-                }
-
-                // Flatten curves, then transform. Fixed 2026-08-30: feeding
-                // path_storage straight into the rasterizer treats curve3/
-                // curve4 verbs as polylines through their control points
-                // (circles rendered as octagons, PAE 255 vs cairo);
-                // agg::conv_curve subdivides them into line segments first.
-                agg::conv_curve<agg::path_storage> curved_path(p);
+                agg::conv_curve<agg::path_storage> curved_path(
+                    const_cast<agg::path_storage&>(paths[path_id]));
                 agg::conv_transform<agg::conv_curve<agg::path_storage>> trans_path(curved_path,
                                                                                    ctm);
-
-                // Paint: solid color or gradient span pipeline. Fill and
-                // stroke carry separate paint state.
                 uint16_t paint_id =
                     (op == ir::Opcode::kFillPath) ? current_paint_id : current_stroke_paint_id;
                 agg::rgba8 color(0, 0, 0, 255);
@@ -318,33 +249,6 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                         agg::render_scanlines_aa_solid(ras, sl, ren_base, color);
                     }
                 } else {
-                    // Stroke with the scene's caps and joins
-                    agg::conv_stroke<agg::conv_transform<agg::conv_curve<agg::path_storage>>>
-                        stroke(trans_path);
-                    stroke.width(current_stroke_width);
-                    switch (ir::UnpackStrokeCap(current_stroke_opts)) {
-                        case ir::StrokeCap::kButt:
-                            stroke.line_cap(agg::butt_cap);
-                            break;
-                        case ir::StrokeCap::kRound:
-                            stroke.line_cap(agg::round_cap);
-                            break;
-                        case ir::StrokeCap::kSquare:
-                            stroke.line_cap(agg::square_cap);
-                            break;
-                    }
-                    switch (ir::UnpackStrokeJoin(current_stroke_opts)) {
-                        case ir::StrokeJoin::kMiter:
-                            stroke.line_join(agg::miter_join);
-                            break;
-                        case ir::StrokeJoin::kRound:
-                            stroke.line_join(agg::round_join);
-                            break;
-                        case ir::StrokeJoin::kBevel:
-                            stroke.line_join(agg::bevel_join);
-                            break;
-                    }
-
                     if (!dash_lengths.empty()) {
                         agg::conv_dash<agg::conv_transform<agg::conv_curve<agg::path_storage>>>
                             dashed(trans_path);
@@ -380,6 +284,31 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                         }
                         ras.add_path(dash_stroke);
                     } else {
+                        agg::conv_stroke<agg::conv_transform<agg::conv_curve<agg::path_storage>>>
+                            stroke(trans_path);
+                        stroke.width(current_stroke_width);
+                        switch (ir::UnpackStrokeCap(current_stroke_opts)) {
+                            case ir::StrokeCap::kButt:
+                                stroke.line_cap(agg::butt_cap);
+                                break;
+                            case ir::StrokeCap::kRound:
+                                stroke.line_cap(agg::round_cap);
+                                break;
+                            case ir::StrokeCap::kSquare:
+                                stroke.line_cap(agg::square_cap);
+                                break;
+                        }
+                        switch (ir::UnpackStrokeJoin(current_stroke_opts)) {
+                            case ir::StrokeJoin::kMiter:
+                                stroke.line_join(agg::miter_join);
+                                break;
+                            case ir::StrokeJoin::kRound:
+                                stroke.line_join(agg::round_join);
+                                break;
+                            case ir::StrokeJoin::kBevel:
+                                stroke.line_join(agg::bevel_join);
+                                break;
+                        }
                         ras.add_path(stroke);
                     }
                     agg::render_scanlines_aa_solid(ras, sl, ren_base, color);
@@ -406,28 +335,28 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                 if (ptr + 3 > end)
                     return Status::Ok();
                 uint16_t path_id = ReadLE<uint16_t>(ptr);
-                ptr += 1;  // rule
-
-                if (path_id < scene.paths.size()) {
-                    const auto& cp = scene.paths[path_id];
-                    float x1 = 1e9f, y1 = 1e9f, x2 = -1e9f, y2 = -1e9f;
-                    for (size_t k = 0; k + 1 < cp.points.size(); k += 2) {
-                        float px = cp.points[k];
-                        float py = cp.points[k + 1];
+                ptr += 1;
+                if (path_id < paths.size()) {
+                    const auto& cp = paths[path_id];
+                    double x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
+                    for (unsigned vi = 0; vi < cp.total_vertices(); ++vi) {
+                        double px = 0, py = 0;
+                        cp.vertex(vi, &px, &py);
                         if (px < x1) x1 = px;
                         if (px > x2) x2 = px;
                         if (py < y1) y1 = py;
                         if (py > y2) y2 = py;
                     }
+                    float fx1 = (float)x1, fy1 = (float)y1, fx2 = (float)x2, fy2 = (float)y2;
                     if (!clip_stack.empty()) {
                         const auto& top = clip_stack.back();
-                        if (top.x1 > x1) x1 = top.x1;
-                        if (top.y1 > y1) y1 = top.y1;
-                        if (top.x2 < x2) x2 = top.x2;
-                        if (top.y2 < y2) y2 = top.y2;
+                        if (top.x1 > fx1) fx1 = top.x1;
+                        if (top.y1 > fy1) fy1 = top.y1;
+                        if (top.x2 < fx2) fx2 = top.x2;
+                        if (top.y2 < fy2) fy2 = top.y2;
                     }
-                    clip_stack.push_back({x1, y1, x2, y2});
-                    ras.clip_box(x1, y1, x2, y2);
+                    clip_stack.push_back({fx1, fy1, fx2, fy2});
+                    ras.clip_box(fx1, fy1, fx2, fy2);
                 }
                 break;
             }
@@ -448,9 +377,94 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                 break;
         }
     }
-
     return Status::Ok();
 }
+
+}  // namespace
+
+Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
+                          std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("Not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+
+    uint32_t width = config.width;
+    uint32_t height = config.height;
+    uint32_t stride = width * 4;
+
+    agg::rendering_buffer rbuf(output_buffer.data(), width, height, stride);
+    agg::pixfmt_rgba32 pixf(rbuf);
+    agg::renderer_base<agg::pixfmt_rgba32> ren_base(pixf);
+
+    return ExecuteAggCommands(scene, config, prepared_paths_, ren_base);
+}
+
+Status AggAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                                   std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("Not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+
+    uint32_t width = config.width;
+    uint32_t height = config.height;
+    uint32_t stride = width * 4;
+
+    agg::rendering_buffer rbuf(output_buffer.data(), width, height, stride);
+    agg::pixfmt_rgba32 pixf(rbuf);
+    agg::renderer_base<agg::pixfmt_rgba32> ren_base(pixf);
+    // Loop 1: Create all native paths
+    std::vector<agg::path_storage> paths;
+    paths.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        paths.push_back(CreateAggPath(p));
+    }
+
+    // Loop 2: Draw all
+    Status s = ExecuteAggCommands(scene, config, paths, ren_base);
+
+    // Loop 3: Destroy all
+    paths.clear();
+    return s;
+}
+
+AggAdapter::AggAdapter() = default;
+AggAdapter::~AggAdapter() = default;
+
+Status AggAdapter::Initialize(const AdapterArgs& args) {
+    (void)args;
+    initialized_ = true;
+    return Status::Ok();
+}
+
+Status AggAdapter::Prepare(const PreparedScene& scene) {
+    if (!initialized_) {
+        return Status::Fail("AggAdapter not initialized");
+    }
+    prepared_paths_.clear();
+    prepared_paths_.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        prepared_paths_.push_back(CreateAggPath(p));
+    }
+    return Status::Ok();
+}
+
+void AggAdapter::Shutdown() {
+    prepared_paths_.clear();
+    initialized_ = false;
+}
+AdapterInfo AggAdapter::GetInfo() const {
+    return AdapterInfo{.id = "agg",
+                       .detailed_name = "Anti-Grain Geometry 2.6",
+                       .version = "2.6",
+                       .is_cpu_only = true};
+}
+
+CapabilitySet AggAdapter::GetCapabilities() const {
+    return CapabilitySet::All();  // AGG supports most things
+}
+
 
 void RegisterAggAdapter() {
     AdapterRegistry::Instance().Register("agg", "Anti-Grain Geometry 2.6",

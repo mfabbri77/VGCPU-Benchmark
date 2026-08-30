@@ -13,14 +13,13 @@
 #include <cstdint>
 #include <vector>
 
-namespace vgcpu {
-
 // ============================================================================
 // Raqote FFI declarations (from raqote_ffi Rust crate)
 // ============================================================================
 extern "C" {
 struct RqtSurface;
 struct RqtPath;
+struct RqtPathBuf;
 
 // Surface management
 RqtSurface* rqt_create(int32_t width, int32_t height);
@@ -38,6 +37,9 @@ void rqt_path_cubic_to(RqtPath* ptr, float c1x, float c1y, float c2x, float c2y,
 void rqt_path_close(RqtPath* ptr);
 void rqt_path_rect(RqtPath* ptr, float x, float y, float w, float h);
 
+RqtPathBuf* rqt_path_build(RqtPath* ptr);
+void rqt_path_buf_destroy(RqtPathBuf* ptr);
+
 // Drawing operations
 void rqt_fill_path(RqtSurface* surf, RqtPath* path, uint8_t r, uint8_t g, uint8_t b, uint8_t a,
                    int32_t fill_rule);
@@ -51,8 +53,20 @@ void rqt_clip_push(RqtSurface* surf, RqtPath* path);
 void rqt_clip_pop(RqtSurface* surf);
 void rqt_fill_rect(RqtSurface* surf, float x, float y, float w, float h, uint8_t r, uint8_t g,
                    uint8_t b, uint8_t a);
+
+void rqt_draw_fill_path_buf(RqtSurface* surf, const RqtPathBuf* path, uint8_t r, uint8_t g,
+                            uint8_t b, uint8_t a, int32_t fill_rule);
+void rqt_draw_fill_path_buf_gradient(RqtSurface* surf, const RqtPathBuf* path, int32_t kind,
+                                     float x0, float y0, float x1, float y1,
+                                     const float* offsets, const uint32_t* colors,
+                                     int32_t nstops, int32_t fill_rule);
+void rqt_draw_stroke_path_buf(RqtSurface* surf, const RqtPathBuf* path, uint8_t r, uint8_t g,
+                              uint8_t b, uint8_t a, float width, int32_t cap, int32_t join,
+                              const float* dashes, int32_t ndash, float dash_phase);
+void rqt_clip_push_buf(RqtSurface* surf, const RqtPathBuf* path);
 }
 
+namespace vgcpu {
 namespace {
 
 // Build a Raqote path from IR path data
@@ -101,6 +115,11 @@ RqtPath* CreateRaqotePath(const Path& path_data) {
     return path;
 }
 
+RqtPathBuf* BuildRaqotePathBuf(const Path& path_data) {
+    RqtPath* pb = CreateRaqotePath(path_data);
+    return rqt_path_build(pb);
+}
+
 }  // namespace
 
 Status RaqoteAdapter::Initialize(const AdapterArgs& /*args*/) {
@@ -109,14 +128,27 @@ Status RaqoteAdapter::Initialize(const AdapterArgs& /*args*/) {
 }
 
 Status RaqoteAdapter::Prepare(const PreparedScene& scene) {
-    (void)scene;
     if (!initialized_) {
         return Status::Fail("RaqoteAdapter not initialized");
+    }
+    DestroyPaths();
+    prepared_paths_.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        prepared_paths_.push_back(BuildRaqotePathBuf(p));
     }
     return Status::Ok();
 }
 
+void RaqoteAdapter::DestroyPaths() {
+    for (auto p : prepared_paths_) {
+        if (p)
+            rqt_path_buf_destroy(p);
+    }
+    prepared_paths_.clear();
+}
+
 void RaqoteAdapter::Shutdown() {
+    DestroyPaths();
     initialized_ = false;
 }
 
@@ -131,21 +163,13 @@ CapabilitySet RaqoteAdapter::GetCapabilities() const {
     return CapabilitySet::All();
 }
 
-Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
-                             std::vector<uint8_t>& output_buffer) {
-    if (!initialized_)
-        return Status::Fail("RaqoteAdapter not initialized");
-    if (!scene.IsValid())
-        return Status::InvalidArg("Invalid scene");
-    if (config.width <= 0 || config.height <= 0)
-        return Status::InvalidArg("Invalid surface config");
+namespace {
 
-    // Create Raqote surface
-    RqtSurface* surf = rqt_create(config.width, config.height);
-    if (!surf)
-        return Status::Fail("Failed to create Raqote surface");
+Status ExecuteRaqoteCommands(const PreparedScene& scene, const SurfaceConfig& /*config*/,
+                             const std::vector<RqtPathBuf*>& paths, RqtSurface* surf) {
+    const uint8_t* cmd = scene.command_stream.data();
+    const uint8_t* end = cmd + scene.command_stream.size();
 
-    // Command loop state
     uint16_t current_paint_id = 0;
     ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
     uint16_t current_stroke_paint_id = 0;
@@ -155,8 +179,6 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
     std::vector<float> dash_lengths;
     float dash_phase = 0.0f;
 
-    const uint8_t* cmd = scene.command_stream.data();
-    const uint8_t* end = cmd + scene.command_stream.size();
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
 
@@ -169,15 +191,12 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                     goto done;
                 uint32_t rgba = *reinterpret_cast<const uint32_t*>(cmd);
                 cmd += 4;
+
                 uint8_t r = (rgba >> 0) & 0xFF;
                 uint8_t g = (rgba >> 8) & 0xFF;
                 uint8_t b = (rgba >> 16) & 0xFF;
                 uint8_t a = (rgba >> 24) & 0xFF;
-                // R<->B swap: raqote's DrawTarget is ARGB32 premultiplied
-                // (bytes B,G,R,A on little-endian) and rqt_get_pixels copies
-                // it verbatim; the contract wants R,G,B,A. Swapped input
-                // colors make output bytes land in contract order at zero
-                // per-pixel cost.
+
                 rqt_clear(surf, b, g, r, a);
                 break;
             }
@@ -210,23 +229,22 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size() || current_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_paint_id >= scene.paints.size())
+                    break;
+                if (paths[path_id] == nullptr)
                     break;
 
                 const auto& paint = scene.paints[current_paint_id];
-                RqtPath* path = CreateRaqotePath(scene.paths[path_id]);
+                uint8_t r = (paint.color >> 0) & 0xFF;
+                uint8_t g = (paint.color >> 8) & 0xFF;
+                uint8_t b = (paint.color >> 16) & 0xFF;
+                uint8_t a = (paint.color >> 24) & 0xFF;
 
                 int32_t fill_rule = (current_fill_rule == ir::FillRule::kEvenOdd) ? 1 : 0;
+
                 if (paint.type == ir::PaintType::kSolid) {
-                    uint8_t r = (paint.color >> 0) & 0xFF;
-                    uint8_t g = (paint.color >> 8) & 0xFF;
-                    uint8_t b = (paint.color >> 16) & 0xFF;
-                    uint8_t a = (paint.color >> 24) & 0xFF;
-                    rqt_fill_path(surf, path, b, g, r, a,
-                                  fill_rule);  // R<->B swap: ARGB32 output
+                    rqt_draw_fill_path_buf(surf, paths[path_id], b, g, r, a, fill_rule);
                 } else {
-                    // Gradient: stop colors pre-swapped R<->B (ARGB32 output,
-                    // same convention as solids).
                     std::vector<float> offsets;
                     std::vector<uint32_t> colors;
                     offsets.reserve(paint.stops.size());
@@ -239,18 +257,17 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                         colors.push_back(swapped);
                     }
                     if (paint.type == ir::PaintType::kLinear) {
-                        rqt_fill_path_gradient(surf, path, 0, paint.linear_start_x,
-                                               paint.linear_start_y, paint.linear_end_x,
-                                               paint.linear_end_y, offsets.data(), colors.data(),
-                                               static_cast<int32_t>(offsets.size()), fill_rule);
+                        rqt_draw_fill_path_buf_gradient(
+                            surf, paths[path_id], 0, paint.linear_start_x, paint.linear_start_y,
+                            paint.linear_end_x, paint.linear_end_y, offsets.data(), colors.data(),
+                            static_cast<int32_t>(offsets.size()), fill_rule);
                     } else {
-                        rqt_fill_path_gradient(surf, path, 1, paint.radial_center_x,
-                                               paint.radial_center_y, paint.radial_radius, 0.0f,
-                                               offsets.data(), colors.data(),
-                                               static_cast<int32_t>(offsets.size()), fill_rule);
+                        rqt_draw_fill_path_buf_gradient(
+                            surf, paths[path_id], 1, paint.radial_center_x,
+                            paint.radial_center_y, paint.radial_radius, 0.0f, offsets.data(),
+                            colors.data(), static_cast<int32_t>(offsets.size()), fill_rule);
                     }
                 }
-                // Note: path is consumed by the fill call (Box::from_raw)
                 break;
             }
 
@@ -260,12 +277,12 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size() || current_stroke_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
+                    break;
+                if (paths[path_id] == nullptr)
                     break;
 
                 const auto& paint = scene.paints[current_stroke_paint_id];
-                RqtPath* path = CreateRaqotePath(scene.paths[path_id]);
-
                 uint8_t r = (paint.color >> 0) & 0xFF;
                 uint8_t g = (paint.color >> 8) & 0xFF;
                 uint8_t b = (paint.color >> 16) & 0xFF;
@@ -297,21 +314,19 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                         break;
                 }
 
-                rqt_stroke_path(surf, path, b, g, r, a, current_stroke_width, cap, join,
-                                dash_lengths.empty() ? nullptr : dash_lengths.data(),
-                                static_cast<int32_t>(dash_lengths.size()),
-                                dash_phase);  // R<->B swap: ARGB32 output
+                rqt_draw_stroke_path_buf(surf, paths[path_id], b, g, r, a, current_stroke_width,
+                                        cap, join,
+                                        dash_lengths.empty() ? nullptr : dash_lengths.data(),
+                                        static_cast<int32_t>(dash_lengths.size()), dash_phase);
                 break;
             }
 
             case ir::Opcode::kSave:
             case ir::Opcode::kRestore:
-                // Raqote doesn't have state stack - skip
                 break;
 
             case ir::Opcode::kSetMatrix:
             case ir::Opcode::kConcatMatrix:
-                // TODO: Implement transform support
                 cmd += 24;
                 break;
 
@@ -334,11 +349,10 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                     goto done;
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
-                cmd += 1;  // rule (Raqote uses path winding)
+                cmd += 1;  // rule
 
-                if (path_id < scene.paths.size()) {
-                    RqtPath* path = CreateRaqotePath(scene.paths[path_id]);
-                    rqt_clip_push(surf, path);
+                if (path_id < paths.size() && paths[path_id] != nullptr) {
+                    rqt_clip_push_buf(surf, paths[path_id]);
                 }
                 break;
             }
@@ -348,16 +362,69 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 break;
 
             default:
-                break;
+                goto done;
         }
     }
 
 done:
-    // Copy pixels to output buffer (Raqote uses ARGB order)
+    return Status::Ok();
+}
+
+}  // namespace
+
+Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
+                             std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("RaqoteAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface config");
+
+    RqtSurface* surf = rqt_create(config.width, config.height);
+    if (!surf)
+        return Status::Fail("Failed to create Raqote surface");
+
+    Status s = ExecuteRaqoteCommands(scene, config, prepared_paths_, surf);
+
     rqt_get_pixels(surf, reinterpret_cast<uint32_t*>(output_buffer.data()));
     rqt_destroy(surf);
+    return s;
+}
 
-    return Status::Ok();
+Status RaqoteAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                                      std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("RaqoteAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface config");
+
+    RqtSurface* surf = rqt_create(config.width, config.height);
+    if (!surf)
+        return Status::Fail("Failed to create Raqote surface");
+
+    // Loop 1: Create all native paths
+    std::vector<RqtPathBuf*> paths;
+    paths.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        paths.push_back(BuildRaqotePathBuf(p));
+    }
+
+    // Loop 2: Draw all
+    Status s = ExecuteRaqoteCommands(scene, config, paths, surf);
+
+    // Loop 3: Destroy all
+    for (auto p : paths) {
+        if (p)
+            rqt_path_buf_destroy(p);
+    }
+    paths.clear();
+
+    rqt_get_pixels(surf, reinterpret_cast<uint32_t*>(output_buffer.data()));
+    rqt_destroy(surf);
+    return s;
 }
 
 void RegisterRaqoteAdapter() {

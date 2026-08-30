@@ -81,13 +81,19 @@ CaseRun Harness::BeginCase(IBackendAdapter& adapter, const PreparedScene& scene,
     // themselves; the IR kClear command handles clearing.
     run.output_buffer.resize(static_cast<size_t>(run.config.width) * run.config.height * 4);
 
-    // Warm-up phase (untimed for primary stats)
+    // Warm-up phase for both Pre-baked and Full-lifecycle modes
     // Blueprint Reference: [ARCH-13-02a] Warmup loop (Chapter 3)
     for (int i = 0; i < policy.warmup_iterations; ++i) {
         auto status = adapter.Render(scene, run.config, run.output_buffer);
         if (status.failed()) {
             run.result.decision = CaseDecision::kFail;
             run.result.reasons.push_back("WARMUP_FAILED:" + status.message);
+            return run;
+        }
+        auto lc_status = adapter.RenderLifecycle(scene, run.config, run.output_buffer);
+        if (lc_status.failed()) {
+            run.result.decision = CaseDecision::kFail;
+            run.result.reasons.push_back("LIFECYCLE_WARMUP_FAILED:" + lc_status.message);
             return run;
         }
     }
@@ -97,6 +103,8 @@ CaseRun Harness::BeginCase(IBackendAdapter& adapter, const PreparedScene& scene,
         static_cast<size_t>(policy.measurement_iterations) * static_cast<size_t>(repetitions);
     run.wall_samples.reserve(total_samples);
     run.cpu_samples.reserve(total_samples);
+    run.lifecycle_wall_samples.reserve(total_samples);
+    run.lifecycle_cpu_samples.reserve(total_samples);
     run.active = true;
     return run;
 }
@@ -111,11 +119,11 @@ void Harness::MeasureRepetition(CaseRun& run, const BenchmarkPolicy& policy) {
     if (!run.active) {
         return;
     }
+    // Mode A: Pre-baked (draw time only)
     for (int i = 0; i < policy.measurement_iterations; ++i) {
         auto cpu_start = pal::GetCpuTime();
         auto wall_start = pal::NowMonotonic();
 
-        // Timed section: ONLY rendering
         auto status = run.adapter->Render(*run.scene, run.config, run.output_buffer);
 
         auto wall_end = pal::NowMonotonic();
@@ -131,6 +139,27 @@ void Harness::MeasureRepetition(CaseRun& run, const BenchmarkPolicy& policy) {
         run.wall_samples.push_back(pal::ToNanoseconds(pal::Elapsed(wall_start, wall_end)));
         run.cpu_samples.push_back(pal::ToNanoseconds(cpu_end - cpu_start));
     }
+
+    // Mode B: Full-lifecycle (Loop 1: Create -> Loop 2: Draw -> Loop 3: Destroy)
+    for (int i = 0; i < policy.measurement_iterations; ++i) {
+        auto cpu_start = pal::GetCpuTime();
+        auto wall_start = pal::NowMonotonic();
+
+        auto status = run.adapter->RenderLifecycle(*run.scene, run.config, run.output_buffer);
+
+        auto wall_end = pal::NowMonotonic();
+        auto cpu_end = pal::GetCpuTime();
+
+        if (status.failed()) {
+            run.result.decision = CaseDecision::kFail;
+            run.result.reasons.push_back("LIFECYCLE_RENDER_FAILED:" + status.message);
+            run.active = false;
+            return;
+        }
+
+        run.lifecycle_wall_samples.push_back(pal::ToNanoseconds(pal::Elapsed(wall_start, wall_end)));
+        run.lifecycle_cpu_samples.push_back(pal::ToNanoseconds(cpu_end - cpu_start));
+    }
 }
 
 CaseResult Harness::FinishCase(CaseRun& run, const BenchmarkPolicy& policy) {
@@ -139,8 +168,9 @@ CaseResult Harness::FinishCase(CaseRun& run, const BenchmarkPolicy& policy) {
     }
     CaseResult& result = run.result;
 
-    // Compute statistics
+    // Compute statistics for both modes
     result.stats = ComputeStats(run.wall_samples, run.cpu_samples);
+    result.lifecycle_stats = ComputeStats(run.lifecycle_wall_samples, run.lifecycle_cpu_samples);
     result.decision = CaseDecision::kExecute;
 
     // Artifact Generation

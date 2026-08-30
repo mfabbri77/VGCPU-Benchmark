@@ -21,9 +21,14 @@ class AmanithVGAdapter : public IBackendAdapter {
     [[nodiscard]] CapabilitySet GetCapabilities() const override;
     Status Render(const PreparedScene& scene, const SurfaceConfig& config,
                   std::vector<uint8_t>& output_buffer) override;
-
+    Status RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                           std::vector<uint8_t>& output_buffer) override;
    private:
+    void DestroyPaths();
+
     bool initialized_ = false;
+    void* context_ = nullptr;
+    std::vector<uint32_t> vg_paths_;  // VGPath handles created in Prepare()
 };
 
 /// Register AmanithVG adapter with the adapter registry.

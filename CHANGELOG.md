@@ -31,6 +31,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- Dual-mode benchmarking architecture (owner directive):
+  - **Mode A (Pre-baked / Retained)**: Path and geometry objects are
+    pre-created once during `Prepare()` outside the timing loop. The benchmark
+    measures pure drawing/rasterization throughput ($T_{\text{draw}}$ only).
+  - **Mode B (Full-lifecycle)**: Measures the complete frame lifecycle executed
+    in 3 distinct sequential loops: Loop 1 (Create/upload all paths) -> Loop 2
+    (Draw all) -> Loop 3 (Destroy all), measuring the sum
+    $T_{\text{create}} + T_{\text{draw}} + T_{\text{destroy}}$.
+  - Implemented across all 10 backend adapters (`Prepare` pre-populates native
+    path arrays; `Render` draws with pre-created paths; `RenderLifecycle` executes
+    the 3 loops).
+  - HTML report (`tools/html_report.py`) features interactive tabs in the
+    Performance section: **Tab 1: Pre-baked (Draw time only)** and
+    **Tab 2: Full-lifecycle (Create + Draw + Destroy)**.
 - Dedicated working-memory profiler subcommand (`vgcpu-benchmark profile-memory` / `memory`):
   measures single-frame heap allocation metrics completely separated from
   performance benchmark runs (zero timing contamination on performance runs).

@@ -150,14 +150,19 @@ Status ThorVGAdapter::Initialize(const AdapterArgs& args) {
 }
 
 Status ThorVGAdapter::Prepare(const PreparedScene& scene) {
-    (void)scene;
     if (!initialized_) {
         return Status::Fail("ThorVGAdapter not initialized");
+    }
+    prepared_shapes_.clear();
+    prepared_shapes_.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        prepared_shapes_.push_back(CreateShape(p));
     }
     return Status::Ok();
 }
 
 void ThorVGAdapter::Shutdown() {
+    prepared_shapes_.clear();
     if (initialized_) {
         tvg::Initializer::term(tvg::CanvasEngine::Sw);
         initialized_ = false;
@@ -175,40 +180,17 @@ CapabilitySet ThorVGAdapter::GetCapabilities() const {
     return CapabilitySet::All();
 }
 
-Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
-                             std::vector<uint8_t>& output_buffer) {
-    if (!initialized_)
-        return Status::Fail("ThorVGAdapter not initialized");
-    if (!scene.IsValid())
-        return Status::InvalidArg("Invalid scene");
-    if (config.width <= 0 || config.height <= 0)
-        return Status::InvalidArg("Invalid surface configuration");
+namespace {
 
-    // Create SW canvas
-    auto canvas = tvg::SwCanvas::gen();
-    if (!canvas) {
-        return Status::Fail("Failed to create ThorVG SwCanvas");
-    }
-
-    // Target the output buffer. ABGR8888 as a little-endian u32 stores
-    // bytes R,G,B,A -- exactly the adapter contract's RGBA8 byte order
-    // (ARGB8888 would store B,G,R,A and swap red/blue for consumers).
-    auto result =
-        canvas->target(reinterpret_cast<uint32_t*>(output_buffer.data()),
-                       static_cast<uint32_t>(config.width), static_cast<uint32_t>(config.width),
-                       static_cast<uint32_t>(config.height), tvg::SwCanvas::ABGR8888);
-    if (result != tvg::Result::Success) {
-        return Status::Fail("Failed to set ThorVG canvas target");
-    }
-
-    // Command loop
+template <typename ShapeGetter>
+Status ExecuteThorVGCommands(const PreparedScene& scene, const SurfaceConfig& config,
+                             ShapeGetter&& get_shape, tvg::SwCanvas* canvas) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
     uint16_t current_paint_id = 0;
     ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
 
-    // Stroke state
     uint16_t current_stroke_paint_id = 0;
     float current_stroke_width = 1.0f;
     tvg::StrokeCap current_stroke_cap = tvg::StrokeCap::Butt;
@@ -232,7 +214,6 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 uint32_t rgba = *reinterpret_cast<const uint32_t*>(cmd);
                 cmd += 4;
 
-                // Create a full-screen rectangle for clear
                 auto rect = tvg::Shape::gen();
                 rect->appendRect(0, 0, static_cast<float>(config.width),
                                  static_cast<float>(config.height), 0, 0);
@@ -293,28 +274,27 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size())
-                    break;
                 if (current_paint_id >= scene.paints.size())
                     break;
 
-                auto shape = CreateShape(scene.paths[path_id]);
-                const auto& paint = scene.paints[current_paint_id];
+                auto shape = get_shape(path_id);
+                if (!shape)
+                    break;
 
+                const auto& paint = scene.paints[current_paint_id];
                 if (paint.type == ir::PaintType::kSolid) {
                     ApplySolidFill(shape.get(), paint.color);
                 } else {
                     ApplyGradientFill(shape.get(), paint);
                 }
 
-                // Set fill rule: ThorVG uses FillRule::Winding (not NonZero)
                 shape->fill(current_fill_rule == ir::FillRule::kEvenOdd ? tvg::FillRule::EvenOdd
                                                                         : tvg::FillRule::Winding);
 
                 if (!clip_stack.empty()) {
                     const auto& top_clip = clip_stack.back();
-                    if (top_clip.path_id < scene.paths.size()) {
-                        auto clipper = CreateShape(scene.paths[top_clip.path_id]);
+                    auto clipper = get_shape(top_clip.path_id);
+                    if (clipper) {
                         clipper->fill(top_clip.rule == ir::FillRule::kEvenOdd
                                           ? tvg::FillRule::EvenOdd
                                           : tvg::FillRule::Winding);
@@ -332,20 +312,18 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size())
-                    break;
                 if (current_stroke_paint_id >= scene.paints.size())
                     break;
 
-                auto shape = CreateShape(scene.paths[path_id]);
-                const auto& paint = scene.paints[current_stroke_paint_id];
+                auto shape = get_shape(path_id);
+                if (!shape)
+                    break;
 
-                // Configure stroke using overloaded stroke() methods
+                const auto& paint = scene.paints[current_stroke_paint_id];
                 shape->stroke(current_stroke_width);
                 shape->stroke(current_stroke_cap);
                 shape->stroke(current_stroke_join);
 
-                // Stroke color
                 uint8_t r = (paint.color >> 0) & 0xFF;
                 uint8_t g = (paint.color >> 8) & 0xFF;
                 uint8_t b = (paint.color >> 16) & 0xFF;
@@ -358,8 +336,8 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
 
                 if (!clip_stack.empty()) {
                     const auto& top_clip = clip_stack.back();
-                    if (top_clip.path_id < scene.paths.size()) {
-                        auto clipper = CreateShape(scene.paths[top_clip.path_id]);
+                    auto clipper = get_shape(top_clip.path_id);
+                    if (clipper) {
                         clipper->fill(top_clip.rule == ir::FillRule::kEvenOdd
                                           ? tvg::FillRule::EvenOdd
                                           : tvg::FillRule::Winding);
@@ -372,9 +350,6 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
             }
 
             case ir::Opcode::kSave:
-                // ThorVG doesn't have save/restore, skip
-                break;
-
             case ir::Opcode::kRestore:
                 break;
 
@@ -382,7 +357,7 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 if (cmd + 5 > end)
                     goto done;
                 uint8_t count = *cmd++;
-                cmd += 4;  // ThorVG stroke() takes pattern only, no phase offset
+                cmd += 4;
                 if (cmd + 4 * count > end)
                     goto done;
                 const float* lengths = reinterpret_cast<const float*>(cmd);
@@ -407,26 +382,95 @@ Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 break;
 
             case ir::Opcode::kSetMatrix:
-                // TODO: Implement matrix transforms
-                cmd += 24;
-                break;
-
             case ir::Opcode::kConcatMatrix:
                 cmd += 24;
                 break;
 
             default:
-                break;
+                goto done;
         }
     }
 
 done:
-    // Sync to complete rasterization
-    // [API-06-05] Measurement must include work completion (sync/flush) (Chapter 4)
     canvas->draw();
     canvas->sync();
-
     return Status::Ok();
+}
+
+}  // namespace
+
+Status ThorVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
+                             std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("ThorVGAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
+
+    auto canvas = tvg::SwCanvas::gen();
+    if (!canvas) {
+        return Status::Fail("Failed to create ThorVG SwCanvas");
+    }
+
+    auto result =
+        canvas->target(reinterpret_cast<uint32_t*>(output_buffer.data()),
+                       static_cast<uint32_t>(config.width), static_cast<uint32_t>(config.width),
+                       static_cast<uint32_t>(config.height), tvg::SwCanvas::ABGR8888);
+    if (result != tvg::Result::Success) {
+        return Status::Fail("Failed to set ThorVG canvas target");
+    }
+
+    auto get_shape = [&](uint16_t path_id) -> std::unique_ptr<tvg::Shape> {
+        if (path_id >= prepared_shapes_.size() || !prepared_shapes_[path_id])
+            return nullptr;
+        auto dup = prepared_shapes_[path_id]->duplicate();
+        return std::unique_ptr<tvg::Shape>(static_cast<tvg::Shape*>(dup));
+    };
+    return ExecuteThorVGCommands(scene, config, get_shape, canvas.get());
+}
+
+Status ThorVGAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                                      std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("ThorVGAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
+
+    auto canvas = tvg::SwCanvas::gen();
+    if (!canvas) {
+        return Status::Fail("Failed to create ThorVG SwCanvas");
+    }
+
+    auto result =
+        canvas->target(reinterpret_cast<uint32_t*>(output_buffer.data()),
+                       static_cast<uint32_t>(config.width), static_cast<uint32_t>(config.width),
+                       static_cast<uint32_t>(config.height), tvg::SwCanvas::ABGR8888);
+    if (result != tvg::Result::Success) {
+        return Status::Fail("Failed to set ThorVG canvas target");
+    }
+
+    // Loop 1: Create all native shapes
+    std::vector<std::unique_ptr<tvg::Shape>> shapes;
+    shapes.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        shapes.push_back(CreateShape(p));
+    }
+
+    auto get_shape = [&](uint16_t path_id) -> std::unique_ptr<tvg::Shape> {
+        if (path_id >= shapes.size() || !shapes[path_id])
+            return nullptr;
+        auto dup = shapes[path_id]->duplicate();
+        return std::unique_ptr<tvg::Shape>(static_cast<tvg::Shape*>(dup));
+    };
+    // Loop 2: Draw all
+    Status s = ExecuteThorVGCommands(scene, config, get_shape, canvas.get());
+
+    // Loop 3: Destroy all
+    shapes.clear();
+    return s;
 }
 
 void RegisterThorVGAdapter() {

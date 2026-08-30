@@ -4,6 +4,8 @@
 #pragma once
 
 #include "adapters/adapter_interface.h"
+#include "include/core/SkPath.h"
+#include <vector>
 
 namespace vgcpu {
 
@@ -20,9 +22,12 @@ class SkiaAdapter : public IBackendAdapter {
 
     Status Render(const PreparedScene& scene, const SurfaceConfig& config,
                   std::vector<uint8_t>& output_buffer) override;
+    Status RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                           std::vector<uint8_t>& output_buffer) override;
 
    private:
     bool initialized_ = false;
+    std::vector<SkPath> prepared_paths_;
 };
 
 void RegisterSkiaAdapter();

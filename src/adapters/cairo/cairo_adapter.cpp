@@ -110,14 +110,33 @@ Status CairoAdapter::Initialize(const AdapterArgs& args) {
 }
 
 Status CairoAdapter::Prepare(const PreparedScene& scene) {
-    (void)scene;
     if (!initialized_) {
         return Status::Fail("CairoAdapter not initialized");
     }
+    DestroyPaths();
+    cairo_surface_t* temp_surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
+    cairo_t* temp_cr = cairo_create(temp_surf);
+    prepared_paths_.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        cairo_new_path(temp_cr);
+        BuildPath(temp_cr, p);
+        prepared_paths_.push_back(cairo_copy_path(temp_cr));
+    }
+    cairo_destroy(temp_cr);
+    cairo_surface_destroy(temp_surf);
     return Status::Ok();
 }
 
+void CairoAdapter::DestroyPaths() {
+    for (auto p : prepared_paths_) {
+        if (p)
+            cairo_path_destroy(p);
+    }
+    prepared_paths_.clear();
+}
+
 void CairoAdapter::Shutdown() {
+    DestroyPaths();
     initialized_ = false;
 }
 
@@ -133,47 +152,13 @@ CapabilitySet CairoAdapter::GetCapabilities() const {
     return CapabilitySet::All();
 }
 
-Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
-                            std::vector<uint8_t>& output_buffer) {
-    if (!initialized_) {
-        return Status::Fail("CairoAdapter not initialized");
-    }
+namespace {
 
-    if (!scene.IsValid()) {
-        return Status::InvalidArg("Invalid scene");
-    }
-
-    if (config.width <= 0 || config.height <= 0) {
-        return Status::InvalidArg("Invalid surface configuration");
-    }
-
-    // Buffer is pre-sized by harness. Contents are undefined until kClear.
-    // Cairo uses ARGB32 format with specific stride alignment
-    int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, config.width);
-
-    // Create Cairo surface wrapping our buffer
-    cairo_surface_t* surface = cairo_image_surface_create_for_data(
-        output_buffer.data(), CAIRO_FORMAT_ARGB32, config.width, config.height, stride);
-
-    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
-        return Status::Fail("Failed to create Cairo surface");
-    }
-
-    // Create drawing context
-    cairo_t* cr = cairo_create(surface);
-    if (cairo_status(cr) != CAIRO_STATUS_SUCCESS) {
-        cairo_surface_destroy(surface);
-        return Status::Fail("Failed to create Cairo context");
-    }
-
-    // Set default antialias
-    cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
-
-    // Process command stream
+Status ExecuteCairoCommands(const PreparedScene& scene, const SurfaceConfig& config,
+                            const std::vector<cairo_path_t*>& paths, cairo_t* cr) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
-    // Current state
     uint16_t current_paint_id = 0;
     ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
     uint16_t current_stroke_paint_id = 0;
@@ -182,6 +167,7 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
     ir::StrokeJoin current_stroke_join = ir::StrokeJoin::kMiter;
     std::vector<double> dash_lengths;
     double dash_phase = 0.0;
+
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
 
@@ -195,20 +181,14 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 uint32_t rgba = *reinterpret_cast<const uint32_t*>(cmd);
                 cmd += 4;
 
-                // Extract RGBA components
                 double r = static_cast<double>((rgba >> 0) & 0xFF) / 255.0;
                 double g = static_cast<double>((rgba >> 8) & 0xFF) / 255.0;
                 double b = static_cast<double>((rgba >> 16) & 0xFF) / 255.0;
                 double a = static_cast<double>((rgba >> 24) & 0xFF) / 255.0;
 
-                // Clear by filling entire surface
                 cairo_save(cr);
                 cairo_identity_matrix(cr);
                 cairo_rectangle(cr, 0, 0, config.width, config.height);
-                // R<->B swap: CAIRO_FORMAT_ARGB32 stores bytes B,G,R,A on
-                // little-endian; the contract wants R,G,B,A. Swapped input
-                // colors make the output bytes land in contract order at
-                // zero per-pixel cost (blending is channel-symmetric).
                 cairo_set_source_rgba(cr, b, g, r, a);
                 cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
                 cairo_fill(cr);
@@ -245,13 +225,14 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size())
+                if (path_id >= paths.size() || current_paint_id >= scene.paints.size())
                     break;
-                if (current_paint_id >= scene.paints.size())
+                if (paths[path_id] == nullptr)
                     break;
 
                 cairo_pattern_t* grad_pat = SetSourceFromPaint(cr, scene.paints[current_paint_id]);
-                BuildPath(cr, scene.paths[path_id]);
+                cairo_new_path(cr);
+                cairo_append_path(cr, paths[path_id]);
 
                 cairo_fill_rule_t rule = (current_fill_rule == ir::FillRule::kEvenOdd)
                                              ? CAIRO_FILL_RULE_EVEN_ODD
@@ -270,14 +251,15 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size())
+                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
                     break;
-                if (current_stroke_paint_id >= scene.paints.size())
+                if (paths[path_id] == nullptr)
                     break;
 
                 cairo_pattern_t* grad_pat =
                     SetSourceFromPaint(cr, scene.paints[current_stroke_paint_id]);
-                BuildPath(cr, scene.paths[path_id]);
+                cairo_new_path(cr);
+                cairo_append_path(cr, paths[path_id]);
 
                 cairo_set_line_width(cr, current_stroke_width);
                 cairo_line_cap_t cap = CAIRO_LINE_CAP_BUTT;
@@ -318,8 +300,6 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
             case ir::Opcode::kSetMatrix: {
                 if (cmd + 24 > end)
                     goto done;
-                // IR [a b c d e f] = [m00 m01 m10 m11 m02 m12]:
-                // cairo_matrix_init(xx, yx, xy, yy, x0, y0)
                 const float* m = reinterpret_cast<const float*>(cmd);
                 cmd += 24;
                 cairo_matrix_t mtx;
@@ -369,8 +349,9 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
 
                 cairo_save(cr);
-                if (path_id < scene.paths.size()) {
-                    BuildPath(cr, scene.paths[path_id]);
+                if (path_id < paths.size() && paths[path_id] != nullptr) {
+                    cairo_new_path(cr);
+                    cairo_append_path(cr, paths[path_id]);
                     cairo_set_fill_rule(cr, rule == ir::FillRule::kEvenOdd
                                                 ? CAIRO_FILL_RULE_EVEN_ODD
                                                 : CAIRO_FILL_RULE_WINDING);
@@ -384,18 +365,92 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 break;
 
             default:
-                // Unknown opcode: cannot know its operand size, stop parsing
-                // rather than desynchronize the stream.
                 goto done;
         }
     }
 
 done:
-    // Cleanup
+    return Status::Ok();
+}
+
+}  // namespace
+
+Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
+                            std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("CairoAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
+
+    int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, config.width);
+    cairo_surface_t* surface = cairo_image_surface_create_for_data(
+        output_buffer.data(), CAIRO_FORMAT_ARGB32, config.width, config.height, stride);
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        return Status::Fail("Failed to create Cairo surface");
+    }
+
+    cairo_t* cr = cairo_create(surface);
+    if (cairo_status(cr) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surface);
+        return Status::Fail("Failed to create Cairo context");
+    }
+    cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
+
+    Status s = ExecuteCairoCommands(scene, config, prepared_paths_, cr);
+
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
+    return s;
+}
 
-    return Status::Ok();
+Status CairoAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                                     std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("CairoAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
+
+    int stride = cairo_format_stride_for_width(CAIRO_FORMAT_ARGB32, config.width);
+    cairo_surface_t* surface = cairo_image_surface_create_for_data(
+        output_buffer.data(), CAIRO_FORMAT_ARGB32, config.width, config.height, stride);
+    if (cairo_surface_status(surface) != CAIRO_STATUS_SUCCESS) {
+        return Status::Fail("Failed to create Cairo surface");
+    }
+
+    cairo_t* cr = cairo_create(surface);
+    if (cairo_status(cr) != CAIRO_STATUS_SUCCESS) {
+        cairo_surface_destroy(surface);
+        return Status::Fail("Failed to create Cairo context");
+    }
+    cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
+
+    // Loop 1: Create all native paths
+    std::vector<cairo_path_t*> paths;
+    paths.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        cairo_new_path(cr);
+        BuildPath(cr, p);
+        paths.push_back(cairo_copy_path(cr));
+    }
+    cairo_new_path(cr);
+
+    // Loop 2: Draw all
+    Status s = ExecuteCairoCommands(scene, config, paths, cr);
+
+    // Loop 3: Destroy all
+    for (auto p : paths) {
+        if (p)
+            cairo_path_destroy(p);
+    }
+    paths.clear();
+
+    cairo_destroy(cr);
+    cairo_surface_destroy(surface);
+    return s;
 }
 
 // Explicit registration function

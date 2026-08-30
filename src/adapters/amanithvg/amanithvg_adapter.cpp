@@ -148,20 +148,63 @@ Status AmanithVGAdapter::Initialize(const AdapterArgs& /*args*/) {
     if (vgInitializeMZT() != VG_TRUE) {
         return Status::Fail("Failed to initialize AmanithVG library");
     }
+    context_ = vgPrivContextCreateMZT(nullptr);
+    if (!context_) {
+        vgTerminateMZT();
+        return Status::Fail("Failed to create AmanithVG context");
+    }
     initialized_ = true;
     return Status::Ok();
 }
 
 Status AmanithVGAdapter::Prepare(const PreparedScene& scene) {
-    (void)scene;
-    if (!initialized_) {
+    if (!initialized_ || !context_) {
         return Status::Fail("AmanithVGAdapter not initialized");
     }
+
+    // Bind context to a minimal offscreen surface during Prepare so we can
+    // create and populate OpenVG path objects.
+    void* dummy_surface = vgPrivSurfaceCreateMZT(16, 16, VG_FALSE, VG_TRUE, VG_FALSE);
+    if (!dummy_surface) {
+        return Status::Fail("Failed to create temporary AmanithVG surface");
+    }
+    vgPrivMakeCurrentMZT(context_, dummy_surface);
+
+    DestroyPaths();
+
+    // Pre-create all VGPath handles for the scene (proper OpenVG architecture)
+    vg_paths_.reserve(scene.paths.size());
+    for (const auto& ir_path : scene.paths) {
+        vg_paths_.push_back(CreatePath(ir_path));
+    }
+
+    vgPrivMakeCurrentMZT(nullptr, nullptr);
+    vgPrivSurfaceDestroyMZT(dummy_surface);
     return Status::Ok();
+}
+
+void AmanithVGAdapter::DestroyPaths() {
+    for (auto p : vg_paths_) {
+        if (p != VG_INVALID_HANDLE) {
+            vgDestroyPath(p);
+        }
+    }
+    vg_paths_.clear();
 }
 
 void AmanithVGAdapter::Shutdown() {
     if (initialized_) {
+        if (context_) {
+            void* dummy_surface = vgPrivSurfaceCreateMZT(16, 16, VG_FALSE, VG_TRUE, VG_FALSE);
+            if (dummy_surface) {
+                vgPrivMakeCurrentMZT(context_, dummy_surface);
+                DestroyPaths();
+                vgPrivMakeCurrentMZT(nullptr, nullptr);
+                vgPrivSurfaceDestroyMZT(dummy_surface);
+            }
+            vgPrivContextDestroyMZT(context_);
+            context_ = nullptr;
+        }
         vgTerminateMZT();
         initialized_ = false;
     }
@@ -178,68 +221,11 @@ CapabilitySet AmanithVGAdapter::GetCapabilities() const {
     return CapabilitySet::All();
 }
 
-Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
-                                std::vector<uint8_t>& output_buffer) {
-    if (!initialized_)
-        return Status::Fail("AmanithVGAdapter not initialized");
-    if (!scene.IsValid())
-        return Status::InvalidArg("Invalid scene");
-    if (config.width <= 0 || config.height <= 0)
-        return Status::InvalidArg("Invalid surface configuration");
+namespace {
 
-    // Create OpenVG context (no shared context)
-    void* context = vgPrivContextCreateMZT(nullptr);
-    if (!context) {
-        return Status::Fail("Failed to create AmanithVG context");
-    }
-
-    // Create surface using direct pixel buffer
-    // Parameters: width, height, linearColorSpace, alphaPremultiplied, pixels, alphaMaskPixels
-    void* surface = vgPrivSurfaceCreateByPointerMZT(config.width, config.height,
-                                                    VG_FALSE,  // sRGB (non-linear) color space
-                                                    VG_TRUE,   // alpha premultiplied
-                                                    output_buffer.data(),
-                                                    nullptr);  // no alpha mask
-
-    if (!surface) {
-        vgPrivContextDestroyMZT(context);
-        return Status::Fail("Failed to create AmanithVG surface");
-    }
-
-    // Bind context and surface
-    if (vgPrivMakeCurrentMZT(context, surface) != VG_TRUE) {
-        vgPrivSurfaceDestroyMZT(surface);
-        vgPrivContextDestroyMZT(context);
-        return Status::Fail("Failed to bind AmanithVG context and surface");
-    }
-
-    // Set default rendering state
-    vgSeti(VG_RENDERING_QUALITY, VG_RENDERING_QUALITY_BETTER);
-    vgSeti(VG_BLEND_MODE, VG_BLEND_SRC_OVER);
-    vgSetfv(VG_STROKE_DASH_PATTERN, 0, nullptr);
-    vgSetf(VG_STROKE_DASH_PHASE, 0.0f);
-    vgClipPathClearMZT();
-
-    // OpenVG surfaces have a bottom-left (SW) origin with Y up; the adapter
-    // contract is top-left (NW) origin with Y down. Load a Y-flip
-    // (translate(0, H) * scale(1, -1)) as the BASE path-user-to-surface
-    // matrix instead of identity. Benchmark-neutral by construction: OpenVG
-    // applies this matrix to every path vertex regardless of its value, so
-    // a flip costs exactly what identity costs -- no per-pixel work is
-    // added. Column-major 3x3.
-    const VGfloat flip_matrix[9] = {1.0f, 0.0f,
-                                    0.0f,  // column 0
-                                    0.0f, -1.0f,
-                                    0.0f,  // column 1
-                                    0.0f, static_cast<VGfloat>(config.height),
-                                    1.0f};  // column 2
-    vgLoadMatrix(flip_matrix);
-
-    // Create reusable paint handles
-    VGPaint fill_paint = vgCreatePaint();
-    VGPaint stroke_paint = vgCreatePaint();
-
-    // Command loop state
+Status ExecuteAmanithVGCommands(const PreparedScene& scene, const SurfaceConfig& config,
+                                const std::vector<uint32_t>& paths, VGPaint fill_paint,
+                                VGPaint stroke_paint, const VGfloat flip_matrix[9]) {
     uint16_t current_paint_id = 0;
     ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
     uint16_t current_stroke_paint_id = 0;
@@ -264,7 +250,7 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                 cmd += 4;
 
                 VGfloat color[4];
-                color[0] = ((rgba >> 16) & 0xFF) / 255.0f;  // B fed as R (see SetPaintColor)
+                color[0] = ((rgba >> 16) & 0xFF) / 255.0f;  // B fed as R
                 color[1] = ((rgba >> 8) & 0xFF) / 255.0f;
                 color[2] = ((rgba >> 0) & 0xFF) / 255.0f;  // R fed as B
                 color[3] = ((rgba >> 24) & 0xFF) / 255.0f;
@@ -301,17 +287,14 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size())
-                    break;
-                if (current_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_paint_id >= scene.paints.size())
                     break;
 
                 const auto& ir_paint = scene.paints[current_paint_id];
-                VGPath path = CreatePath(scene.paths[path_id]);
+                VGPath path = paths[path_id];
                 if (path == VG_INVALID_HANDLE)
                     break;
 
-                // Configure paint
                 if (ir_paint.type == ir::PaintType::kSolid) {
                     vgSetParameteri(fill_paint, VG_PAINT_TYPE, VG_PAINT_TYPE_COLOR);
                     SetPaintColor(fill_paint, ir_paint.color);
@@ -320,12 +303,10 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                 }
                 vgSetPaint(fill_paint, VG_FILL_PATH);
 
-                // Set fill rule
                 vgSeti(VG_FILL_RULE,
                        current_fill_rule == ir::FillRule::kEvenOdd ? VG_EVEN_ODD : VG_NON_ZERO);
 
                 vgDrawPath(path, VG_FILL_PATH);
-                vgDestroyPath(path);
                 break;
             }
 
@@ -335,17 +316,14 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size())
-                    break;
-                if (current_stroke_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
                     break;
 
                 const auto& ir_paint = scene.paints[current_stroke_paint_id];
-                VGPath path = CreatePath(scene.paths[path_id]);
+                VGPath path = paths[path_id];
                 if (path == VG_INVALID_HANDLE)
                     break;
 
-                // Configure stroke paint
                 if (ir_paint.type == ir::PaintType::kSolid) {
                     vgSetParameteri(stroke_paint, VG_PAINT_TYPE, VG_PAINT_TYPE_COLOR);
                     SetPaintColor(stroke_paint, ir_paint.color);
@@ -354,7 +332,6 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                 }
                 vgSetPaint(stroke_paint, VG_STROKE_PATH);
 
-                // Configure stroke parameters
                 vgSetf(VG_STROKE_LINE_WIDTH, current_stroke_width);
 
                 VGCapStyle cap = VG_CAP_BUTT;
@@ -386,31 +363,22 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                 vgSeti(VG_STROKE_JOIN_STYLE, join);
 
                 vgDrawPath(path, VG_STROKE_PATH);
-                vgDestroyPath(path);
                 break;
             }
 
             case ir::Opcode::kSave:
-                // OpenVG doesn't have save/restore for full state
-                // but we can push matrix
-                break;
-
             case ir::Opcode::kRestore:
                 break;
 
             case ir::Opcode::kSetMatrix: {
                 if (cmd + 24 > end)
                     goto done;
-                // OpenVG uses 3x3 affine matrix (column-major)
-                // IR uses [a b c d e f] = [m00 m01 m10 m11 m02 m12]
                 const float* m = reinterpret_cast<const float*>(cmd);
                 cmd += 24;
 
-                // Compose on top of the base Y-flip (never overwrite it):
-                // resulting transform = flip * scene_matrix.
-                VGfloat matrix[9] = {m[0], m[2], m[4],   // column 0
-                                     m[1], m[3], m[5],   // column 1
-                                     0.0f, 0.0f, 1.0f};  // column 2
+                VGfloat matrix[9] = {m[0], m[2], m[4],
+                                     m[1], m[3], m[5],
+                                     0.0f, 0.0f, 1.0f};
                 vgLoadMatrix(flip_matrix);
                 vgMultMatrix(matrix);
                 break;
@@ -453,8 +421,8 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                 cmd += 2;
                 ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
 
-                if (path_id < scene.paths.size()) {
-                    VGPath path = CreatePath(scene.paths[path_id]);
+                if (path_id < paths.size()) {
+                    VGPath path = paths[path_id];
                     if (path != VG_INVALID_HANDLE) {
                         vgSeti(static_cast<VGParamType>(VG_CLIP_RULE_MZT),
                                rule == ir::FillRule::kEvenOdd ? VG_EVEN_ODD : VG_NON_ZERO);
@@ -463,7 +431,6 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
                         vgLoadMatrix(flip_matrix);
                         vgSeti(VG_MATRIX_MODE, VG_MATRIX_PATH_USER_TO_SURFACE);
                         vgClipPathPushMZT(path, VG_TRUE);
-                        vgDestroyPath(path);
                     }
                 }
                 break;
@@ -472,25 +439,122 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
             case ir::Opcode::kClipPop:
                 vgClipPathPopMZT();
                 break;
+
             default:
                 break;
         }
     }
 
 done:
-    // Cleanup OpenVG objects
+    return Status::Ok();
+}
+
+}  // namespace
+
+Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
+                                std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("AmanithVGAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
+
+    void* surface = vgPrivSurfaceCreateByPointerMZT(config.width, config.height,
+                                                    VG_FALSE, VG_TRUE,
+                                                    output_buffer.data(), nullptr);
+    if (!surface) {
+        return Status::Fail("Failed to create AmanithVG surface");
+    }
+    if (vgPrivMakeCurrentMZT(context_, surface) != VG_TRUE) {
+        vgPrivSurfaceDestroyMZT(surface);
+        return Status::Fail("Failed to bind AmanithVG context and surface");
+    }
+
+    vgSeti(VG_RENDERING_QUALITY, VG_RENDERING_QUALITY_BETTER);
+    vgSeti(VG_BLEND_MODE, VG_BLEND_SRC_OVER);
+    vgSetfv(VG_STROKE_DASH_PATTERN, 0, nullptr);
+    vgSetf(VG_STROKE_DASH_PHASE, 0.0f);
+    vgClipPathClearMZT();
+
+    const VGfloat flip_matrix[9] = {1.0f, 0.0f, 0.0f,
+                                    0.0f, -1.0f, 0.0f,
+                                    0.0f, static_cast<VGfloat>(config.height), 1.0f};
+    vgLoadMatrix(flip_matrix);
+
+    VGPaint fill_paint = vgCreatePaint();
+    VGPaint stroke_paint = vgCreatePaint();
+
+    Status s = ExecuteAmanithVGCommands(scene, config, vg_paths_, fill_paint, stroke_paint, flip_matrix);
+
     vgDestroyPaint(fill_paint);
     vgDestroyPaint(stroke_paint);
-
-    // Flush rendering (SRE should be synchronous, but ensure completion)
     vgFinish();
 
-    // Release context and surface
     vgPrivMakeCurrentMZT(nullptr, nullptr);
     vgPrivSurfaceDestroyMZT(surface);
-    vgPrivContextDestroyMZT(context);
+    return s;
+}
 
-    return Status::Ok();
+Status AmanithVGAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                                         std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("AmanithVGAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
+
+    void* surface = vgPrivSurfaceCreateByPointerMZT(config.width, config.height,
+                                                    VG_FALSE, VG_TRUE,
+                                                    output_buffer.data(), nullptr);
+    if (!surface) {
+        return Status::Fail("Failed to create AmanithVG surface");
+    }
+    if (vgPrivMakeCurrentMZT(context_, surface) != VG_TRUE) {
+        vgPrivSurfaceDestroyMZT(surface);
+        return Status::Fail("Failed to bind AmanithVG context and surface");
+    }
+
+    vgSeti(VG_RENDERING_QUALITY, VG_RENDERING_QUALITY_BETTER);
+    vgSeti(VG_BLEND_MODE, VG_BLEND_SRC_OVER);
+    vgSetfv(VG_STROKE_DASH_PATTERN, 0, nullptr);
+    vgSetf(VG_STROKE_DASH_PHASE, 0.0f);
+    vgClipPathClearMZT();
+
+    const VGfloat flip_matrix[9] = {1.0f, 0.0f, 0.0f,
+                                    0.0f, -1.0f, 0.0f,
+                                    0.0f, static_cast<VGfloat>(config.height), 1.0f};
+    vgLoadMatrix(flip_matrix);
+
+    VGPaint fill_paint = vgCreatePaint();
+    VGPaint stroke_paint = vgCreatePaint();
+
+    // Loop 1: Create all native paths
+    std::vector<uint32_t> paths;
+    paths.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        paths.push_back(CreatePath(p));
+    }
+
+    // Loop 2: Draw all
+    Status s = ExecuteAmanithVGCommands(scene, config, paths, fill_paint, stroke_paint, flip_matrix);
+
+    // Loop 3: Destroy all
+    for (auto p : paths) {
+        if (p != VG_INVALID_HANDLE) {
+            vgDestroyPath(p);
+        }
+    }
+    paths.clear();
+
+    vgDestroyPaint(fill_paint);
+    vgDestroyPaint(stroke_paint);
+    vgFinish();
+
+    vgPrivMakeCurrentMZT(nullptr, nullptr);
+    vgPrivSurfaceDestroyMZT(surface);
+    return s;
 }
 
 void RegisterAmanithVGAdapter() {

@@ -5,7 +5,9 @@
 
 #include "adapters/adapter_registry.h"
 
+#include <QPainterPath>
 #include <memory>
+#include <vector>
 
 namespace vgcpu {
 
@@ -18,11 +20,13 @@ class QtAdapter : public IBackendAdapter {
     [[nodiscard]] CapabilitySet GetCapabilities() const override;
     Status Render(const PreparedScene& scene, const SurfaceConfig& config,
                   std::vector<uint8_t>& output_buffer) override;
+    Status RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                           std::vector<uint8_t>& output_buffer) override;
 
    private:
     bool initialized_ = false;
+    std::vector<QPainterPath> prepared_paths_;
 };
-
 void RegisterQtAdapter();
 
 }  // namespace vgcpu

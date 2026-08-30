@@ -7,9 +7,8 @@
 #pragma once
 
 #include "adapters/adapter_interface.h"
-
 #include <blend2d/blend2d.h>
-
+#include <vector>
 namespace vgcpu {
 
 /// Blend2D backend adapter implementation.
@@ -30,10 +29,13 @@ class Blend2DAdapter : public IBackendAdapter {
     // Rendering
     Status Render(const PreparedScene& scene, const SurfaceConfig& config,
                   std::vector<uint8_t>& output_buffer) override;
+    Status RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                           std::vector<uint8_t>& output_buffer) override;
 
    private:
     bool initialized_ = false;
     uint32_t thread_count_ = 1;
+    std::vector<BLPath> prepared_paths_;
 };
 
 /// Register the Blend2D adapter with the global registry.

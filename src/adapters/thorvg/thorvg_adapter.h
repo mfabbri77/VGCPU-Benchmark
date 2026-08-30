@@ -7,6 +7,9 @@
 #pragma once
 
 #include "adapters/adapter_interface.h"
+#include <thorvg.h>
+#include <memory>
+#include <vector>
 
 namespace vgcpu {
 
@@ -21,9 +24,12 @@ class ThorVGAdapter : public IBackendAdapter {
     [[nodiscard]] CapabilitySet GetCapabilities() const override;
     Status Render(const PreparedScene& scene, const SurfaceConfig& config,
                   std::vector<uint8_t>& output_buffer) override;
+    Status RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                           std::vector<uint8_t>& output_buffer) override;
 
    private:
     bool initialized_ = false;
+    std::vector<std::unique_ptr<tvg::Shape>> prepared_shapes_;
 };
 
 /// Register ThorVG adapter with the adapter registry.

@@ -4,6 +4,12 @@
 // Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [API-07] Rust FFI (Chapter 4) /
 // [DEC-API-06] Raqote/Vello FFI (Chapter 4)
 
+#include <concepts>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <vector>
+
 #include "adapters/vello/vello_adapter.h"
 
 #include "adapters/adapter_registry.h"
@@ -12,8 +18,6 @@
 
 #include <cstdint>
 #include <vector>
-
-namespace vgcpu {
 
 // ============================================================================
 // Vello FFI declarations (from vello_ffi Rust crate)
@@ -51,6 +55,8 @@ void vlo_clip_pop(VloSurface* surf);
 void vlo_fill_rect(VloSurface* surf, float x, float y, float w, float h, uint8_t r, uint8_t g,
                    uint8_t b, uint8_t a);
 }
+
+namespace vgcpu {
 
 namespace {
 
@@ -108,14 +114,27 @@ Status VelloAdapter::Initialize(const AdapterArgs& /*args*/) {
 }
 
 Status VelloAdapter::Prepare(const PreparedScene& scene) {
-    (void)scene;
     if (!initialized_) {
         return Status::Fail("VelloAdapter not initialized");
+    }
+    DestroyPaths();
+    prepared_paths_.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        prepared_paths_.push_back(CreateVelloPath(p));
     }
     return Status::Ok();
 }
 
+void VelloAdapter::DestroyPaths() {
+    for (auto p : prepared_paths_) {
+        if (p)
+            vlo_path_destroy(p);
+    }
+    prepared_paths_.clear();
+}
+
 void VelloAdapter::Shutdown() {
+    DestroyPaths();
     initialized_ = false;
 }
 
@@ -138,21 +157,13 @@ CapabilitySet VelloAdapter::GetCapabilities() const {
     return caps;
 }
 
-Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
-                            std::vector<uint8_t>& output_buffer) {
-    if (!initialized_)
-        return Status::Fail("VelloAdapter not initialized");
-    if (!scene.IsValid())
-        return Status::InvalidArg("Invalid scene");
-    if (config.width <= 0 || config.height <= 0)
-        return Status::InvalidArg("Invalid surface config");
+namespace {
 
-    // Create Vello surface
-    VloSurface* surf = vlo_create(config.width, config.height);
-    if (!surf)
-        return Status::Fail("Failed to create Vello surface");
+Status ExecuteVelloCommands(const PreparedScene& scene, const SurfaceConfig& /*config*/,
+                           const std::vector<VloPath*>& paths, VloSurface* surf) {
+    const uint8_t* cmd = scene.command_stream.data();
+    const uint8_t* end = cmd + scene.command_stream.size();
 
-    // Command loop state
     uint16_t current_paint_id = 0;
     ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
     uint16_t current_stroke_paint_id = 0;
@@ -162,8 +173,6 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
     std::vector<float> dash_lengths;
     float dash_phase = 0.0f;
 
-    const uint8_t* cmd = scene.command_stream.data();
-    const uint8_t* end = cmd + scene.command_stream.size();
     while (cmd < end) {
         ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
 
@@ -176,10 +185,12 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                     goto done;
                 uint32_t rgba = *reinterpret_cast<const uint32_t*>(cmd);
                 cmd += 4;
+
                 uint8_t r = (rgba >> 0) & 0xFF;
                 uint8_t g = (rgba >> 8) & 0xFF;
                 uint8_t b = (rgba >> 16) & 0xFF;
                 uint8_t a = (rgba >> 24) & 0xFF;
+
                 vlo_clear(surf, r, g, b, a);
                 break;
             }
@@ -212,22 +223,21 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size() || current_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_paint_id >= scene.paints.size())
+                    break;
+                if (paths[path_id] == nullptr)
                     break;
 
                 const auto& paint = scene.paints[current_paint_id];
-                VloPath* path = CreateVelloPath(scene.paths[path_id]);
-
+                uint8_t r = (paint.color >> 0) & 0xFF;
+                uint8_t g = (paint.color >> 8) & 0xFF;
+                uint8_t b = (paint.color >> 16) & 0xFF;
+                uint8_t a = (paint.color >> 24) & 0xFF;
                 bool even_odd = (current_fill_rule == ir::FillRule::kEvenOdd);
+
                 if (paint.type == ir::PaintType::kSolid) {
-                    uint8_t r = (paint.color >> 0) & 0xFF;
-                    uint8_t g = (paint.color >> 8) & 0xFF;
-                    uint8_t b = (paint.color >> 16) & 0xFF;
-                    uint8_t a = (paint.color >> 24) & 0xFF;
-                    vlo_fill_path(surf, path, r, g, b, a, even_odd);
+                    vlo_fill_path(surf, paths[path_id], r, g, b, a, even_odd);
                 } else {
-                    // Gradient: raw RGBA stop colors (vello's pixmap is
-                    // already contract byte order, no swap).
                     std::vector<float> offsets;
                     std::vector<uint32_t> colors;
                     offsets.reserve(paint.stops.size());
@@ -237,18 +247,17 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                         colors.push_back(s.color);
                     }
                     if (paint.type == ir::PaintType::kLinear) {
-                        vlo_fill_path_gradient(surf, path, 0, paint.linear_start_x,
+                        vlo_fill_path_gradient(surf, paths[path_id], 0, paint.linear_start_x,
                                                paint.linear_start_y, paint.linear_end_x,
                                                paint.linear_end_y, offsets.data(), colors.data(),
                                                static_cast<int32_t>(offsets.size()), even_odd);
                     } else {
-                        vlo_fill_path_gradient(surf, path, 1, paint.radial_center_x,
+                        vlo_fill_path_gradient(surf, paths[path_id], 1, paint.radial_center_x,
                                                paint.radial_center_y, paint.radial_radius, 0.0f,
                                                offsets.data(), colors.data(),
                                                static_cast<int32_t>(offsets.size()), even_odd);
                     }
                 }
-                vlo_path_destroy(path);
                 break;
             }
 
@@ -258,22 +267,21 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size() || current_stroke_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
+                    break;
+                if (paths[path_id] == nullptr)
                     break;
 
                 const auto& paint = scene.paints[current_stroke_paint_id];
-                VloPath* path = CreateVelloPath(scene.paths[path_id]);
-
                 uint8_t r = (paint.color >> 0) & 0xFF;
                 uint8_t g = (paint.color >> 8) & 0xFF;
                 uint8_t b = (paint.color >> 16) & 0xFF;
                 uint8_t a = (paint.color >> 24) & 0xFF;
 
-                vlo_stroke_path(surf, path, r, g, b, a, current_stroke_width,
+                vlo_stroke_path(surf, paths[path_id], r, g, b, a, current_stroke_width,
                                 (int)current_stroke_cap, (int)current_stroke_join,
                                 dash_lengths.empty() ? nullptr : dash_lengths.data(),
                                 static_cast<int32_t>(dash_lengths.size()), dash_phase);
-                vlo_path_destroy(path);
                 break;
             }
 
@@ -298,10 +306,8 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 cmd += 2;
                 cmd += 1;  // rule
 
-                if (path_id < scene.paths.size()) {
-                    VloPath* path = CreateVelloPath(scene.paths[path_id]);
-                    vlo_clip_push(surf, path);
-                    vlo_path_destroy(path);
+                if (path_id < paths.size() && paths[path_id] != nullptr) {
+                    vlo_clip_push(surf, paths[path_id]);
                 }
                 break;
             }
@@ -312,12 +318,10 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
 
             case ir::Opcode::kSave:
             case ir::Opcode::kRestore:
-                // vello_cpu doesn't have state stack exposed this way
                 break;
 
             case ir::Opcode::kSetMatrix:
             case ir::Opcode::kConcatMatrix:
-                // TODO: Implement transform support if vello_cpu supports it
                 cmd += 24;
                 break;
 
@@ -327,11 +331,64 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
     }
 
 done:
-    // Copy pixels to output buffer (vello_cpu uses ARGB order internally)
+    return Status::Ok();
+}
+
+}  // namespace
+
+Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
+                            std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("VelloAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
+
+    VloSurface* surf = vlo_create(config.width, config.height);
+    if (!surf)
+        return Status::Fail("Failed to create Vello surface");
+
+    Status s = ExecuteVelloCommands(scene, config, prepared_paths_, surf);
+
     vlo_get_pixels(surf, reinterpret_cast<uint32_t*>(output_buffer.data()));
     vlo_destroy(surf);
+    return s;
+}
 
-    return Status::Ok();
+Status VelloAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                                     std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("VelloAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
+
+    VloSurface* surf = vlo_create(config.width, config.height);
+    if (!surf)
+        return Status::Fail("Failed to create Vello surface");
+
+    // Loop 1: Create all native paths
+    std::vector<VloPath*> paths;
+    paths.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        paths.push_back(CreateVelloPath(p));
+    }
+
+    // Loop 2: Draw all
+    Status s = ExecuteVelloCommands(scene, config, paths, surf);
+
+    // Loop 3: Destroy all
+    for (auto p : paths) {
+        if (p)
+            vlo_path_destroy(p);
+    }
+    paths.clear();
+
+    vlo_get_pixels(surf, reinterpret_cast<uint32_t*>(output_buffer.data()));
+    vlo_destroy(surf);
+    return s;
 }
 
 void RegisterVelloAdapter() {

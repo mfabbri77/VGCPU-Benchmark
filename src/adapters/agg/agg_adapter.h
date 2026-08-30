@@ -7,6 +7,7 @@
 #include "adapters/adapter_interface.h"
 #include "ir/ir_format.h"
 
+#include "agg_path_storage.h"
 #include <memory>
 #include <vector>
 
@@ -29,11 +30,13 @@ class AggAdapter : public IBackendAdapter {
     // Rendering
     Status Render(const PreparedScene& scene, const SurfaceConfig& config,
                   std::vector<uint8_t>& output_buffer) override;
+    Status RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                           std::vector<uint8_t>& output_buffer) override;
 
    private:
     bool initialized_ = false;
+    std::vector<agg::path_storage> prepared_paths_;
 };
-
 void RegisterAggAdapter();
 
 }  // namespace vgcpu::adapters::agg_backend

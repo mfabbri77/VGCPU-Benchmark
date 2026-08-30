@@ -121,6 +121,13 @@ std::string JsonWriter::ToJson(const RunMetadata& metadata,
         oss << "        \"cpu_p50_ns\": " << r.stats.cpu_p50_ns << ",\n";
         oss << "        \"cpu_p90_ns\": " << r.stats.cpu_p90_ns << ",\n";
         oss << "        \"sample_count\": " << r.stats.sample_count << "\n";
+        oss << "      },\n";
+        oss << "      \"lifecycle_stats\": {\n";
+        oss << "        \"wall_p50_ns\": " << r.lifecycle_stats.wall_p50_ns << ",\n";
+        oss << "        \"wall_p90_ns\": " << r.lifecycle_stats.wall_p90_ns << ",\n";
+        oss << "        \"cpu_p50_ns\": " << r.lifecycle_stats.cpu_p50_ns << ",\n";
+        oss << "        \"cpu_p90_ns\": " << r.lifecycle_stats.cpu_p90_ns << ",\n";
+        oss << "        \"sample_count\": " << r.lifecycle_stats.sample_count << "\n";
         oss << "      }";
         if (!r.artifact_path.empty()) {
             oss << ",\n      \"artifact_path\": \"" << EscapeJson(r.artifact_path) << "\"";

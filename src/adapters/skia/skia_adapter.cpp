@@ -136,14 +136,19 @@ Status SkiaAdapter::Initialize(const AdapterArgs& /*args*/) {
 }
 
 Status SkiaAdapter::Prepare(const PreparedScene& scene) {
-    (void)scene;
     if (!initialized_) {
         return Status::Fail("SkiaAdapter not initialized");
+    }
+    prepared_paths_.clear();
+    prepared_paths_.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        prepared_paths_.push_back(CreatePath(p));
     }
     return Status::Ok();
 }
 
 void SkiaAdapter::Shutdown() {
+    prepared_paths_.clear();
     initialized_ = false;
 }
 
@@ -158,35 +163,16 @@ CapabilitySet SkiaAdapter::GetCapabilities() const {
     return CapabilitySet::All();
 }
 
-Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
-                           std::vector<uint8_t>& output_buffer) {
-    if (!initialized_)
-        return Status::Fail("SkiaAdapter not initialized");
-    if (!scene.IsValid())
-        return Status::InvalidArg("Invalid scene");
+namespace {
 
-    // Buffer is pre-sized by harness. Contents are undefined until kClear.
-
-    // Create SkSurface wrapping our buffer
-    SkImageInfo info =
-        SkImageInfo::Make(config.width, config.height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
-
-    sk_sp<SkSurface> surface = SkSurfaces::WrapPixels(info, output_buffer.data(), config.width * 4);
-
-    if (!surface) {
-        return Status::Fail("Failed to create SkSurface");
-    }
-
-    SkCanvas* canvas = surface->getCanvas();
-
-    // Command loop
+Status ExecuteSkiaCommands(const PreparedScene& scene, const SurfaceConfig& /*config*/,
+                           const std::vector<SkPath>& paths, SkCanvas* canvas) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
     uint16_t current_paint_id = 0;
     ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
 
-    // Stroke state
     struct StrokeState {
         uint16_t paint_id = 0;
         float width = 1.0f;
@@ -194,8 +180,6 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
         SkPaint::Join join = SkPaint::kMiter_Join;
     } current_stroke;
 
-    // Dash state (device units; converted to an SkDashPathEffect at stroke
-    // time). Render-local, so every Render() starts solid per IR v1.1.
     std::vector<SkScalar> dash_intervals;
     SkScalar dash_phase = 0.0f;
 
@@ -267,16 +251,14 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size())
-                    break;
-                if (current_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_paint_id >= scene.paints.size())
                     break;
 
                 SkPaint paint;
                 paint.setStyle(SkPaint::kFill_Style);
                 ApplyPaint(paint, scene.paints[current_paint_id]);
 
-                SkPath path = CreatePath(scene.paths[path_id]);
+                SkPath path = paths[path_id];
                 path.setFillType(current_fill_rule == ir::FillRule::kEvenOdd
                                      ? SkPathFillType::kEvenOdd
                                      : SkPathFillType::kWinding);
@@ -291,24 +273,22 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= scene.paths.size())
-                    break;
-                if (current_stroke.paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_stroke.paint_id >= scene.paints.size())
                     break;
 
                 SkPaint paint;
                 paint.setStyle(SkPaint::kStroke_Style);
                 paint.setStrokeWidth(current_stroke.width);
                 paint.setStrokeCap(current_stroke.cap);
-            paint.setStrokeJoin(current_stroke.join);
-            if (!dash_intervals.empty()) {
-                paint.setPathEffect(SkDashPathEffect::Make(
-                    dash_intervals.data(), static_cast<int>(dash_intervals.size()), dash_phase));
-            }
-            ApplyPaint(paint, scene.paints[current_stroke.paint_id]);
+                paint.setStrokeJoin(current_stroke.join);
+                if (!dash_intervals.empty()) {
+                    paint.setPathEffect(SkDashPathEffect::Make(
+                        dash_intervals.data(), static_cast<int>(dash_intervals.size()),
+                        dash_phase));
+                }
+                ApplyPaint(paint, scene.paints[current_stroke.paint_id]);
 
-                SkPath path = CreatePath(scene.paths[path_id]);
-                canvas->drawPath(path, paint);
+                canvas->drawPath(paths[path_id], paint);
                 break;
             }
 
@@ -322,7 +302,7 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
                     goto done;
                 const float* lengths = reinterpret_cast<const float*>(cmd);
                 cmd += 4 * count;
-                dash_intervals.assign(lengths, lengths + count);  // count==0 -> solid
+                dash_intervals.assign(lengths, lengths + count);
                 break;
             }
 
@@ -333,13 +313,9 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
                 cmd += 2;
                 ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
 
-                // Always save so kClipPop stays balanced even on a bogus id.
-                // The clip stack is independent of kSave/kRestore in the IR,
-                // but the generator keeps both balanced, so sharing Skia's
-                // save stack is safe.
                 canvas->save();
-                if (path_id < scene.paths.size()) {
-                    SkPath path = CreatePath(scene.paths[path_id]);
+                if (path_id < paths.size()) {
+                    SkPath path = paths[path_id];
                     path.setFillType(rule == ir::FillRule::kEvenOdd ? SkPathFillType::kEvenOdd
                                                                     : SkPathFillType::kWinding);
                     canvas->clipPath(path, SkClipOp::kIntersect, /*doAntiAlias=*/true);
@@ -360,10 +336,6 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
                 break;
 
             case ir::Opcode::kSetMatrix:
-                // TODO: Implement matrix
-                cmd += 24;
-                break;
-
             case ir::Opcode::kConcatMatrix:
                 cmd += 24;
                 break;
@@ -375,6 +347,55 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
 
 done:
     return Status::Ok();
+}
+
+}  // namespace
+
+Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
+                           std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("SkiaAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+
+    SkImageInfo info =
+        SkImageInfo::Make(config.width, config.height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+    sk_sp<SkSurface> surface = SkSurfaces::WrapPixels(info, output_buffer.data(), config.width * 4);
+    if (!surface) {
+        return Status::Fail("Failed to create SkSurface");
+    }
+
+    return ExecuteSkiaCommands(scene, config, prepared_paths_, surface->getCanvas());
+}
+
+Status SkiaAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
+                                    std::vector<uint8_t>& output_buffer) {
+    if (!initialized_)
+        return Status::Fail("SkiaAdapter not initialized");
+    if (!scene.IsValid())
+        return Status::InvalidArg("Invalid scene");
+
+    SkImageInfo info =
+        SkImageInfo::Make(config.width, config.height, kRGBA_8888_SkColorType, kPremul_SkAlphaType);
+    sk_sp<SkSurface> surface = SkSurfaces::WrapPixels(info, output_buffer.data(), config.width * 4);
+    if (!surface) {
+        return Status::Fail("Failed to create SkSurface");
+    }
+
+    // Loop 1: Create all native paths
+    std::vector<SkPath> paths;
+    paths.reserve(scene.paths.size());
+    for (const auto& p : scene.paths) {
+        paths.push_back(CreatePath(p));
+    }
+
+    // Loop 2: Draw all
+    Status s = ExecuteSkiaCommands(scene, config, paths, surface->getCanvas());
+
+    // Loop 3: Destroy all
+    paths.clear();
+
+    return s;
 }
 
 void RegisterSkiaAdapter() {
