@@ -146,13 +146,35 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 const auto& path = scene.paths[path_id];
                 const auto& paint = scene.paints[current_paint_id];
 
-                // Set paint color
+                // Set paint source. Gradient stop colors get the same R<->B
+                // swap as solids (ARGB32 output; interpolation is
+                // channel-symmetric, so the relabeling stays exact).
+                cairo_pattern_t* grad_pat = nullptr;
                 if (paint.type == ir::PaintType::kSolid) {
                     double r = static_cast<double>((paint.color >> 0) & 0xFF) / 255.0;
                     double g = static_cast<double>((paint.color >> 8) & 0xFF) / 255.0;
                     double b = static_cast<double>((paint.color >> 16) & 0xFF) / 255.0;
                     double a = static_cast<double>((paint.color >> 24) & 0xFF) / 255.0;
                     cairo_set_source_rgba(cr, b, g, r, a);  // R<->B swap: ARGB32 output
+                } else {
+                    if (paint.type == ir::PaintType::kLinear) {
+                        grad_pat =
+                            cairo_pattern_create_linear(paint.linear_start_x, paint.linear_start_y,
+                                                        paint.linear_end_x, paint.linear_end_y);
+                    } else {
+                        grad_pat = cairo_pattern_create_radial(
+                            paint.radial_center_x, paint.radial_center_y, 0.0,
+                            paint.radial_center_x, paint.radial_center_y, paint.radial_radius);
+                    }
+                    for (const auto& s : paint.stops) {
+                        double r = static_cast<double>((s.color >> 0) & 0xFF) / 255.0;
+                        double g = static_cast<double>((s.color >> 8) & 0xFF) / 255.0;
+                        double b = static_cast<double>((s.color >> 16) & 0xFF) / 255.0;
+                        double a = static_cast<double>((s.color >> 24) & 0xFF) / 255.0;
+                        cairo_pattern_add_color_stop_rgba(grad_pat, s.offset, b, g, r,
+                                                          a);  // R<->B swap
+                    }
+                    cairo_set_source(cr, grad_pat);
                 }
 
                 // Build path
@@ -215,6 +237,9 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                                              : CAIRO_FILL_RULE_WINDING;
                 cairo_set_fill_rule(cr, rule);
                 cairo_fill(cr);
+                if (grad_pat != nullptr) {
+                    cairo_pattern_destroy(grad_pat);
+                }
                 break;
             }
 

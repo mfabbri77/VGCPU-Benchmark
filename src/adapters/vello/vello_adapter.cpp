@@ -40,6 +40,9 @@ void vlo_path_close(VloPath* ptr);
 // Drawing operations
 void vlo_fill_path(VloSurface* surf, VloPath* path, uint8_t r, uint8_t g, uint8_t b, uint8_t a,
                    bool even_odd);
+void vlo_fill_path_gradient(VloSurface* surf, VloPath* path, int32_t kind, float x0, float y0,
+                            float x1, float y1, const float* offsets, const uint32_t* colors,
+                            int32_t nstops, bool even_odd);
 void vlo_stroke_path(VloSurface* surf, VloPath* path, uint8_t r, uint8_t g, uint8_t b, uint8_t a,
                      float width, int32_t cap, int32_t join);
 void vlo_fill_rect(VloSurface* surf, float x, float y, float w, float h, uint8_t r, uint8_t g,
@@ -211,13 +214,36 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
                 const auto& paint = scene.paints[current_paint_id];
                 VloPath* path = CreateVelloPath(scene.paths[path_id]);
 
-                uint8_t r = (paint.color >> 0) & 0xFF;
-                uint8_t g = (paint.color >> 8) & 0xFF;
-                uint8_t b = (paint.color >> 16) & 0xFF;
-                uint8_t a = (paint.color >> 24) & 0xFF;
                 bool even_odd = (current_fill_rule == ir::FillRule::kEvenOdd);
-
-                vlo_fill_path(surf, path, r, g, b, a, even_odd);
+                if (paint.type == ir::PaintType::kSolid) {
+                    uint8_t r = (paint.color >> 0) & 0xFF;
+                    uint8_t g = (paint.color >> 8) & 0xFF;
+                    uint8_t b = (paint.color >> 16) & 0xFF;
+                    uint8_t a = (paint.color >> 24) & 0xFF;
+                    vlo_fill_path(surf, path, r, g, b, a, even_odd);
+                } else {
+                    // Gradient: raw RGBA stop colors (vello's pixmap is
+                    // already contract byte order, no swap).
+                    std::vector<float> offsets;
+                    std::vector<uint32_t> colors;
+                    offsets.reserve(paint.stops.size());
+                    colors.reserve(paint.stops.size());
+                    for (const auto& s : paint.stops) {
+                        offsets.push_back(s.offset);
+                        colors.push_back(s.color);
+                    }
+                    if (paint.type == ir::PaintType::kLinear) {
+                        vlo_fill_path_gradient(surf, path, 0, paint.linear_start_x,
+                                               paint.linear_start_y, paint.linear_end_x,
+                                               paint.linear_end_y, offsets.data(), colors.data(),
+                                               static_cast<int32_t>(offsets.size()), even_odd);
+                    } else {
+                        vlo_fill_path_gradient(surf, path, 1, paint.radial_center_x,
+                                               paint.radial_center_y, paint.radial_radius, 0.0f,
+                                               offsets.data(), colors.data(),
+                                               static_cast<int32_t>(offsets.size()), even_odd);
+                    }
+                }
                 vlo_path_destroy(path);
                 break;
             }

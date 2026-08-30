@@ -1,7 +1,8 @@
 // Raqote C FFI Bridge
 // Blueprint Reference: backends/raqote.md
 
-use raqote::{DrawTarget, SolidSource, Source, DrawOptions, PathBuilder, StrokeStyle, LineCap, LineJoin};
+use raqote::{DrawTarget, SolidSource, Source, DrawOptions, PathBuilder, StrokeStyle, LineCap, LineJoin,
+             Gradient, GradientStop, Spread, Color, Point};
 
 
 /// Opaque handle to Raqote DrawTarget
@@ -153,6 +154,62 @@ pub extern "C" fn rqt_fill_path(
     
     // Recreate the path for potential reuse (consume the finished path)
     // Note: In practice, the C++ side should create new paths each time
+}
+
+/// Fill a path with a gradient.
+/// kind: 0 = linear (x0,y0 -> x1,y1), 1 = radial (center x0,y0, radius x1).
+/// colors: packed r | g<<8 | b<<16 | a<<24 per stop. The C++ caller
+/// pre-swaps R/B so the ARGB32 output bytes land in contract (RGBA) order,
+/// same convention as the solid-color entry points.
+#[no_mangle]
+pub extern "C" fn rqt_fill_path_gradient(
+    surf: *mut RqtSurface,
+    path_ptr: *mut RqtPath,
+    kind: i32,
+    x0: f32, y0: f32, x1: f32, y1: f32,
+    offsets: *const f32,
+    colors: *const u32,
+    nstops: i32,
+    _fill_rule: i32,
+) {
+    if surf.is_null() || path_ptr.is_null() || offsets.is_null() || colors.is_null() {
+        return;
+    }
+    if nstops <= 0 {
+        return;
+    }
+    let surface = unsafe { &mut *surf };
+    let path_box = unsafe { Box::from_raw(path_ptr) };
+    let finished_path = path_box.pb.finish();
+
+    let n = nstops as usize;
+    let offs = unsafe { std::slice::from_raw_parts(offsets, n) };
+    let cols = unsafe { std::slice::from_raw_parts(colors, n) };
+    let stops: Vec<GradientStop> = (0..n)
+        .map(|i| {
+            let c = cols[i];
+            let (r, g, b, a) = (
+                (c & 0xFF) as u8,
+                ((c >> 8) & 0xFF) as u8,
+                ((c >> 16) & 0xFF) as u8,
+                ((c >> 24) & 0xFF) as u8,
+            );
+            GradientStop { position: offs[i], color: Color::new(a, r, g, b) }
+        })
+        .collect();
+
+    let gradient = Gradient { stops };
+    let src = if kind == 0 {
+        Source::new_linear_gradient(gradient, Point::new(x0, y0), Point::new(x1, y1), Spread::Pad)
+    } else {
+        Source::new_radial_gradient(gradient, Point::new(x0, y0), x1, Spread::Pad)
+    };
+    let opts = DrawOptions {
+        blend_mode: raqote::BlendMode::SrcOver,
+        alpha: 1.0,
+        antialias: raqote::AntialiasMode::Gray,
+    };
+    surface.dt.fill(&finished_path, &src, &opts);
 }
 
 /// Stroke a path with solid color

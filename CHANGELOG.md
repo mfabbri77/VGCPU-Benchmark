@@ -17,6 +17,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- Linear and radial gradient support implemented in the five adapters that
+  silently fell back to opaque black (cairo, plutovg, agg, raqote, vello;
+  the libraries all support gradients natively -- only the adapters/FFI
+  bridges were solid-only stubs). cairo/plutovg via native pattern APIs;
+  agg via the span_gradient pipeline (256-entry LUT, device-to-gradient
+  affine); raqote and vello via new FFI entry points
+  (`rqt_fill_path_gradient`, `vlo_fill_path_gradient`). Stop colors follow
+  each backend's established channel convention (R<->B pre-swap for
+  ARGB32-native backends, raw RGBA for vello). Verified: directional
+  4-pixel probe on `fills/gradients_linear` passes 10/10 backends with
+  cross-backend agreement within 2/255; gallery SSIM vs cairo >= 0.9984
+  everywhere. Gradient-scene timings now measure real gradient work.
 - Self-contained HTML report generator (`tools/html_report.py`, ADR-0005):
   one offline file with performance leaderboards, a rendering gallery with
   cross-backend SSIM against a selectable reference backend, amplified

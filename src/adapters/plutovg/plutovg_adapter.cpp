@@ -12,6 +12,8 @@
 
 #include <plutovg.h>
 
+#include <vector>
+
 namespace vgcpu {
 
 Status PlutoVGAdapter::Initialize(const AdapterArgs& args) {
@@ -144,13 +146,38 @@ Status PlutoVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
                 const auto& path = scene.paths[path_id];
                 const auto& paint = scene.paints[current_paint_id];
 
-                // Set paint color
+                // Set paint. Gradient stop colors get the same R<->B swap as
+                // solids (ARGB32 output; interpolation is channel-symmetric).
                 if (paint.type == ir::PaintType::kSolid) {
                     float r = static_cast<float>((paint.color >> 0) & 0xFF) / 255.0f;
                     float g = static_cast<float>((paint.color >> 8) & 0xFF) / 255.0f;
                     float b = static_cast<float>((paint.color >> 16) & 0xFF) / 255.0f;
                     float a = static_cast<float>((paint.color >> 24) & 0xFF) / 255.0f;
                     plutovg_canvas_set_rgba(canvas, b, g, r, a);  // R<->B swap: ARGB32 output
+                } else {
+                    std::vector<plutovg_gradient_stop_t> gstops;
+                    gstops.reserve(paint.stops.size());
+                    for (const auto& s : paint.stops) {
+                        plutovg_gradient_stop_t gs;
+                        gs.offset = s.offset;
+                        gs.color.r = static_cast<float>((s.color >> 16) & 0xFF) / 255.0f;  // B as R
+                        gs.color.g = static_cast<float>((s.color >> 8) & 0xFF) / 255.0f;
+                        gs.color.b = static_cast<float>((s.color >> 0) & 0xFF) / 255.0f;  // R as B
+                        gs.color.a = static_cast<float>((s.color >> 24) & 0xFF) / 255.0f;
+                        gstops.push_back(gs);
+                    }
+                    if (paint.type == ir::PaintType::kLinear) {
+                        plutovg_canvas_set_linear_gradient(
+                            canvas, paint.linear_start_x, paint.linear_start_y, paint.linear_end_x,
+                            paint.linear_end_y, PLUTOVG_SPREAD_METHOD_PAD, gstops.data(),
+                            static_cast<int>(gstops.size()), nullptr);
+                    } else {
+                        plutovg_canvas_set_radial_gradient(
+                            canvas, paint.radial_center_x, paint.radial_center_y,
+                            paint.radial_radius, paint.radial_center_x, paint.radial_center_y, 0.0f,
+                            PLUTOVG_SPREAD_METHOD_PAD, gstops.data(),
+                            static_cast<int>(gstops.size()), nullptr);
+                    }
                 }
 
                 // Build path

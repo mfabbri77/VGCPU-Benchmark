@@ -13,6 +13,7 @@
 
 #include "agg_conv_stroke.h"
 #include "agg_conv_transform.h"
+#include "agg_gradient_lut.h"
 #include "agg_path_storage.h"
 #include "agg_pixfmt_rgba.h"
 #include "agg_rasterizer_scanline_aa.h"
@@ -20,6 +21,10 @@
 #include "agg_renderer_scanline.h"
 #include "agg_rendering_buffer.h"
 #include "agg_scanline_p.h"
+#include "agg_span_allocator.h"
+#include "agg_span_gradient.h"
+#include "agg_span_interpolator_linear.h"
+#include "agg_trans_affine.h"
 
 #if defined(_MSC_VER)
 #pragma warning(pop)
@@ -39,6 +44,52 @@ T ReadLE(const uint8_t*& ptr) {
     std::memcpy(&val, ptr, sizeof(T));
     ptr += sizeof(T);
     return val;
+}
+
+// Render the already-rasterized path with a gradient span generator.
+// AGG has no "set gradient" call: gradients are span generators wired into
+// render_scanlines_aa (LUT of 256 interpolated stop colors + a device->
+// gradient-space affine). No R<->B swap here: pixfmt_rgba32 is true RGBA.
+template <typename Rasterizer, typename Scanline, typename RenBase>
+void RenderGradientFill(Rasterizer& ras, Scanline& sl, RenBase& ren_base,
+                        const vgcpu::Paint& paint) {
+    using LutType = agg::gradient_lut<agg::color_interpolator<agg::rgba8>, 256>;
+    LutType lut;
+    for (const auto& s : paint.stops) {
+        lut.add_color(s.offset, agg::rgba8(s.color & 0xFF, (s.color >> 8) & 0xFF,
+                                           (s.color >> 16) & 0xFF, (s.color >> 24) & 0xFF));
+    }
+    lut.build_lut();
+    agg::span_allocator<agg::rgba8> alloc;
+
+    if (paint.type == ir::PaintType::kLinear) {
+        double dx = static_cast<double>(paint.linear_end_x) - paint.linear_start_x;
+        double dy = static_cast<double>(paint.linear_end_y) - paint.linear_start_y;
+        double len = std::sqrt(dx * dx + dy * dy);
+        if (len < 1e-6) {
+            len = 1e-6;
+        }
+        agg::trans_affine mtx;  // device -> gradient space (inverse of rotate+translate)
+        mtx *= agg::trans_affine_rotation(std::atan2(dy, dx));
+        mtx *= agg::trans_affine_translation(paint.linear_start_x, paint.linear_start_y);
+        mtx.invert();
+        agg::span_interpolator_linear<> inter(mtx);
+        agg::gradient_x gfunc;
+        agg::span_gradient<agg::rgba8, agg::span_interpolator_linear<>, agg::gradient_x, LutType>
+            sg(inter, gfunc, lut, 0.0, len);
+        agg::render_scanlines_aa(ras, sl, ren_base, alloc, sg);
+    } else {
+        double radius = paint.radial_radius > 1e-6f ? paint.radial_radius : 1e-6;
+        agg::trans_affine mtx;
+        mtx *= agg::trans_affine_translation(paint.radial_center_x, paint.radial_center_y);
+        mtx.invert();
+        agg::span_interpolator_linear<> inter(mtx);
+        agg::gradient_radial_d gfunc;
+        agg::span_gradient<agg::rgba8, agg::span_interpolator_linear<>, agg::gradient_radial_d,
+                           LutType>
+            sg(inter, gfunc, lut, 0.0, radius);
+        agg::render_scanlines_aa(ras, sl, ren_base, alloc, sg);
+    }
 }
 }  // namespace
 
@@ -219,14 +270,18 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                 // Transform
                 agg::conv_transform<agg::path_storage> trans_path(p, ctm);
 
-                // Get Paint Color (assume Solid for now)
+                // Paint: solid color or gradient span pipeline
                 agg::rgba8 color(0, 0, 0, 255);
+                const vgcpu::Paint* gradient_paint = nullptr;
                 if (current_paint_id < scene.paints.size()) {
                     const auto& paint = scene.paints[current_paint_id];
-                    // Unpack color (RGBA8 premul)
-                    uint32_t c = paint.color;
-                    color =
-                        agg::rgba8(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF, (c >> 24) & 0xFF);
+                    if (paint.type == ir::PaintType::kSolid) {
+                        uint32_t c = paint.color;
+                        color = agg::rgba8(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF,
+                                           (c >> 24) & 0xFF);
+                    } else {
+                        gradient_paint = &paint;
+                    }
                 }
 
                 if (op == ir::Opcode::kFillPath) {
@@ -236,7 +291,11 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                     else
                         ras.filling_rule(agg::fill_non_zero);
 
-                    agg::render_scanlines_aa_solid(ras, sl, ren_base, color);
+                    if (gradient_paint != nullptr) {
+                        RenderGradientFill(ras, sl, ren_base, *gradient_paint);
+                    } else {
+                        agg::render_scanlines_aa_solid(ras, sl, ren_base, color);
+                    }
                 } else {
                     // Stroke
                     agg::conv_stroke<agg::conv_transform<agg::path_storage>> stroke(trans_path);

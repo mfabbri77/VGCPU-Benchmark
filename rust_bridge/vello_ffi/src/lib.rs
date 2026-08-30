@@ -1,9 +1,10 @@
 // Vello CPU FFI Bridge (vello_cpu 0.0.4)
 // Blueprint Reference: backends/vello.md
 
-use vello_cpu::{RenderContext, Pixmap};
+use vello_cpu::{RenderContext, Pixmap, PaintType};
 use vello_cpu::kurbo::{BezPath, Rect};
-use vello_cpu::peniko::Color;
+use vello_cpu::peniko::{Color, ColorStop, Gradient};
+use vello_cpu::peniko::color::DynamicColor;
 
 /// Opaque handle to Vello RenderContext
 pub struct VloSurface {
@@ -131,6 +132,57 @@ pub extern "C" fn vlo_fill_path(
     surface.ctx.fill_path(&p.path);
 }
 
+
+/// Fill a path with a gradient.
+/// kind: 0 = linear (x0,y0 -> x1,y1), 1 = radial (center x0,y0, radius x1).
+/// colors: packed r | g<<8 | b<<16 | a<<24 per stop (true RGBA -- vello's
+/// pixmap is already contract byte order, no channel swap needed).
+#[no_mangle]
+pub extern "C" fn vlo_fill_path_gradient(
+    surf: *mut VloSurface,
+    path_ptr: *mut VloPath,
+    kind: i32,
+    x0: f32, y0: f32, x1: f32, y1: f32,
+    offsets: *const f32,
+    colors: *const u32,
+    nstops: i32,
+    _even_odd: bool,
+) {
+    if surf.is_null() || path_ptr.is_null() || offsets.is_null() || colors.is_null() {
+        return;
+    }
+    if nstops <= 0 {
+        return;
+    }
+    let surface = unsafe { &mut *surf };
+    let p = unsafe { &*path_ptr };
+
+    let n = nstops as usize;
+    let offs = unsafe { std::slice::from_raw_parts(offsets, n) };
+    let cols = unsafe { std::slice::from_raw_parts(colors, n) };
+    let stops: Vec<ColorStop> = (0..n)
+        .map(|i| {
+            let c = cols[i];
+            let color = Color::from_rgba8(
+                (c & 0xFF) as u8,
+                ((c >> 8) & 0xFF) as u8,
+                ((c >> 16) & 0xFF) as u8,
+                ((c >> 24) & 0xFF) as u8,
+            );
+            ColorStop { offset: offs[i], color: DynamicColor::from_alpha_color(color) }
+        })
+        .collect();
+
+    let gradient = if kind == 0 {
+        Gradient::new_linear((x0 as f64, y0 as f64), (x1 as f64, y1 as f64))
+    } else {
+        Gradient::new_radial((x0 as f64, y0 as f64), x1)
+    };
+    let gradient = gradient.with_stops(&stops[..]);
+
+    surface.ctx.set_paint(PaintType::Gradient(gradient));
+    surface.ctx.fill_path(&p.path);
+}
 #[no_mangle]
 pub extern "C" fn vlo_stroke_path(
     surf: *mut VloSurface,

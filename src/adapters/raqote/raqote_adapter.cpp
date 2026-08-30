@@ -41,6 +41,9 @@ void rqt_path_rect(RqtPath* ptr, float x, float y, float w, float h);
 // Drawing operations
 void rqt_fill_path(RqtSurface* surf, RqtPath* path, uint8_t r, uint8_t g, uint8_t b, uint8_t a,
                    int32_t fill_rule);
+void rqt_fill_path_gradient(RqtSurface* surf, RqtPath* path, int32_t kind, float x0, float y0,
+                            float x1, float y1, const float* offsets, const uint32_t* colors,
+                            int32_t nstops, int32_t fill_rule);
 void rqt_stroke_path(RqtSurface* surf, RqtPath* path, uint8_t r, uint8_t g, uint8_t b, uint8_t a,
                      float width, int32_t cap, int32_t join);
 void rqt_fill_rect(RqtSurface* surf, float x, float y, float w, float h, uint8_t r, uint8_t g,
@@ -209,15 +212,41 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
                 const auto& paint = scene.paints[current_paint_id];
                 RqtPath* path = CreateRaqotePath(scene.paths[path_id]);
 
-                // Only solid fills for now (gradients would require more FFI work)
-                uint8_t r = (paint.color >> 0) & 0xFF;
-                uint8_t g = (paint.color >> 8) & 0xFF;
-                uint8_t b = (paint.color >> 16) & 0xFF;
-                uint8_t a = (paint.color >> 24) & 0xFF;
                 int32_t fill_rule = (current_fill_rule == ir::FillRule::kEvenOdd) ? 1 : 0;
-
-                rqt_fill_path(surf, path, b, g, r, a, fill_rule);  // R<->B swap: ARGB32 output
-                // Note: path is consumed by rqt_fill_path (Box::from_raw)
+                if (paint.type == ir::PaintType::kSolid) {
+                    uint8_t r = (paint.color >> 0) & 0xFF;
+                    uint8_t g = (paint.color >> 8) & 0xFF;
+                    uint8_t b = (paint.color >> 16) & 0xFF;
+                    uint8_t a = (paint.color >> 24) & 0xFF;
+                    rqt_fill_path(surf, path, b, g, r, a,
+                                  fill_rule);  // R<->B swap: ARGB32 output
+                } else {
+                    // Gradient: stop colors pre-swapped R<->B (ARGB32 output,
+                    // same convention as solids).
+                    std::vector<float> offsets;
+                    std::vector<uint32_t> colors;
+                    offsets.reserve(paint.stops.size());
+                    colors.reserve(paint.stops.size());
+                    for (const auto& s : paint.stops) {
+                        offsets.push_back(s.offset);
+                        uint32_t c = s.color;
+                        uint32_t swapped =
+                            (c & 0xFF00FF00u) | ((c & 0xFFu) << 16) | ((c >> 16) & 0xFFu);
+                        colors.push_back(swapped);
+                    }
+                    if (paint.type == ir::PaintType::kLinear) {
+                        rqt_fill_path_gradient(surf, path, 0, paint.linear_start_x,
+                                               paint.linear_start_y, paint.linear_end_x,
+                                               paint.linear_end_y, offsets.data(), colors.data(),
+                                               static_cast<int32_t>(offsets.size()), fill_rule);
+                    } else {
+                        rqt_fill_path_gradient(surf, path, 1, paint.radial_center_x,
+                                               paint.radial_center_y, paint.radial_radius, 0.0f,
+                                               offsets.data(), colors.data(),
+                                               static_cast<int32_t>(offsets.size()), fill_rule);
+                    }
+                }
+                // Note: path is consumed by the fill call (Box::from_raw)
                 break;
             }
 
