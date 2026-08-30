@@ -4,7 +4,7 @@
     {
       "scene_id": "fills/solid_basic",
       "ir_path": "fills/solid_basic.irbin",
-      "scene_hash": "8bccfd7a",
+      "scene_hash": "42a99494",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,
@@ -28,7 +28,7 @@
     {
       "scene_id": "fills/spiral_circles",
       "ir_path": "fills/spiral_circles.irbin",
-      "scene_hash": "02fc0ab4",
+      "scene_hash": "eb748382",
       "ir_version": "1.0.0",
       "default_width": 800,
       "default_height": 600,

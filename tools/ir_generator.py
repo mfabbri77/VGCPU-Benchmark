@@ -293,16 +293,19 @@ def create_solid_basic_scene() -> Tuple[bytes, dict]:
     magenta = builder.add_paint(Paint.solid(255, 0, 255))
     yellow = builder.add_paint(Paint.solid(255, 255, 0))
 
-    # Uniform 3x2 grid: column centers x = 800*(1/6, 3/6, 5/6), row
-    # centers y = 150 / 450. Same footprint for every shape: squares of
-    # side 180, circles of radius 90.
-    cols = [800 / 6, 800 / 2, 800 * 5 / 6]
+    # Pixel-alignment policy (owner, 2026-08-30): these synthetic scenes are
+    # NOT antialiasing-quality tests (dedicated AA scenes will come later),
+    # so geometry avoids gratuitous fractional coverage. Rect edges sit on
+    # integer pixel boundaries; circle centers sit on pixel CENTERS (x.5,
+    # y.5) with the radius extended by that half pixel (90 -> 90.5) so the
+    # circle is tangent to the four orthogonal pixel boundaries.
+    cols = [133, 400, 667]
     side = 180
-    radius = 90
+    radius = 90.5
 
     squares = [builder.add_path(Path().rect(cx - side / 2, 150 - side / 2, side, side))
                for cx in cols]
-    circles = [builder.add_path(Path().circle(cx, 450, radius)) for cx in cols]
+    circles = [builder.add_path(Path().circle(cx + 0.5, 450.5, radius)) for cx in cols]
 
     builder.clear(255, 255, 255)
     builder.set_fill(red).fill_path(squares[0])
@@ -360,7 +363,12 @@ def create_spiral_circles_scene() -> Tuple[bytes, dict]:
     for i in range(50):
         angle = i * 0.5
         radius = 20 + i * 5
-        paths.append(builder.add_path(Path().circle(cx + math.cos(angle)*radius, cy + math.sin(angle)*radius, 15)))
+        # Pixel-alignment policy (see solid_basic): snap each circle center
+        # to the nearest pixel CENTER and extend the radius by the half
+        # pixel (15 -> 15.5, tangent to the four orthogonal boundaries).
+        px = math.floor(cx + math.cos(angle) * radius) + 0.5
+        py = math.floor(cy + math.sin(angle) * radius) + 0.5
+        paths.append(builder.add_path(Path().circle(px, py, 15.5)))
         
     builder.clear(255, 255, 255)
     for p, path in zip(paints, paths):
