@@ -1,8 +1,9 @@
 # VGCPU-Benchmark CI Pipeline
-# Blueprint Reference: [REQ-106..110], [TASK-06.02], Appendix E
+# Governance: see AGENTS.md and docs/adr/ (ADR-0003). Legacy [REQ-*] IDs in
+# this file resolve via requirements/ID_INDEX.md.
 #
-# Uses CMake presets per [REQ-92] - no ad-hoc CMake commands.
-# Runs quality gates per [REQ-103]: format_check, check_no_temp_dbg
+# Uses CMake presets - no ad-hoc CMake commands. Runs quality gates:
+# format_check, check_no_temp_dbg.
 
 name: VGCPU CI
 

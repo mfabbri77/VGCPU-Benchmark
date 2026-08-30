@@ -1,6 +1,6 @@
 # Migration Guide: v0.1.0 → v0.2.0
 
-> Blueprint Reference: [TASK-09.02], Chapter 9 Versioning & Lifecycle
+> Governance: see `AGENTS.md` and `docs/adr/`.
 
 This document covers the migration from VGCPU-Benchmark v0.1.0 to v0.2.0.
 
@@ -136,6 +136,6 @@ The only changes are in the build system (presets) and internal quality gates.
 
 If you encounter issues migrating:
 
-1. Check the [Developer Quickstart](docs/QUICKSTART.md)
-2. Review the [Blueprint Documentation](blueprint/)
+1. Check the [Developer Quickstart](QUICKSTART.md)
+2. Review the [agent/contributor contract](../AGENTS.md) and [ADRs](adr/README.md)
 3. Open an issue on GitHub

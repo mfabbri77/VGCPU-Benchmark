@@ -1,8 +1,9 @@
 # VGCPU-Benchmark Release Pipeline
-# Blueprint Reference: [REQ-140..145], [TASK-07.02], Appendix E
+# Governance: see AGENTS.md and docs/adr/ (ADR-0003). Legacy [REQ-*] IDs in
+# this file resolve via requirements/ID_INDEX.md.
 #
-# Uses CMake presets per [REQ-92].
-# Release builds use the 'release' preset with Tier-1 backends only.
+# Uses CMake presets. Release builds use the 'release' preset with Tier-1
+# backends only.
 
 name: VGCPU Release
 

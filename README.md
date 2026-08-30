@@ -26,6 +26,13 @@ The suite includes adapters for the following libraries:
 *   **Qt QPainter**
 *   **Anti-Grain Geometry (AGG)**
 
+## Governance
+Contributor and agent rules live in [`AGENTS.md`](AGENTS.md). Architecture
+and process decisions are tracked as ADRs under
+[`docs/adr/`](docs/adr/README.md). Superseded design docs (the original
+"blueprint" governance apparatus) are preserved for history under
+[`docs/archive/`](docs/archive/).
+
 ## License
 MIT License (see [LICENSE](./LICENSE)).
 

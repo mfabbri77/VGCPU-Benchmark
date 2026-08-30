@@ -1,6 +1,6 @@
 # VGCPU-Benchmark Developer Quickstart
 
-> Blueprint Reference: [TASK-09.01], Chapter 7 Build & Toolchain
+> Governance: see `AGENTS.md` and `docs/adr/`.
 
 This guide covers the essential workflow for developing and testing VGCPU-Benchmark.
 
@@ -182,14 +182,15 @@ All dependencies are pinned in `cmake/vgcpu_deps.cmake`. To update a dependency:
 ```
 /
 ├── assets/             # Scene files and manifests
-├── blueprint/          # Canonical blueprint v1.1 documentation
+├── docs/adr/           # Architecture decision records (governance)
+├── docs/archive/       # Superseded design docs, kept for history
+├── requirements/       # Frozen legacy-ID index
 ├── cmake/              # CMake modules (deps, options, sanitizers)
-├── cr/                 # Change Requests for governance
 ├── docs/               # Additional documentation
 ├── include/            # Public/Internal headers
 ├── src/                # Source code
 │   ├── adapters/       # Backend adapters
-│   ├── artifacts/      # Artifact generation & SSIM (v1.1)
+│   ├── artifacts/      # Artifact generation & SSIM
 │   ├── cli/            # CLI frontend
 │   ├── harness/        # Benchmark harness
 │   ├── ir/             # Intermediate representation
@@ -204,6 +205,5 @@ All dependencies are pinned in `cmake/vgcpu_deps.cmake`. To update a dependency:
 
 ## Further Reading
 
-- [Blueprint v1.0 Documentation](blueprint/)
-- [Implementation Checklist](blueprint/implementation_checklist.yaml)
-- [Decision Log](blueprint/decision_log.md)
+- [Agent/contributor contract](../AGENTS.md)
+- [Architecture decision records](adr/README.md)

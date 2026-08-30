@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Retired the Antigravity blueprint/CR governance apparatus in favor of a
+  lightweight, OMP-native model: `AGENTS.md` as the single always-active
+  contract, `docs/adr/` for architecture decisions, and a frozen
+  `requirements/ID_INDEX.md` resolving legacy IDs still cited in code. See
+  ADR-0003. `blueprint/`, `cr/`, `.agent/rules/follow-blueprint.md`, and
+  `COMPLIANCE_REPORT.md` moved to `docs/archive/legacy-governance-antigravity/`
+  (history preserved).
+
 ### Added
 - Blueprint v1.0 adoption with canonical documentation
 - CMake presets (dev, release, ci, asan, ubsan, tsan) per [REQ-92]
