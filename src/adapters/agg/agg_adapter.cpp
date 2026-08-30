@@ -169,6 +169,7 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
     ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
     float current_stroke_width = 1.0f;
     uint8_t current_stroke_opts = 0;
+    uint16_t current_stroke_paint_id = 0;
 
     while (ptr < end) {
         ir::Opcode op = static_cast<ir::Opcode>(*ptr++);
@@ -217,10 +218,14 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
             }
 
             case ir::Opcode::kSetStroke: {
-                current_paint_id = ReadLE<uint16_t>(ptr);
+                // Fixed 2026-08-30: this used to clobber current_paint_id
+                // (the FILL paint) and to discard the cap/join opts byte
+                // entirely -- every stroke rendered with AGG's defaults
+                // (miter join, butt cap) regardless of the scene (the
+                // square asks for bevel+square and got miter).
+                current_stroke_paint_id = ReadLE<uint16_t>(ptr);
                 current_stroke_width = ReadLE<float>(ptr);
                 current_stroke_opts = *ptr++;
-                (void)current_stroke_opts;  // Suppress unused warning
                 break;
             }
 
@@ -277,11 +282,14 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                 agg::conv_transform<agg::conv_curve<agg::path_storage>> trans_path(curved_path,
                                                                                    ctm);
 
-                // Paint: solid color or gradient span pipeline
+                // Paint: solid color or gradient span pipeline. Fill and
+                // stroke carry separate paint state.
+                uint16_t paint_id =
+                    (op == ir::Opcode::kFillPath) ? current_paint_id : current_stroke_paint_id;
                 agg::rgba8 color(0, 0, 0, 255);
                 const vgcpu::Paint* gradient_paint = nullptr;
-                if (current_paint_id < scene.paints.size()) {
-                    const auto& paint = scene.paints[current_paint_id];
+                if (paint_id < scene.paints.size()) {
+                    const auto& paint = scene.paints[paint_id];
                     if (paint.type == ir::PaintType::kSolid) {
                         uint32_t c = paint.color;
                         color = agg::rgba8(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF,
@@ -304,11 +312,32 @@ Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& confi
                         agg::render_scanlines_aa_solid(ras, sl, ren_base, color);
                     }
                 } else {
-                    // Stroke
+                    // Stroke with the scene's caps and joins
                     agg::conv_stroke<agg::conv_transform<agg::conv_curve<agg::path_storage>>>
                         stroke(trans_path);
                     stroke.width(current_stroke_width);
-                    // TODO: Caps/Joins from current_stroke_opts
+                    switch (ir::UnpackStrokeCap(current_stroke_opts)) {
+                        case ir::StrokeCap::kButt:
+                            stroke.line_cap(agg::butt_cap);
+                            break;
+                        case ir::StrokeCap::kRound:
+                            stroke.line_cap(agg::round_cap);
+                            break;
+                        case ir::StrokeCap::kSquare:
+                            stroke.line_cap(agg::square_cap);
+                            break;
+                    }
+                    switch (ir::UnpackStrokeJoin(current_stroke_opts)) {
+                        case ir::StrokeJoin::kMiter:
+                            stroke.line_join(agg::miter_join);
+                            break;
+                        case ir::StrokeJoin::kRound:
+                            stroke.line_join(agg::round_join);
+                            break;
+                        case ir::StrokeJoin::kBevel:
+                            stroke.line_join(agg::bevel_join);
+                            break;
+                    }
 
                     ras.add_path(stroke);
                     agg::render_scanlines_aa_solid(ras, sl, ren_base, color);
