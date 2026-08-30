@@ -128,6 +128,29 @@ cmake -B build -DVGCPU_TIER1_ONLY=ON
     --compare-ssim --golden-dir assets/golden
 ```
 
+### Rigorous Measurement Protocol
+
+For publication-grade numbers, pin the process to one physical core and
+set the cpufreq governor to `performance` first (the run records both in
+`run_metadata.environment`; a non-`performance` governor prints a warning):
+
+```bash
+# One-time, per boot (root):
+sudo cpupower frequency-set -g performance
+
+# High-statistics pinned run (CPU 2 = a P-core on hybrid Intel parts;
+# logical CPUs 0-11 are typically P-cores on a 12700H):
+./build/release/vgcpu-benchmark run --all-backends --all-scenes \
+    --warmup-iters 16 --iters 256 --repetitions 8 --threads 1 --pin 2 \
+    --format json --out out/
+```
+
+`--pin` is Linux/Windows; a requested pin that cannot be applied fails the
+run (exit 3) rather than mislabeling the measurement. Pinning also
+physically serializes backends with hidden internal threading (Qt's
+gradient fills remain internally parallel when unpinned even with the
+global thread pool capped).
+
 ## HTML Report
 
 One self-contained page (performance leaderboards, rendering gallery with

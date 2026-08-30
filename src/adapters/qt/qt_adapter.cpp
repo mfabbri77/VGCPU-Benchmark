@@ -12,6 +12,7 @@
 #include <QPainter>
 #include <QPainterPath>
 #include <QRadialGradient>
+#include <QThreadPool>
 #include <iostream>
 
 namespace vgcpu {
@@ -94,7 +95,7 @@ QBrush CreateBrush(const Paint& paint) {
 
 }  // namespace
 
-Status QtAdapter::Initialize(const AdapterArgs& /*args*/) {
+Status QtAdapter::Initialize(const AdapterArgs& args) {
     // QGuiApplication needs a specialized offscreen backend for CLI usage
     if (!qApp) {
         // Use static data to keep arguments alive
@@ -108,6 +109,13 @@ Status QtAdapter::Initialize(const AdapterArgs& /*args*/) {
         // This will leak, but it's intentional as QGuiApplication must live for the app duration
         new QGuiApplication(argc, argv);
     }
+
+    // Qt's raster engine parallelizes some fills (notably gradient spans)
+    // on QThreadPool::globalInstance(). Cap the pool to the harness thread
+    // budget so the "1 thread" column is honest -- found 2026-08-30 when
+    // --pin exposed a +119% swing on fills/gradients_linear (hidden
+    // multi-thread fill contending on the pinned core).
+    QThreadPool::globalInstance()->setMaxThreadCount(args.thread_count > 0 ? args.thread_count : 1);
 
     initialized_ = true;
     return Status::Ok();

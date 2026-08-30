@@ -17,6 +17,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- `--pin <cpu>` (REQ-13-03): pins the process (and every backend worker
+  thread created afterwards) to one logical CPU; Linux/Windows, hard
+  error if the pin cannot be applied. The run records `pinned_cpu` and
+  the cpufreq `cpu_governor` in `run_metadata.environment` (additive JSON
+  fields), warns when the governor is not `performance`, and the HTML
+  report shows a "Discipline" row. QUICKSTART documents the rigorous
+  protocol. Pinned high-stats run confirms the unpinned rankings within
+  a few percent.
+- Qt adapter: cap `QThreadPool::globalInstance()` to the harness thread
+  budget. Found via `--pin`: Qt's raster engine parallelizes gradient
+  fills internally (+119% on fills/gradients_linear when everything
+  contends on one pinned core; wall < cpu when unpinned). The cap removes
+  most of the pinned contention; unpinned Qt gradient fills remain
+  internally parallel (no public knob reaches them) -- with `--pin` the
+  numbers are serialized by construction, which is the recommended
+  protocol.
 - Stroke support implemented in cairo and plutovg (kSetStroke/kStrokePath
   with width, cap and join; paint set through the shared solid/gradient
   helper). Root cause was worse than a missing feature: unhandled opcodes

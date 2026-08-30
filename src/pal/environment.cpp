@@ -20,6 +20,7 @@
 #include <sys/types.h>
 #include <sys/utsname.h>
 #elif defined(__linux__)
+#include <sched.h>
 #include <sys/sysinfo.h>
 #include <sys/utsname.h>
 #include <unistd.h>
@@ -158,6 +159,46 @@ EnvironmentInfo CollectEnvironment() {
 #endif
 
     return info;
+}
+
+bool PinToCpu(int cpu) {
+    if (cpu < 0) {
+        return false;
+    }
+#if defined(__linux__)
+    cpu_set_t set;
+    CPU_ZERO(&set);
+    CPU_SET(static_cast<unsigned>(cpu), &set);
+    // pid 0 = calling thread; threads created afterwards (backend workers)
+    // inherit the affinity mask, which is exactly what a pinned
+    // single-core measurement needs.
+    return sched_setaffinity(0, sizeof(set), &set) == 0;
+#elif defined(_WIN32)
+    DWORD_PTR mask = static_cast<DWORD_PTR>(1) << cpu;
+    return SetProcessAffinityMask(GetCurrentProcess(), mask) != 0;
+#else
+    // macOS has no strict affinity API (thread_policy_set is a hint only):
+    // report honestly that the pin did not happen. [REQ-13-03]
+    return false;
+#endif
+}
+
+std::string GetCpuGovernor(int cpu) {
+#if defined(__linux__)
+    if (cpu < 0) {
+        cpu = 0;
+    }
+    std::ifstream f("/sys/devices/system/cpu/cpu" + std::to_string(cpu) +
+                    "/cpufreq/scaling_governor");
+    std::string governor;
+    if (f && std::getline(f, governor)) {
+        return governor;
+    }
+    return {};
+#else
+    (void)cpu;
+    return {};
+#endif
 }
 
 std::string GetTimestamp() {

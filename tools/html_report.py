@@ -436,6 +436,15 @@ def build_report(results, oracle, results_dir, reference):
         ("Cores", env.get("cpu_cores", "?")),
         ("Compiler", f"{env.get('compiler_name','?')} {env.get('compiler_version','')}".strip()),
         (
+            "Discipline",
+            (
+                f"pinned to CPU {env['pinned_cpu']}"
+                if env.get("pinned_cpu", -1) >= 0
+                else "not pinned"
+            )
+            + (f" · governor {env['cpu_governor']}" if env.get("cpu_governor") else ""),
+        ),
+        (
             "Policy",
             f"warmup {policy.get('warmup_iterations','?')} / iters "
             f"{policy.get('measurement_iterations','?')} / reps "

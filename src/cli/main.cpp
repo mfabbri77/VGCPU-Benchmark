@@ -276,6 +276,25 @@ int HandleRun(const CliOptions& options) {
     policy.golden_dir = options.golden_dir;
     policy.output_dir = options.output_dir.empty() ? "." : options.output_dir;
 
+    // Measurement discipline (REQ-13-03): pin BEFORE any benchmark work so
+    // backend worker threads created later inherit the affinity mask. A
+    // requested pin that fails is a hard error -- silently unpinned numbers
+    // would be mislabeled measurements.
+    if (options.pin_cpu >= 0) {
+        if (!pal::PinToCpu(options.pin_cpu)) {
+            VGCPU_LOG_ERROR("Failed to pin process to CPU " + std::to_string(options.pin_cpu) +
+                            " (--pin): unsupported platform or invalid CPU index");
+            return 3;
+        }
+        VGCPU_LOG_INFO("Process pinned to logical CPU " + std::to_string(options.pin_cpu));
+        std::string governor = pal::GetCpuGovernor(options.pin_cpu);
+        if (!governor.empty() && governor != "performance") {
+            VGCPU_LOG_WARN("CPU " + std::to_string(options.pin_cpu) + " governor is '" + governor +
+                           "', not 'performance': sustained clocks may drift. Fix with: sudo "
+                           "cpupower frequency-set -g performance");
+        }
+    }
+
     // Run benchmarks
     std::vector<CaseResult> results;
 
@@ -309,6 +328,9 @@ int HandleRun(const CliOptions& options) {
     metadata.suite_version = VGCPU_VERSION_STRING;
     metadata.git_commit = VGCPU_GIT_COMMIT;
     metadata.environment = pal::CollectEnvironment();
+    metadata.environment.pinned_cpu = options.pin_cpu;
+    metadata.environment.cpu_governor =
+        pal::GetCpuGovernor(options.pin_cpu >= 0 ? options.pin_cpu : 0);
     metadata.policy = policy;
 
     // Print summary

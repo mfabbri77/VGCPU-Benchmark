@@ -24,10 +24,24 @@ struct EnvironmentInfo {
     int64_t memory_bytes = 0;
     std::string compiler_name;
     std::string compiler_version;
+    // Measurement discipline (REQ-13-03): filled by the CLI when --pin is
+    // used. pinned_cpu = -1 means "not pinned"; cpu_governor is empty where
+    // the platform does not expose one (non-Linux).
+    int pinned_cpu = -1;
+    std::string cpu_governor;
 };
 
 /// Collect environment information for the current system.
 [[nodiscard]] EnvironmentInfo CollectEnvironment();
+
+/// Pin the current process (calling thread + threads created afterwards)
+/// to one logical CPU. Best-effort per platform (REQ-13-03): Linux and
+/// Windows implement it; elsewhere returns false.
+[[nodiscard]] bool PinToCpu(int cpu);
+
+/// Read the cpufreq scaling governor of a logical CPU. Linux only; returns
+/// an empty string where unavailable.
+[[nodiscard]] std::string GetCpuGovernor(int cpu);
 
 /// Get the current timestamp in ISO 8601 format.
 [[nodiscard]] std::string GetTimestamp();
