@@ -19,6 +19,9 @@
 
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
+#include <fstream>
+#include <sstream>
 #include <string>
 #include <vector>
 
@@ -168,6 +171,12 @@ TEST_SUITE("Correctness Oracle - Self-Overlap Coverage") {
 
         constexpr double kEpsilon = 3.0 / 255.0;
 
+        // Machine-readable census export for tools/html_report.py: one JSON
+        // row per (backend, case), written only when VGCPU_ORACLE_JSON names
+        // a destination file. Keeps the doctest output contract unchanged.
+        std::ostringstream census_json;
+        bool census_first = true;
+
         auto& registry = AdapterRegistry::Instance();
         for (const auto& id : registry.GetAdapterIds()) {
             if (id == "null") {
@@ -192,27 +201,48 @@ TEST_SUITE("Correctness Oracle - Self-Overlap Coverage") {
                 CAPTURE(measured);
                 CAPTURE(c.expected_union);
 
+                bool exact = std::abs(measured - c.expected_union) <= kEpsilon;
+                bool sums = std::abs(measured - c.expected_naive_sum) <= kEpsilon;
+                std::string classification;
                 if (c.is_control) {
+                    classification = exact ? "pass" : "FAIL";
                     // Single correct answer: hard requirement for every backend.
-                    CHECK_MESSAGE(std::abs(measured - c.expected_union) <= kEpsilon,
-                                  id << " / " << c.name << ": expected " << c.expected_union
-                                     << ", measured " << measured);
+                    CHECK_MESSAGE(exact, id << " / " << c.name << ": expected " << c.expected_union
+                                            << ", measured " << measured);
                 } else {
                     // Known-divergent architectures exist (sum-then-saturate,
                     // e.g. Blend2D/Vello per the market-analysis doc); this is
                     // a census, not a gate: classify and report, never fail
                     // the build for a documented, unfixable-by-us finding.
-                    bool exact = std::abs(measured - c.expected_union) <= kEpsilon;
-                    bool sums = std::abs(measured - c.expected_naive_sum) <= kEpsilon;
-                    std::string classification =
+                    classification =
                         exact ? "exact-union" : (sums ? "sum-then-saturate" : "other-divergence");
                     MESSAGE(id << " / " << c.name << ": measured=" << measured << " expected_union="
                                << c.expected_union << " expected_naive_sum=" << c.expected_naive_sum
                                << " classification=" << classification);
                 }
+
+                if (!census_first) {
+                    census_json << ",\n";
+                }
+                census_first = false;
+                census_json << "  {\"backend\": \"" << id << "\", \"case\": \"" << c.name
+                            << "\", \"measured\": " << measured
+                            << ", \"expected_union\": " << c.expected_union
+                            << ", \"expected_naive_sum\": " << c.expected_naive_sum
+                            << ", \"is_control\": " << (c.is_control ? "true" : "false")
+                            << ", \"classification\": \"" << classification << "\"}";
             }
 
             adapter->Shutdown();
+        }
+
+        if (const char* census_path = std::getenv("VGCPU_ORACLE_JSON")) {
+            std::ofstream out(census_path, std::ios::trunc);
+            if (out) {
+                out << "[\n" << census_json.str() << "\n]\n";
+            } else {
+                MESSAGE("VGCPU_ORACLE_JSON set but not writable: " << census_path);
+            }
         }
     }
 }

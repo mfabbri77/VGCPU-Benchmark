@@ -128,6 +128,26 @@ cmake -B build -DVGCPU_TIER1_ONLY=ON
     --compare-ssim --golden-dir assets/golden
 ```
 
+## HTML Report
+
+One self-contained page (performance leaderboards, rendering gallery with
+cross-backend SSIM + difference maps, correctness census) from a run's
+outputs — Python 3 stdlib only, offline, shareable as a single file
+(ADR-0005):
+
+```bash
+# 1. Benchmark with PNG artifacts
+./build/release/vgcpu-benchmark run --all-backends --all-scenes \
+    --png --format json --out out/
+
+# 2. (optional) correctness census JSON
+VGCPU_ORACLE_JSON=out/oracle.json ./build/release/vgcpu_tests \
+    --test-suite=correctness
+
+# 3. Generate out/report.html
+python3 tools/html_report.py out/            # --reference cairo by default
+```
+
 ## Quality Gates
 
 Run these before committing:

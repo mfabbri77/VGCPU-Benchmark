@@ -17,6 +17,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (history preserved).
 
 ### Added
+- Self-contained HTML report generator (`tools/html_report.py`, ADR-0005):
+  one offline file with performance leaderboards, a rendering gallery with
+  cross-backend SSIM against a selectable reference backend, amplified
+  difference maps, and the correctness-census matrix. Python 3 stdlib
+  only. The correctness oracle test additionally exports its census as
+  JSON when `VGCPU_ORACLE_JSON` is set. First generated report exposed
+  that several adapters (cairo, agg, plutovg, raqote, vello) render
+  `fills/gradients_linear` as solid black — gradients unimplemented at
+  the adapter level, so their gradient-scene timings measure drawing
+  nothing (recorded as follow-up in ADR-0005).
 - Correctness oracle suite (`tests/test_correctness_oracle.cpp`, ADR-0004):
   a self-overlap fill-nonzero coverage census, run against every wired
   adapter, distinguishing exact-union rasterizers from the

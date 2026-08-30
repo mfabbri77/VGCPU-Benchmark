@@ -29,3 +29,4 @@ Tracker: <issue/PR link, or n/a>
 | [ADR-0002](ADR-0002-png-artifacts-ssim-regression.md) | PNG artifacts + SSIM regression against a ground-truth backend | Accepted — implemented in v0.2.0 |
 | [ADR-0003](ADR-0003-adopt-lightweight-omp-native-governance.md) | Adopt lightweight, OMP-native governance; retire the blueprint/CR apparatus | Accepted |
 | [ADR-0004](ADR-0004-correctness-oracle-suite.md) | Correctness oracle suite: self-overlap coverage, conflation, sub-pixel census | Accepted |
+| [ADR-0005](ADR-0005-html-report-generator.md) | Self-contained HTML report generator (`tools/html_report.py`) | Accepted |
