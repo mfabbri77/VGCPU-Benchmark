@@ -662,21 +662,20 @@ def create_degen_reversal_scene() -> Tuple[bytes, dict]:
     }
 
 # ---------------------------------------------------------------------------
-# Real-world scene: the Ghostscript tiger (owner request, 2026-08-30).
-# Vendored SVG at assets/svg/tiger.svg (305 paths, solid fills/strokes,
-# cubic-heavy). The minimal SVG subset needed by that file is parsed here:
-# groups with translate/scale/matrix transforms, style fill/stroke/
-# stroke-width/stroke-linecap, path data with m/l/h/v/c/s/z (abs + rel).
-# Transforms are baked into path coordinates; stroke widths scale by the
-# uniform matrix factor sqrt(|det|).
+# Real-world scenes converted from vendored SVGs (owner requests, 2026-08-30).
+# The minimal SVG subset needed by those files is parsed here: groups with
+# translate/scale/matrix transforms (baked into coordinates), style or
+# attribute fill/stroke/stroke-width/stroke-linecap/fill-rule, elements
+# path (m/l/h/v/c/s/z, abs + rel), polygon and rect. Stroke widths scale
+# by the uniform matrix factor sqrt(|det|).
 # ---------------------------------------------------------------------------
 
-def create_tiger_scene() -> Tuple[bytes, dict]:
+def convert_svg_scene(svg_name, scene_id, description, features) -> Tuple[bytes, dict]:
     import re
     import xml.etree.ElementTree as ET
 
     repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    tree = ET.parse(os.path.join(repo, 'assets', 'svg', 'tiger.svg'))
+    tree = ET.parse(os.path.join(repo, 'assets', 'svg', svg_name))
     root = tree.getroot()
 
     NUM = re.compile(r'[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?')
@@ -715,7 +714,7 @@ def create_tiger_scene() -> Tuple[bytes, dict]:
             if ':' in part:
                 k, v = part.split(':', 1)
                 style[k.strip()] = v.strip()
-        for k in ('fill', 'stroke', 'stroke-width', 'stroke-linecap'):
+        for k in ('fill', 'stroke', 'stroke-width', 'stroke-linecap', 'fill-rule'):
             if el.get(k) is not None:
                 style[k] = el.get(k)
         return style
@@ -811,46 +810,80 @@ def create_tiger_scene() -> Tuple[bytes, dict]:
             paint_cache[rgba] = builder.add_paint(Paint.solid(*rgba))
         return paint_cache[rgba]
 
-    draws = []  # (kind, paint_rgba, path_id, width, cap) in document order
+    draws = []  # (kind, paint_rgba, path_id, width_or_rule, cap) in document order
+
+    def add_draws(el, m, pid):
+        style = parse_style(el)
+        fill = style.get('fill', '#000000')
+        if fill != 'none':
+            rule = FillRule.EVEN_ODD if style.get('fill-rule') == 'evenodd' else FillRule.NON_ZERO
+            draws.append(('fill', hex_color(fill), pid, rule, None))
+        stroke = style.get('stroke', 'none')
+        if stroke != 'none':
+            wscale = math.sqrt(abs(m[0] * m[3] - m[1] * m[2]))
+            width = float(style.get('stroke-width', '1')) * wscale
+            cap = StrokeCap.ROUND if style.get('stroke-linecap') == 'round' else StrokeCap.BUTT
+            draws.append(('stroke', hex_color(stroke), pid, width, cap))
+
+    def apply_pt(m, x, y):
+        return (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5])
 
     def walk(el, m):
         tag = el.tag.split('}')[-1]
         m = mat_mul(m, parse_transform(el.get('transform')))
         if tag == 'path':
-            style = parse_style(el)
             d = el.get('d')
             key = (d, m)
             if key not in path_cache:
                 path_cache[key] = builder.add_path(parse_path_data(d, m))
-            pid = path_cache[key]
-            fill = style.get('fill', '#000000')
-            if fill != 'none':
-                draws.append(('fill', hex_color(fill), pid, None, None))
-            stroke = style.get('stroke', 'none')
-            if stroke != 'none':
-                wscale = math.sqrt(abs(m[0] * m[3] - m[1] * m[2]))
-                width = float(style.get('stroke-width', '1')) * wscale
-                cap = StrokeCap.ROUND if style.get('stroke-linecap') == 'round' else StrokeCap.BUTT
-                draws.append(('stroke', hex_color(stroke), pid, width, cap))
+            add_draws(el, m, path_cache[key])
+        elif tag == 'polygon':
+            pts = [float(v) for v in NUM.findall(el.get('points'))]
+            p = Path()
+            for k in range(0, len(pts), 2):
+                (p.move_to if k == 0 else p.line_to)(*apply_pt(m, pts[k], pts[k + 1]))
+            p.close()
+            add_draws(el, m, builder.add_path(p))
+        elif tag == 'rect':
+            x = float(el.get('x', '0')); y = float(el.get('y', '0'))
+            w = float(el.get('width')); h = float(el.get('height'))
+            p = Path()
+            corners = [(x, y), (x + w, y), (x + w, y + h), (x, y + h)]
+            for k, (px, py) in enumerate(corners):
+                (p.move_to if k == 0 else p.line_to)(*apply_pt(m, px, py))
+            p.close()
+            add_draws(el, m, builder.add_path(p))
         for child in el:
             walk(child, m)
 
     walk(root, fit)
 
     builder.clear(255, 255, 255)
-    for kind, rgba, pid, width, cap in draws:
+    for kind, rgba, pid, arg, cap in draws:
         if kind == 'fill':
-            builder.set_fill(paint_id(rgba)).fill_path(pid)
+            builder.set_fill(paint_id(rgba), arg).fill_path(pid)
         else:
-            builder.set_stroke(paint_id(rgba), width, cap, StrokeJoin.MITER)
+            builder.set_stroke(paint_id(rgba), arg, cap, StrokeJoin.MITER)
             builder.stroke_path(pid)
 
     return builder.build(), {
-        "scene_id": "complex/tiger",
-        "description": "Ghostscript tiger (305 SVG paths, solid fills/strokes, cubic-heavy)",
+        "scene_id": scene_id,
+        "description": description,
         "default_width": W, "default_height": H,
-        "required_features": {"needs_nonzero": True, "needs_stroke": True}
+        "required_features": features
     }
+
+def create_tiger_scene() -> Tuple[bytes, dict]:
+    return convert_svg_scene(
+        'tiger.svg', 'complex/tiger',
+        "Ghostscript tiger (305 SVG paths, solid fills/strokes, cubic-heavy)",
+        {"needs_nonzero": True, "needs_stroke": True})
+
+def create_paris_scene() -> Tuple[bytes, dict]:
+    return convert_svg_scene(
+        'paris.svg', 'complex/paris',
+        "Paris map (3056 polygons, ~41k vertices, evenodd building paths)",
+        {"needs_nonzero": True})
 
 def create_noop_scene() -> Tuple[bytes, dict]:
     builder = IrBuilder(800, 600)
@@ -883,6 +916,7 @@ def main():
         (create_degen_short_wide_scene, 'strokes/degen_short_wide.irbin'),
         (create_degen_reversal_scene, 'strokes/degen_reversal.irbin'),
         (create_tiger_scene, 'complex/tiger.irbin'),
+        (create_paris_scene, 'complex/paris.irbin'),
         (create_noop_scene, 'validation/noop.irbin'),
     ]
     

@@ -123,6 +123,18 @@
       "description": "Ghostscript tiger (305 SVG paths, solid fills/strokes, cubic-heavy)"
     },
     {
+      "scene_id": "complex/paris",
+      "ir_path": "complex/paris.irbin",
+      "scene_hash": "08008809",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true
+      },
+      "description": "Paris map (3056 polygons, ~41k vertices, evenodd building paths)"
+    },
+    {
       "scene_id": "validation/noop",
       "ir_path": "validation/noop.irbin",
       "scene_hash": "85b7d3a0",
