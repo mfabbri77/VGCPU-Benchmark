@@ -18,7 +18,7 @@
 #
 # Usage:
 #   tools/html_report.py <results_dir> [-o report.html]
-#                        [--reference cairo] [--oracle-json census.json]
+#                        [--reference skia] [--oracle-json census.json]
 
 import argparse
 import base64
@@ -405,7 +405,15 @@ def build_report(results, oracle, results_dir, reference):
     real_backends = [b for b in backends if b != "null"]
 
     if reference is None:
-        reference = "cairo" if "cairo" in real_backends else (real_backends[0] if real_backends else None)
+        # Default preference (owner decision, 2026-08-30): skia -- closest to
+        # the analytic float expectation on interior blends (0.3-1.6/255 vs
+        # cairo's 3.9 truncation drift) and exact-union class on overlap.
+        for candidate in ("skia", "cairo"):
+            if candidate in real_backends:
+                reference = candidate
+                break
+        else:
+            reference = real_backends[0] if real_backends else None
     if reference not in real_backends:
         sys.exit(f"error: reference backend '{reference}' not in results ({', '.join(real_backends)})")
 
@@ -689,7 +697,7 @@ def main():
     )
     ap.add_argument("results_dir", help="directory containing results.json and PNG artifacts")
     ap.add_argument("-o", "--output", default=None, help="output HTML path (default: <results_dir>/report.html)")
-    ap.add_argument("--reference", default=None, help="reference backend for SSIM (default: cairo, else first)")
+    ap.add_argument("--reference", default=None, help="reference backend for SSIM (default: skia, else cairo, else first)")
     ap.add_argument("--oracle-json", default=None, help="correctness census JSON (default: <results_dir>/oracle.json if present)")
     args = ap.parse_args()
 
