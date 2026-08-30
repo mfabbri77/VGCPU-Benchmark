@@ -661,6 +661,197 @@ def create_degen_reversal_scene() -> Tuple[bytes, dict]:
         "required_features": {"needs_stroke": True}
     }
 
+# ---------------------------------------------------------------------------
+# Real-world scene: the Ghostscript tiger (owner request, 2026-08-30).
+# Vendored SVG at assets/svg/tiger.svg (305 paths, solid fills/strokes,
+# cubic-heavy). The minimal SVG subset needed by that file is parsed here:
+# groups with translate/scale/matrix transforms, style fill/stroke/
+# stroke-width/stroke-linecap, path data with m/l/h/v/c/s/z (abs + rel).
+# Transforms are baked into path coordinates; stroke widths scale by the
+# uniform matrix factor sqrt(|det|).
+# ---------------------------------------------------------------------------
+
+def create_tiger_scene() -> Tuple[bytes, dict]:
+    import re
+    import xml.etree.ElementTree as ET
+
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    tree = ET.parse(os.path.join(repo, 'assets', 'svg', 'tiger.svg'))
+    root = tree.getroot()
+
+    NUM = re.compile(r'[-+]?(?:\d*\.\d+|\d+\.?)(?:[eE][-+]?\d+)?')
+
+    def mat_mul(a, b):  # 2x3 affine (a c e / b d f), column-vector convention
+        return (a[0]*b[0] + a[2]*b[1],        a[1]*b[0] + a[3]*b[1],
+                a[0]*b[2] + a[2]*b[3],        a[1]*b[2] + a[3]*b[3],
+                a[0]*b[4] + a[2]*b[5] + a[4], a[1]*b[4] + a[3]*b[5] + a[5])
+
+    def parse_transform(s):
+        m = (1.0, 0.0, 0.0, 1.0, 0.0, 0.0)
+        for name, args in re.findall(r'(\w+)\s*\(([^)]*)\)', s or ''):
+            v = [float(x) for x in NUM.findall(args)]
+            if name == 'translate':
+                t = (1.0, 0.0, 0.0, 1.0, v[0], v[1] if len(v) > 1 else 0.0)
+            elif name == 'scale':
+                t = (v[0], 0.0, 0.0, v[1] if len(v) > 1 else v[0], 0.0, 0.0)
+            elif name == 'matrix':
+                t = tuple(v)
+            else:
+                raise ValueError(f'unsupported transform: {name}')
+            m = mat_mul(m, t)
+        return m
+
+    def hex_color(s):
+        h = s.strip().lstrip('#')
+        if len(h) in (3, 4):
+            h = ''.join(ch * 2 for ch in h)
+        if len(h) == 6:
+            h += 'ff'
+        return tuple(int(h[k:k + 2], 16) for k in (0, 2, 4, 6))
+
+    def parse_style(el):
+        style = {}
+        for part in (el.get('style') or '').split(';'):
+            if ':' in part:
+                k, v = part.split(':', 1)
+                style[k.strip()] = v.strip()
+        for k in ('fill', 'stroke', 'stroke-width', 'stroke-linecap'):
+            if el.get(k) is not None:
+                style[k] = el.get(k)
+        return style
+
+    # Fit: viewBox -> 800x600 canvas, uniform scale, centered.
+    vb = [float(x) for x in NUM.findall(root.get('viewBox'))]
+    W, H = 800, 600
+    s = min(W / vb[2], H / vb[3])
+    fit = (s, 0.0, 0.0, s, (W - vb[2] * s) / 2 - vb[0] * s, (H - vb[3] * s) / 2 - vb[1] * s)
+
+    def parse_path_data(d, m):
+        p = Path()
+        toks = re.findall(r'[MmLlHhVvCcSsQqTtAaZz]|' + NUM.pattern, d)
+        i = 0
+        cmd = None
+        cx = cy = sx = sy = 0.0  # current point / subpath start (user units)
+        pcx = pcy = None         # last cubic control (for s/S reflection)
+
+        def nums(n):
+            nonlocal i
+            v = [float(t) for t in toks[i:i + n]]
+            i += n
+            return v
+
+        def emit(fn, *pts):
+            fn(*[c for x, y in pts for c in apply_m(x, y)])
+
+        def apply_m(x, y):
+            return (m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5])
+
+        while i < len(toks):
+            if toks[i].isalpha():
+                cmd = toks[i]
+                i += 1
+            rel = cmd.islower()
+            c = cmd.lower()
+            if c == 'z':
+                p.close()
+                cx, cy = sx, sy
+                pcx = pcy = None
+                continue
+            if c == 'm':
+                x, y = nums(2)
+                if rel: x += cx; y += cy
+                cx, cy = sx, sy = x, y
+                emit(p.move_to, (x, y))
+                cmd = 'l' if rel else 'L'  # extra pairs are implicit linetos
+                pcx = pcy = None
+            elif c == 'l':
+                x, y = nums(2)
+                if rel: x += cx; y += cy
+                cx, cy = x, y
+                emit(p.line_to, (x, y))
+                pcx = pcy = None
+            elif c == 'h':
+                (x,) = nums(1)
+                if rel: x += cx
+                cx = x
+                emit(p.line_to, (x, cy))
+                pcx = pcy = None
+            elif c == 'v':
+                (y,) = nums(1)
+                if rel: y += cy
+                cy = y
+                emit(p.line_to, (cx, y))
+                pcx = pcy = None
+            elif c == 'c':
+                x1, y1, x2, y2, x, y = nums(6)
+                if rel:
+                    x1 += cx; y1 += cy; x2 += cx; y2 += cy; x += cx; y += cy
+                emit(p.cubic_to, (x1, y1), (x2, y2), (x, y))
+                pcx, pcy = x2, y2
+                cx, cy = x, y
+            elif c == 's':
+                x2, y2, x, y = nums(4)
+                if rel:
+                    x2 += cx; y2 += cy; x += cx; y += cy
+                x1 = 2 * cx - pcx if pcx is not None else cx
+                y1 = 2 * cy - pcy if pcy is not None else cy
+                emit(p.cubic_to, (x1, y1), (x2, y2), (x, y))
+                pcx, pcy = x2, y2
+                cx, cy = x, y
+            else:
+                raise ValueError(f'unsupported path command: {cmd}')
+        return p
+
+    builder = IrBuilder(W, H)
+    paint_cache = {}
+    path_cache = {}
+
+    def paint_id(rgba):
+        if rgba not in paint_cache:
+            paint_cache[rgba] = builder.add_paint(Paint.solid(*rgba))
+        return paint_cache[rgba]
+
+    draws = []  # (kind, paint_rgba, path_id, width, cap) in document order
+
+    def walk(el, m):
+        tag = el.tag.split('}')[-1]
+        m = mat_mul(m, parse_transform(el.get('transform')))
+        if tag == 'path':
+            style = parse_style(el)
+            d = el.get('d')
+            key = (d, m)
+            if key not in path_cache:
+                path_cache[key] = builder.add_path(parse_path_data(d, m))
+            pid = path_cache[key]
+            fill = style.get('fill', '#000000')
+            if fill != 'none':
+                draws.append(('fill', hex_color(fill), pid, None, None))
+            stroke = style.get('stroke', 'none')
+            if stroke != 'none':
+                wscale = math.sqrt(abs(m[0] * m[3] - m[1] * m[2]))
+                width = float(style.get('stroke-width', '1')) * wscale
+                cap = StrokeCap.ROUND if style.get('stroke-linecap') == 'round' else StrokeCap.BUTT
+                draws.append(('stroke', hex_color(stroke), pid, width, cap))
+        for child in el:
+            walk(child, m)
+
+    walk(root, fit)
+
+    builder.clear(255, 255, 255)
+    for kind, rgba, pid, width, cap in draws:
+        if kind == 'fill':
+            builder.set_fill(paint_id(rgba)).fill_path(pid)
+        else:
+            builder.set_stroke(paint_id(rgba), width, cap, StrokeJoin.MITER)
+            builder.stroke_path(pid)
+
+    return builder.build(), {
+        "scene_id": "complex/tiger",
+        "description": "Ghostscript tiger (305 SVG paths, solid fills/strokes, cubic-heavy)",
+        "default_width": W, "default_height": H,
+        "required_features": {"needs_nonzero": True, "needs_stroke": True}
+    }
+
 def create_noop_scene() -> Tuple[bytes, dict]:
     builder = IrBuilder(800, 600)
     
@@ -691,6 +882,7 @@ def main():
         (create_degen_empty_scene, 'strokes/degen_empty.irbin'),
         (create_degen_short_wide_scene, 'strokes/degen_short_wide.irbin'),
         (create_degen_reversal_scene, 'strokes/degen_reversal.irbin'),
+        (create_tiger_scene, 'complex/tiger.irbin'),
         (create_noop_scene, 'validation/noop.irbin'),
     ]
     

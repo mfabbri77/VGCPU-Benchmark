@@ -110,6 +110,19 @@
       "description": "180-degree retrace and near-180 miter-limit explosions"
     },
     {
+      "scene_id": "complex/tiger",
+      "ir_path": "complex/tiger.irbin",
+      "scene_hash": "1d63ca3d",
+      "ir_version": "1.0.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_nonzero": true,
+        "needs_stroke": true
+      },
+      "description": "Ghostscript tiger (305 SVG paths, solid fills/strokes, cubic-heavy)"
+    },
+    {
       "scene_id": "validation/noop",
       "ir_path": "validation/noop.irbin",
       "scene_hash": "85b7d3a0",
