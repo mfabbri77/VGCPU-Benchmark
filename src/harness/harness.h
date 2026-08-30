@@ -82,18 +82,45 @@ struct RunResult {
     std::vector<CaseResult> cases;
 };
 
+/// Per-case execution state for interleaved repetition scheduling.
+/// Owner policy (2026-08-30): repetitions are scheduled repetition-major
+/// across backends -- every backend runs repetition r before any backend
+/// runs repetition r+1 -- so machine-state transients (thermal drift,
+/// scheduler/HT-sibling interference) spread across all engines instead
+/// of poisoning one backend's whole sample pool.
+struct CaseRun {
+    IBackendAdapter* adapter = nullptr;
+    const PreparedScene* scene = nullptr;
+    SurfaceConfig config;
+    std::vector<uint8_t> output_buffer;
+    std::vector<int64_t> wall_samples;
+    std::vector<int64_t> cpu_samples;
+    CaseResult result;
+    bool active = false;  ///< prepared + warmed and no failure so far
+};
+
 /// Harness for executing benchmarks.
 /// Blueprint Reference: [ARCH-10-08] Benchmark Harness (Chapter 3) / [ARCH-13] Primary execution
 /// flow (Chapter 3)
 class Harness {
    public:
-    /// Run a benchmark for a single scene on a single backend.
-    /// @param adapter The backend adapter to use.
-    /// @param scene The prepared scene to benchmark.
-    /// @param policy Benchmark configuration.
-    /// @return Case result with timing statistics.
+    /// Run a benchmark for a single scene on a single backend
+    /// (BeginCase + repetitions x MeasureRepetition + FinishCase).
     static CaseResult RunCase(IBackendAdapter& adapter, const PreparedScene& scene,
                               const BenchmarkPolicy& policy);
+
+    /// Phase 1: compatibility check, scene preparation, buffer setup and
+    /// warmup. On any failure the returned state is inactive and already
+    /// carries the final (skip/fail) result.
+    static CaseRun BeginCase(IBackendAdapter& adapter, const PreparedScene& scene,
+                             const BenchmarkPolicy& policy);
+
+    /// Phase 2: one measured repetition (policy.measurement_iterations
+    /// samples). No-op on inactive runs.
+    static void MeasureRepetition(CaseRun& run, const BenchmarkPolicy& policy);
+
+    /// Phase 3: statistics, artifact generation and SSIM comparison.
+    static CaseResult FinishCase(CaseRun& run, const BenchmarkPolicy& policy);
 
     /// Check if a scene is compatible with a backend.
     /// @param caps Backend capabilities.

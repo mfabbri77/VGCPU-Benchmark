@@ -22,43 +22,54 @@ namespace vgcpu {
 
 CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene,
                             const BenchmarkPolicy& policy) {
-    CaseResult result;
-    result.backend_id = adapter.GetInfo().id;
-    result.scene_id = scene.scene_id;
-    result.scene_hash = scene.scene_hash;
-    result.width = static_cast<int>(scene.width);
-    result.height = static_cast<int>(scene.height);
+    CaseRun run = BeginCase(adapter, scene, policy);
+    int repetitions = policy.repetitions > 0 ? policy.repetitions : 1;
+    for (int rep = 0; rep < repetitions; ++rep) {
+        MeasureRepetition(run, policy);
+    }
+    return FinishCase(run, policy);
+}
+
+CaseRun Harness::BeginCase(IBackendAdapter& adapter, const PreparedScene& scene,
+                           const BenchmarkPolicy& policy) {
+    CaseRun run;
+    run.adapter = &adapter;
+    run.scene = &scene;
+    run.result.backend_id = adapter.GetInfo().id;
+    run.result.scene_id = scene.scene_id;
+    run.result.scene_hash = scene.scene_hash;
+    run.result.width = static_cast<int>(scene.width);
+    run.result.height = static_cast<int>(scene.height);
 
     // Check compatibility
     auto caps = adapter.GetCapabilities();
 
     // [REQ-35] Concurrency enforcement
     if (policy.thread_count > 1 && !caps.supports_parallel_render) {
-        result.decision = CaseDecision::kSkip;
-        result.reasons.push_back("UNSUPPORTED_FEATURE:parallel_render");
-        return result;
+        run.result.decision = CaseDecision::kSkip;
+        run.result.reasons.push_back("UNSUPPORTED_FEATURE:parallel_render");
+        return run;
     }
 
     RequiredFeatures required;  // TODO: Extract from scene
     std::string compat_reason = CheckCompatibility(caps, required);
     if (!compat_reason.empty()) {
-        result.decision = CaseDecision::kSkip;
-        result.reasons.push_back(compat_reason);
-        return result;
+        run.result.decision = CaseDecision::kSkip;
+        run.result.reasons.push_back(compat_reason);
+        return run;
     }
 
     // [ARCH-14-F] Preparation phase
     auto prepare_status = adapter.Prepare(scene);
     if (prepare_status.failed()) {
-        result.decision = CaseDecision::kFail;
-        result.reasons.push_back("PREPARE_FAILED:" + prepare_status.message);
-        return result;
+        run.result.decision = CaseDecision::kFail;
+        run.result.reasons.push_back("PREPARE_FAILED:" + prepare_status.message);
+        return run;
     }
 
     // Setup surface config
-    SurfaceConfig config;
-    config.width = static_cast<int>(scene.width);
-    config.height = static_cast<int>(scene.height);
+    run.config.width = static_cast<int>(scene.width);
+    run.config.height = static_cast<int>(scene.height);
 
     // Preallocate output buffer (outside timed section).
     // Blueprint Reference: [REQ-21] (Ch3), [REQ-71-01] (Ch5): the measured
@@ -66,59 +77,68 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
     // NOTE: We use resize() not reserve() to ensure adapters receive a
     // correctly sized buffer. Adapters MUST NOT call resize/fill
     // themselves; the IR kClear command handles clearing.
-    std::vector<uint8_t> output_buffer;
-    output_buffer.resize(static_cast<size_t>(config.width) * config.height * 4);
+    run.output_buffer.resize(static_cast<size_t>(run.config.width) * run.config.height * 4);
 
     // Warm-up phase (untimed for primary stats)
     // Blueprint Reference: [ARCH-13-02a] Warmup loop (Chapter 3)
     for (int i = 0; i < policy.warmup_iterations; ++i) {
-        auto status = adapter.Render(scene, config, output_buffer);
+        auto status = adapter.Render(scene, run.config, run.output_buffer);
         if (status.failed()) {
-            result.decision = CaseDecision::kFail;
-            result.reasons.push_back("WARMUP_FAILED:" + status.message);
-            return result;
+            run.result.decision = CaseDecision::kFail;
+            run.result.reasons.push_back("WARMUP_FAILED:" + status.message);
+            return run;
         }
     }
 
-    // Measurement phase: `repetitions` measured blocks of
-    // `measurement_iterations` samples each, aggregated into one pool
-    // (sample_count = iterations * repetitions). Warmup runs once, above.
-    // Fixed 2026-08-30: `repetitions` was parsed, stored in the policy and
-    // reported in run metadata, but never executed -- every previous run
-    // measured exactly one repetition regardless of --repetitions.
-    // Blueprint Reference: [ARCH-13-02b] Measured loop (Chapter 3)
     int repetitions = policy.repetitions > 0 ? policy.repetitions : 1;
     size_t total_samples =
         static_cast<size_t>(policy.measurement_iterations) * static_cast<size_t>(repetitions);
-    std::vector<int64_t> wall_samples;
-    std::vector<int64_t> cpu_samples;
-    wall_samples.reserve(total_samples);
-    cpu_samples.reserve(total_samples);
+    run.wall_samples.reserve(total_samples);
+    run.cpu_samples.reserve(total_samples);
+    run.active = true;
+    return run;
+}
 
-    for (int rep = 0; rep < repetitions; ++rep) {
-        for (int i = 0; i < policy.measurement_iterations; ++i) {
-            auto cpu_start = pal::GetCpuTime();
-            auto wall_start = pal::NowMonotonic();
-
-            // Timed section: ONLY rendering
-            auto status = adapter.Render(scene, config, output_buffer);
-
-            auto wall_end = pal::NowMonotonic();
-            auto cpu_end = pal::GetCpuTime();
-
-            if (status.failed()) {
-                result.decision = CaseDecision::kFail;
-                result.reasons.push_back("RENDER_FAILED:" + status.message);
-                return result;
-            }
-
-            wall_samples.push_back(pal::ToNanoseconds(pal::Elapsed(wall_start, wall_end)));
-            cpu_samples.push_back(pal::ToNanoseconds(cpu_end - cpu_start));
-        }
+// Measurement phase: `repetitions` measured blocks of
+// `measurement_iterations` samples each, aggregated into one pool
+// (sample_count = iterations * repetitions). Warmup runs once, in
+// BeginCase. Scheduling is repetition-major across backends (owner
+// policy, 2026-08-30; see CaseRun) -- the caller interleaves.
+// Blueprint Reference: [ARCH-13-02b] Measured loop (Chapter 3)
+void Harness::MeasureRepetition(CaseRun& run, const BenchmarkPolicy& policy) {
+    if (!run.active) {
+        return;
     }
+    for (int i = 0; i < policy.measurement_iterations; ++i) {
+        auto cpu_start = pal::GetCpuTime();
+        auto wall_start = pal::NowMonotonic();
+
+        // Timed section: ONLY rendering
+        auto status = run.adapter->Render(*run.scene, run.config, run.output_buffer);
+
+        auto wall_end = pal::NowMonotonic();
+        auto cpu_end = pal::GetCpuTime();
+
+        if (status.failed()) {
+            run.result.decision = CaseDecision::kFail;
+            run.result.reasons.push_back("RENDER_FAILED:" + status.message);
+            run.active = false;
+            return;
+        }
+
+        run.wall_samples.push_back(pal::ToNanoseconds(pal::Elapsed(wall_start, wall_end)));
+        run.cpu_samples.push_back(pal::ToNanoseconds(cpu_end - cpu_start));
+    }
+}
+
+CaseResult Harness::FinishCase(CaseRun& run, const BenchmarkPolicy& policy) {
+    if (!run.active) {
+        return run.result;
+    }
+    CaseResult& result = run.result;
 
     // Compute statistics
-    result.stats = ComputeStats(wall_samples, cpu_samples);
+    result.stats = ComputeStats(run.wall_samples, run.cpu_samples);
     result.decision = CaseDecision::kExecute;
 
     // Artifact Generation
@@ -135,7 +155,8 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
         std::error_code ec;
         std::filesystem::create_directories(out_path.parent_path(), ec);
 
-        if (artifacts::write_png(out_path.string(), result.width, result.height, output_buffer)) {
+        if (artifacts::write_png(out_path.string(), result.width, result.height,
+                                 run.output_buffer)) {
             result.artifact_path = out_path.string();
         } else {
             VGCPU_LOG_ERROR("Failed to write artifact: " + out_path.string());
@@ -155,7 +176,7 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
             auto golden_pixels = artifacts::read_image(golden_path.string(), gw, gh);
             if (!golden_pixels.empty()) {
                 if (gw == result.width && gh == result.height) {
-                    auto ssim_res = artifacts::compute_ssim(gw, gh, output_buffer, gw * 4,
+                    auto ssim_res = artifacts::compute_ssim(gw, gh, run.output_buffer, gw * 4,
                                                             golden_pixels, gw * 4);
                     result.ssim_score = ssim_res.score;
                     result.ssim_passed = ssim_res.passed;
@@ -175,6 +196,7 @@ CaseResult Harness::RunCase(IBackendAdapter& adapter, const PreparedScene& scene
         }
     }
 
+    run.active = false;
     return result;
 }
 

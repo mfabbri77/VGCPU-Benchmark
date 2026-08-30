@@ -8,6 +8,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Harness: repetitions are now scheduled repetition-major across
+  backends (owner policy) -- for each scene, every backend is prepared
+  and warmed once, then all backends run repetition 1, then all run
+  repetition 2, and so on. Previously each backend ran its entire
+  sample pool consecutively, so a machine-state transient (thermal
+  drift, scheduler/HT-sibling interference) could poison one engine's
+  whole case while leaving every other number clean -- observed once
+  as skia 25.8ms vs 14ms on complex/paris with wall==cpu==p90.
+  `Harness::RunCase` is now BeginCase + N x MeasureRepetition +
+  FinishCase; the single-case wrapper remains for tests.
 - Retired the Antigravity blueprint/CR governance apparatus in favor of a
   lightweight, OMP-native model: `AGENTS.md` as the single always-active
   contract, `docs/adr/` for architecture decisions, and a frozen

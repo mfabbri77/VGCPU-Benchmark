@@ -93,6 +93,19 @@ buffer -> harness stats + optional PNG/SSIM/oracle checks -> report.
   publication-grade numbers use `--warmup-iters 16 --iters 256
   --repetitions 8 --threads 1 --pin <P-core>` with the `performance`
   governor (see QUICKSTART's rigorous protocol).
+- Repetitions are scheduled repetition-major across backends (owner
+  policy, 2026-08-30): every backend runs repetition r before any
+  backend runs repetition r+1, so machine-state transients (thermal
+  drift, scheduler/HT-sibling interference) spread across all engines
+  instead of poisoning one backend's whole sample pool. Case history:
+  a v21 run recorded skia at 25.8ms on complex/paris (wall==cpu==p90,
+  every other backend normal) while isolated reruns measured 14ms --
+  the signature of core-resource contention concentrated on one
+  backend's consecutive-repetition window.
+- When one backend's number deviates far from its cluster while
+  wall==cpu and the same run's other cases look normal, suspect
+  co-scheduling interference, rerun the case in isolation, and never
+  publish the contaminated number.
 
 ## Correctness contract
 

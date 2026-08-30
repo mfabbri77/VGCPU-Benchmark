@@ -325,9 +325,21 @@ int HandleRun(const CliOptions& options) {
         }
     }
 
-    // Run benchmarks
+    // Run benchmarks.
+    // Owner policy (2026-08-30): repetition-major scheduling. All backends
+    // are initialized up front; for each scene, every backend is prepared
+    // and warmed, then repetitions are interleaved -- every backend runs
+    // repetition r before any backend runs repetition r+1. Machine-state
+    // transients (thermal drift, scheduler/HT-sibling interference) thus
+    // spread across all engines instead of poisoning one backend's whole
+    // sample pool.
     std::vector<CaseResult> results;
 
+    struct ActiveBackend {
+        std::string id;
+        std::unique_ptr<IBackendAdapter> adapter;
+    };
+    std::vector<ActiveBackend> active_backends;
     for (const auto& backend_id : backend_ids) {
         auto adapter = registry.CreateAdapter(backend_id);
         if (!adapter) {
@@ -342,14 +354,28 @@ int HandleRun(const CliOptions& options) {
             VGCPU_LOG_WARN("Failed to initialize '" + backend_id + "': " + status.message);
             continue;
         }
+        active_backends.push_back({backend_id, std::move(adapter)});
+    }
 
-        // Run each scene on this backend
-        for (const auto& scene : scenes) {
-            auto result = Harness::RunCase(*adapter, scene, policy);
-            results.push_back(result);
+    int repetitions = policy.repetitions > 0 ? policy.repetitions : 1;
+    for (const auto& scene : scenes) {
+        std::vector<CaseRun> runs;
+        runs.reserve(active_backends.size());
+        for (auto& backend : active_backends) {
+            runs.push_back(Harness::BeginCase(*backend.adapter, scene, policy));
         }
+        for (int rep = 0; rep < repetitions; ++rep) {
+            for (auto& run : runs) {
+                Harness::MeasureRepetition(run, policy);
+            }
+        }
+        for (auto& run : runs) {
+            results.push_back(Harness::FinishCase(run, policy));
+        }
+    }
 
-        adapter->Shutdown();
+    for (auto& backend : active_backends) {
+        backend.adapter->Shutdown();
     }
 
     // Prepare metadata
