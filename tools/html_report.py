@@ -315,12 +315,13 @@ tr.best td{background:var(--okbg)}
 .chip.bad{color:var(--bad);background:var(--badbg)}
 .chip.na{color:var(--na);background:var(--nabg)}
 .chip.ref{color:var(--ref);background:var(--refbg)}
-.bar-row{display:grid;grid-template-columns:132px 1fr 190px;align-items:center;gap:12px;margin:4px 0}
+.bar-row{display:grid;grid-template-columns:190px 1fr 190px;align-items:center;gap:12px;margin:4px 0}
 .bar-name{font-size:15.5px;font-weight:600;text-align:right}
 .bar-track{background:var(--nabg);border-radius:6px;height:22px;position:relative}
 .bar-fill{background:linear-gradient(90deg,var(--accent),color-mix(in srgb,var(--accent) 60%,transparent));
   height:100%;border-radius:6px;min-width:2px}
 .bar-row.is-best .bar-fill{background:linear-gradient(90deg,var(--ok),color-mix(in srgb,var(--ok) 60%,transparent))}
+.bar-row.is-fallback .bar-fill{background:linear-gradient(90deg,var(--warn),color-mix(in srgb,var(--warn) 60%,transparent))}
 .bar-val{font-size:15px;color:var(--muted);font-variant-numeric:tabular-nums}
 .gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:14px}
 .shot{background:var(--card);border:1px solid var(--line);border-radius:8px;overflow:hidden;text-align:center}
@@ -624,13 +625,26 @@ def build_report(results, oracle, memory, results_dir, reference, assets_dir):
                 continue
             entries.sort(key=lambda e: e[1])
             max_ns = max(e[1] for e in entries)
+
+            # Find the best non-fallback entry for the green bar
+            best_non_fb_idx = None
+            for idx, entry in enumerate(entries):
+                if not entry[3]:  # not fb
+                    best_non_fb_idx = idx
+                    break
+
             w(f"<h3>{esc(s)}</h3><div class='card'>")
             for i, (b, p50, p90, fb) in enumerate(entries):
                 pct = 100.0 * p50 / max_ns if max_ns else 0
-                best_cls = " is-best" if (i == 0 and not fb) else ""
-                fb_badge = "<span class='chip warn' style='font-size:12px;padding:1px 7px;margin-left:6px'>fallback</span>" if fb else ""
+                if fb:
+                    row_cls = " is-fallback"
+                elif i == best_non_fb_idx:
+                    row_cls = " is-best"
+                else:
+                    row_cls = ""
+                fb_badge = "<span class='chip warn' style='font-size:11px;padding:1px 6px;margin-right:6px'>fallback</span>" if fb else ""
                 w(
-                    f"<div class='bar-row{best_cls}'><div class='bar-name'>{esc(b)}{fb_badge}</div>"
+                    f"<div class='bar-row{row_cls}'><div class='bar-name'>{fb_badge}{esc(b)}</div>"
                     f"<div class='bar-track'><div class='bar-fill' style='width:{pct:.1f}%'></div></div>"
                     f"<div class='bar-val'>{fmt_ms(p50)} ms <span style='opacity:.65'>(p90 {fmt_ms(p90)})</span></div></div>"
                 )
