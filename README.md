@@ -101,8 +101,8 @@ The suite provides **24 canonical scenes** partitioned into two categories:
 * `strokes/degen_empty`: Zero-length line segments testing cap synthesis.
 * `strokes/degen_reversal`: 180-degree path reversals testing miter limits.
 * `strokes/degen_short_wide`: Curves with stroke width >> arc length (up to 40:1).
+* `validation/subpixel_morton`: Subpixel Precision Test: dense 16x16 Morton space-filling curve connecting all subpixel lattice centers.
 * `validation/noop`: 10,000 no-op commands testing harness overhead.
-
 ### 2. Complex Test Suite (Real-World MPVG Corpus)
 * `complex/paris30k`, `paris50k`, `paris70k`: Geographic map of Paris with up to 50,000+ paths.
 * `complex/paris`: Polygon building outlines (3,056 polygons, 41k vertices, EvenOdd rules).

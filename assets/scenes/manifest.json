@@ -296,6 +296,18 @@
       "description": "Resolution chart (747 paths)"
     },
     {
+      "scene_id": "validation/subpixel_morton",
+      "ir_path": "validation/subpixel_morton.irbin",
+      "scene_hash": "3a21478d",
+      "ir_version": "1.1.0",
+      "default_width": 800,
+      "default_height": 600,
+      "required_features": {
+        "needs_stroke": true
+      },
+      "description": "Subpixel Precision Test: Dense 16x16 Morton space-filling curve connecting all subpixel lattice centers"
+    },
+    {
       "scene_id": "validation/noop",
       "ir_path": "validation/noop.irbin",
       "scene_hash": "3ab8c3f7",

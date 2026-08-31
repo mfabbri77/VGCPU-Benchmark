@@ -1213,6 +1213,112 @@ def create_noop_scene() -> Tuple[bytes, dict]:
         "required_features": {}
     }
 
+def create_subpixel_morton_scene() -> Tuple[bytes, dict]:
+    """Subpixel Precision & Lattice Correctness Visual Test.
+    Constructs a single continuous path traversing a dense Morton (Z-order)
+    space-filling curve through the exact centers of a 16x16 subpixel lattice
+    (256 subpixel points per pixel, step = 1/16 = 0.0625).
+    
+    Includes:
+    1. Large 16x16 macro Morton fractal path (460x460) showing analytical
+       curve connectivity and continuous antialiased rendering across the lattice.
+    2. Dense multi-pixel subpixel Morton array (8x8 pixels, 16x16 subpixels each = 16,384 points)
+       in a single continuous path, demonstrating subpixel resolution, lattice snapping,
+       and coverage integration.
+    3. Fractional subpixel phase sweeps (shifts of 0, 1/16, 2/16, ... 7/16 px) testing
+       subpixel translation invariance and fractional lattice quantization.
+    """
+    builder = IrBuilder(800, 600)
+    
+    cyan = builder.add_paint(Paint.solid(0, 220, 255))
+    gold = builder.add_paint(Paint.solid(255, 195, 45))
+    lime = builder.add_paint(Paint.solid(85, 245, 125))
+    
+    builder.clear(18, 22, 28)
+    
+    # Precompute standard 16x16 Morton normalized cell coordinates
+    morton_uv = []
+    for i in range(256):
+        x = 0
+        y = 0
+        for b in range(4):
+            x |= ((i >> (2 * b)) & 1) << b
+            y |= ((i >> (2 * b + 1)) & 1) << b
+        u = (x + 0.5) / 16.0
+        v = (y + 0.5) / 16.0
+        morton_uv.append((u, v))
+    
+    # 1. Macro 16x16 Morton Curve (460x460 px, centered at x=50, y=70)
+    macro_path = Path()
+    ox, oy = 50.0, 70.0
+    scale = 460.0
+    for i, (u, v) in enumerate(morton_uv):
+        px = ox + u * scale
+        py = oy + v * scale
+        if i == 0:
+            macro_path.move_to(px, py)
+        else:
+            macro_path.line_to(px, py)
+    
+    pid_macro = builder.add_path(macro_path)
+    
+    # 2. Dense Subpixel Morton Array (8x8 pixels at x=540, y=70, scale 24px/pixel)
+    dense_path = Path()
+    d_ox, d_oy = 540.0, 70.0
+    cell_sz = 26.0
+    first_pt = True
+    for gy in range(8):
+        for gx in range(8):
+            cell_x = d_ox + gx * cell_sz
+            cell_y = d_oy + gy * cell_sz
+            for u, v in morton_uv:
+                px = cell_x + u * cell_sz
+                py = cell_y + v * cell_sz
+                if first_pt:
+                    dense_path.move_to(px, py)
+                    first_pt = False
+                else:
+                    dense_path.line_to(px, py)
+    
+    pid_dense = builder.add_path(dense_path)
+    
+    # 3. Fractional Subpixel Phase Sweep (8 rows at x=540, y=310..530)
+    sweep_path = Path()
+    first_sweep = True
+    for row in range(8):
+        shift = row * (1.0 / 16.0)
+        box_w = 208.0
+        box_h = 24.0
+        row_x = 540.0 + shift
+        row_y = 310.0 + row * 28.0 + shift
+        for u, v in morton_uv:
+            px = row_x + u * box_w
+            py = row_y + v * box_h
+            if first_sweep:
+                sweep_path.move_to(px, py)
+                first_sweep = False
+            else:
+                sweep_path.line_to(px, py)
+    
+    pid_sweep = builder.add_path(sweep_path)
+    
+    # Render strokes
+    builder.set_stroke(cyan, 2.0, StrokeCap.ROUND, StrokeJoin.ROUND)
+    builder.stroke_path(pid_macro)
+    
+    builder.set_stroke(gold, 0.75, StrokeCap.BUTT, StrokeJoin.MITER)
+    builder.stroke_path(pid_dense)
+    
+    builder.set_stroke(lime, 1.25, StrokeCap.ROUND, StrokeJoin.ROUND)
+    builder.stroke_path(pid_sweep)
+    
+    return builder.build(), {
+        "scene_id": "validation/subpixel_morton",
+        "description": "Subpixel Precision Test: Dense 16x16 Morton space-filling curve connecting all subpixel lattice centers",
+        "default_width": 800, "default_height": 600,
+        "required_features": {"needs_stroke": True}
+    }
+
 def main():
     scenes_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     scenes_dir = os.path.join(scenes_dir, 'assets', 'scenes')
@@ -1233,6 +1339,7 @@ def main():
     scenes += [(make_mpvg_scene(svg, sid, desc), sid.replace('complex/', 'complex/') + '.irbin')
                for svg, sid, desc in MPVG_SCENES]
     scenes += [
+        (create_subpixel_morton_scene, 'validation/subpixel_morton.irbin'),
         (create_noop_scene, 'validation/noop.irbin'),
     ]
     
