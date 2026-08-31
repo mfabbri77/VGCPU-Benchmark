@@ -21,6 +21,122 @@ pub struct RqtPathBuf {
     pub path: raqote::Path,
 }
 
+pub struct RqtSourceBuf {
+    pub source: Source<'static>,
+}
+
+#[no_mangle]
+pub extern "C" fn rqt_source_create_solid(r: u8, g: u8, b: u8, a: u8) -> *mut RqtSourceBuf {
+    let src = Source::Solid(SolidSource::from_unpremultiplied_argb(a, r, g, b));
+    Box::into_raw(Box::new(RqtSourceBuf { source: src }))
+}
+
+#[no_mangle]
+pub extern "C" fn rqt_source_create_gradient(
+    kind: i32,
+    x0: f32, y0: f32, x1: f32, y1: f32,
+    offsets: *const f32,
+    colors: *const u32,
+    nstops: i32,
+) -> *mut RqtSourceBuf {
+    if offsets.is_null() || colors.is_null() || nstops <= 0 { return std::ptr::null_mut(); }
+    let offsets_slice = unsafe { std::slice::from_raw_parts(offsets, nstops as usize) };
+    let colors_slice = unsafe { std::slice::from_raw_parts(colors, nstops as usize) };
+
+    let mut stops = Vec::with_capacity(nstops as usize);
+    for i in 0..nstops as usize {
+        let c = colors_slice[i];
+        let r_val = (c & 0xFF) as u8;
+        let g_val = ((c >> 8) & 0xFF) as u8;
+        let b_val = ((c >> 16) & 0xFF) as u8;
+        let a_val = ((c >> 24) & 0xFF) as u8;
+        stops.push(GradientStop {
+            position: offsets_slice[i],
+            color: Color::new(a_val, r_val, g_val, b_val),
+        });
+    }
+
+    let gradient = Gradient { stops };
+    let src = if kind == 0 {
+        Source::new_linear_gradient(gradient, Point::new(x0, y0), Point::new(x1, y1), Spread::Pad)
+    } else {
+        Source::new_radial_gradient(gradient, Point::new(x0, y0), x1, Spread::Pad)
+    };
+    Box::into_raw(Box::new(RqtSourceBuf { source: src }))
+}
+
+#[no_mangle]
+pub extern "C" fn rqt_source_destroy(ptr: *mut RqtSourceBuf) {
+    if ptr.is_null() { return; }
+    unsafe { drop(Box::from_raw(ptr)); }
+}
+
+#[no_mangle]
+pub extern "C" fn rqt_draw_fill_with_source(
+    surf: *mut RqtSurface,
+    buf_ptr: *const RqtPathBuf,
+    src_ptr: *const RqtSourceBuf,
+    _fill_rule: i32
+) {
+    if surf.is_null() || buf_ptr.is_null() || src_ptr.is_null() { return; }
+    let surface = unsafe { &mut *surf };
+    let path_buf = unsafe { &*buf_ptr };
+    let src_buf = unsafe { &*src_ptr };
+    let opts = DrawOptions {
+        blend_mode: raqote::BlendMode::SrcOver,
+        alpha: 1.0,
+        antialias: raqote::AntialiasMode::Gray,
+    };
+    surface.dt.fill(&path_buf.path, &src_buf.source, &opts);
+}
+
+#[no_mangle]
+pub extern "C" fn rqt_draw_stroke_with_source(
+    surf: *mut RqtSurface,
+    buf_ptr: *const RqtPathBuf,
+    src_ptr: *const RqtSourceBuf,
+    width: f32,
+    cap: i32,
+    join: i32,
+    dashes: *const f32,
+    ndash: i32,
+    dash_phase: f32
+) {
+    if surf.is_null() || buf_ptr.is_null() || src_ptr.is_null() { return; }
+    let surface = unsafe { &mut *surf };
+    let path_buf = unsafe { &*buf_ptr };
+    let src_buf = unsafe { &*src_ptr };
+    let line_cap = match cap {
+        1 => LineCap::Round,
+        2 => LineCap::Square,
+        _ => LineCap::Butt,
+    };
+    let line_join = match join {
+        1 => LineJoin::Round,
+        2 => LineJoin::Bevel,
+        _ => LineJoin::Miter,
+    };
+    let dash_vec = if !dashes.is_null() && ndash > 0 {
+        unsafe { std::slice::from_raw_parts(dashes, ndash as usize).to_vec() }
+    } else {
+        vec![]
+    };
+    let style = StrokeStyle {
+        width,
+        cap: line_cap,
+        join: line_join,
+        miter_limit: 4.0,
+        dash_array: dash_vec,
+        dash_offset: dash_phase,
+    };
+    let opts = DrawOptions {
+        blend_mode: raqote::BlendMode::SrcOver,
+        alpha: 1.0,
+        antialias: raqote::AntialiasMode::Gray,
+    };
+    surface.dt.stroke(&path_buf.path, &src_buf.source, &style, &opts);
+}
+
 #[no_mangle]
 pub extern "C" fn rqt_path_build(ptr: *mut RqtPath) -> *mut RqtPathBuf {
     if ptr.is_null() { return std::ptr::null_mut(); }

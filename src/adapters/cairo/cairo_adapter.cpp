@@ -17,17 +17,13 @@ namespace vgcpu {
 namespace {
 
 // Set the cairo source from an IR paint. Returns a pattern the caller must
-// destroy after drawing, or nullptr for solid colors. Gradient stop colors
-// get the same R<->B swap as solids (ARGB32 output; interpolation is
-// channel-symmetric, so the relabeling stays exact).
-cairo_pattern_t* SetSourceFromPaint(cairo_t* cr, const Paint& paint) {
+cairo_pattern_t* CreateCairoPattern(const Paint& paint) {
     if (paint.type == ir::PaintType::kSolid) {
         double r = static_cast<double>((paint.color >> 0) & 0xFF) / 255.0;
         double g = static_cast<double>((paint.color >> 8) & 0xFF) / 255.0;
         double b = static_cast<double>((paint.color >> 16) & 0xFF) / 255.0;
         double a = static_cast<double>((paint.color >> 24) & 0xFF) / 255.0;
-        cairo_set_source_rgba(cr, b, g, r, a);  // R<->B swap: ARGB32 output
-        return nullptr;
+        return cairo_pattern_create_rgba(b, g, r, a);  // R<->B swap: ARGB32 output
     }
     cairo_pattern_t* pat = nullptr;
     if (paint.type == ir::PaintType::kLinear) {
@@ -45,7 +41,6 @@ cairo_pattern_t* SetSourceFromPaint(cairo_t* cr, const Paint& paint) {
         double a = static_cast<double>((s.color >> 24) & 0xFF) / 255.0;
         cairo_pattern_add_color_stop_rgba(pat, s.offset, b, g, r, a);  // R<->B swap
     }
-    cairo_set_source(cr, pat);
     return pat;
 }
 
@@ -114,6 +109,8 @@ Status CairoAdapter::Prepare(const PreparedScene& scene) {
         return Status::Fail("CairoAdapter not initialized");
     }
     DestroyPaths();
+    DestroyPaints();
+
     cairo_surface_t* temp_surf = cairo_image_surface_create(CAIRO_FORMAT_ARGB32, 1, 1);
     cairo_t* temp_cr = cairo_create(temp_surf);
     prepared_paths_.reserve(scene.paths.size());
@@ -124,6 +121,11 @@ Status CairoAdapter::Prepare(const PreparedScene& scene) {
     }
     cairo_destroy(temp_cr);
     cairo_surface_destroy(temp_surf);
+
+    prepared_patterns_.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        prepared_patterns_.push_back(CreateCairoPattern(p));
+    }
     return Status::Ok();
 }
 
@@ -135,8 +137,17 @@ void CairoAdapter::DestroyPaths() {
     prepared_paths_.clear();
 }
 
+void CairoAdapter::DestroyPaints() {
+    for (auto p : prepared_patterns_) {
+        if (p)
+            cairo_pattern_destroy(p);
+    }
+    prepared_patterns_.clear();
+}
+
 void CairoAdapter::Shutdown() {
     DestroyPaths();
+    DestroyPaints();
     initialized_ = false;
 }
 
@@ -155,7 +166,8 @@ CapabilitySet CairoAdapter::GetCapabilities() const {
 namespace {
 
 Status ExecuteCairoCommands(const PreparedScene& scene, const SurfaceConfig& config,
-                            const std::vector<cairo_path_t*>& paths, cairo_t* cr) {
+                            const std::vector<cairo_path_t*>& paths,
+                            const std::vector<cairo_pattern_t*>& patterns, cairo_t* cr) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
@@ -203,6 +215,12 @@ Status ExecuteCairoCommands(const PreparedScene& scene, const SurfaceConfig& con
                 current_paint_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
                 current_fill_rule = static_cast<ir::FillRule>(*cmd++);
+                if (current_paint_id < patterns.size() && patterns[current_paint_id] != nullptr) {
+                    cairo_set_source(cr, patterns[current_paint_id]);
+                }
+                cairo_set_fill_rule(cr, (current_fill_rule == ir::FillRule::kEvenOdd)
+                                            ? CAIRO_FILL_RULE_EVEN_ODD
+                                            : CAIRO_FILL_RULE_WINDING);
                 break;
             }
 
@@ -216,51 +234,11 @@ Status ExecuteCairoCommands(const PreparedScene& scene, const SurfaceConfig& con
                 uint8_t opts = *cmd++;
                 current_stroke_cap = ir::UnpackStrokeCap(opts);
                 current_stroke_join = ir::UnpackStrokeJoin(opts);
-                break;
-            }
 
-            case ir::Opcode::kFillPath: {
-                if (cmd + 2 > end)
-                    goto done;
-                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
-                cmd += 2;
-
-                if (path_id >= paths.size() || current_paint_id >= scene.paints.size())
-                    break;
-                if (paths[path_id] == nullptr)
-                    break;
-
-                cairo_pattern_t* grad_pat = SetSourceFromPaint(cr, scene.paints[current_paint_id]);
-                cairo_new_path(cr);
-                cairo_append_path(cr, paths[path_id]);
-
-                cairo_fill_rule_t rule = (current_fill_rule == ir::FillRule::kEvenOdd)
-                                             ? CAIRO_FILL_RULE_EVEN_ODD
-                                             : CAIRO_FILL_RULE_WINDING;
-                cairo_set_fill_rule(cr, rule);
-                cairo_fill(cr);
-                if (grad_pat != nullptr) {
-                    cairo_pattern_destroy(grad_pat);
+                if (current_stroke_paint_id < patterns.size() &&
+                    patterns[current_stroke_paint_id] != nullptr) {
+                    cairo_set_source(cr, patterns[current_stroke_paint_id]);
                 }
-                break;
-            }
-
-            case ir::Opcode::kStrokePath: {
-                if (cmd + 2 > end)
-                    goto done;
-                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
-                cmd += 2;
-
-                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
-                    break;
-                if (paths[path_id] == nullptr)
-                    break;
-
-                cairo_pattern_t* grad_pat =
-                    SetSourceFromPaint(cr, scene.paints[current_stroke_paint_id]);
-                cairo_new_path(cr);
-                cairo_append_path(cr, paths[path_id]);
-
                 cairo_set_line_width(cr, current_stroke_width);
                 cairo_line_cap_t cap = CAIRO_LINE_CAP_BUTT;
                 switch (current_stroke_cap) {
@@ -288,11 +266,33 @@ Status ExecuteCairoCommands(const PreparedScene& scene, const SurfaceConfig& con
                         break;
                 }
                 cairo_set_line_join(cr, join);
-                cairo_set_dash(cr, dash_lengths.empty() ? nullptr : dash_lengths.data(),
-                               static_cast<int>(dash_lengths.size()), dash_phase);
-                cairo_stroke(cr);
-                if (grad_pat != nullptr) {
-                    cairo_pattern_destroy(grad_pat);
+                break;
+            }
+
+            case ir::Opcode::kFillPath: {
+                if (cmd + 2 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+
+                if (path_id < paths.size() && paths[path_id] != nullptr) {
+                    cairo_new_path(cr);
+                    cairo_append_path(cr, paths[path_id]);
+                    cairo_fill(cr);
+                }
+                break;
+            }
+
+            case ir::Opcode::kStrokePath: {
+                if (cmd + 2 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+
+                if (path_id < paths.size() && paths[path_id] != nullptr) {
+                    cairo_new_path(cr);
+                    cairo_append_path(cr, paths[path_id]);
+                    cairo_stroke(cr);
                 }
                 break;
             }
@@ -338,6 +338,8 @@ Status ExecuteCairoCommands(const PreparedScene& scene, const SurfaceConfig& con
                 const float* lengths = reinterpret_cast<const float*>(cmd);
                 cmd += 4 * count;
                 dash_lengths.assign(lengths, lengths + count);
+                cairo_set_dash(cr, dash_lengths.empty() ? nullptr : dash_lengths.data(),
+                               static_cast<int>(dash_lengths.size()), dash_phase);
                 break;
             }
 
@@ -398,13 +400,12 @@ Status CairoAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
     }
     cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
 
-    Status s = ExecuteCairoCommands(scene, config, prepared_paths_, cr);
+    Status s = ExecuteCairoCommands(scene, config, prepared_paths_, prepared_patterns_, cr);
 
     cairo_destroy(cr);
     cairo_surface_destroy(surface);
     return s;
 }
-
 Status CairoAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
                                      std::vector<uint8_t>& output_buffer) {
     if (!initialized_)
@@ -428,7 +429,7 @@ Status CairoAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceCo
     }
     cairo_set_antialias(cr, CAIRO_ANTIALIAS_BEST);
 
-    // Loop 1: Create all native paths
+    // Loop 1: Create all native paths + patterns
     std::vector<cairo_path_t*> paths;
     paths.reserve(scene.paths.size());
     for (const auto& p : scene.paths) {
@@ -438,15 +439,27 @@ Status CairoAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceCo
     }
     cairo_new_path(cr);
 
-    // Loop 2: Draw all
-    Status s = ExecuteCairoCommands(scene, config, paths, cr);
+    std::vector<cairo_pattern_t*> patterns;
+    patterns.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        patterns.push_back(CreateCairoPattern(p));
+    }
 
-    // Loop 3: Destroy all
+    // Loop 2: Draw all
+    Status s = ExecuteCairoCommands(scene, config, paths, patterns, cr);
+
+    // Loop 3: Destroy all paths + patterns
     for (auto p : paths) {
         if (p)
             cairo_path_destroy(p);
     }
     paths.clear();
+
+    for (auto p : patterns) {
+        if (p)
+            cairo_pattern_destroy(p);
+    }
+    patterns.clear();
 
     cairo_destroy(cr);
     cairo_surface_destroy(surface);

@@ -330,8 +330,7 @@ Status ExecuteThorVGCommands(const PreparedScene& scene, const SurfaceConfig& co
                 uint8_t a = (paint.color >> 24) & 0xFF;
                 shape->stroke(r, g, b, a);
                 if (!dash_lengths.empty()) {
-                    shape->stroke(dash_lengths.data(),
-                                  static_cast<uint32_t>(dash_lengths.size()));
+                    shape->stroke(dash_lengths.data(), static_cast<uint32_t>(dash_lengths.size()));
                 }
 
                 if (!clip_stack.empty()) {

@@ -130,11 +130,17 @@ Status QtAdapter::Prepare(const PreparedScene& scene) {
     for (const auto& p : scene.paths) {
         prepared_paths_.push_back(CreateQPath(p));
     }
+    prepared_brushes_.clear();
+    prepared_brushes_.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        prepared_brushes_.push_back(CreateBrush(p));
+    }
     return Status::Ok();
 }
 
 void QtAdapter::Shutdown() {
     prepared_paths_.clear();
+    prepared_brushes_.clear();
     initialized_ = false;
 }
 
@@ -150,7 +156,8 @@ CapabilitySet QtAdapter::GetCapabilities() const {
 namespace {
 
 Status ExecuteQtCommands(const PreparedScene& scene, const SurfaceConfig& /*config*/,
-                         const std::vector<QPainterPath>& paths, QPainter& painter) {
+                         const std::vector<QPainterPath>& paths, const std::vector<QBrush>& brushes,
+                         QPainter& painter) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
@@ -225,14 +232,14 @@ Status ExecuteQtCommands(const PreparedScene& scene, const SurfaceConfig& /*conf
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= paths.size() || current_fill_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_fill_paint_id >= brushes.size())
                     break;
 
                 QPainterPath path = paths[path_id];
                 path.setFillRule(current_fill_rule == ir::FillRule::kEvenOdd ? Qt::OddEvenFill
                                                                              : Qt::WindingFill);
 
-                painter.fillPath(path, CreateBrush(scene.paints[current_fill_paint_id]));
+                painter.fillPath(path, brushes[current_fill_paint_id]);
                 break;
             }
 
@@ -240,12 +247,11 @@ Status ExecuteQtCommands(const PreparedScene& scene, const SurfaceConfig& /*conf
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || current_stroke_paint_id >= brushes.size())
                     break;
 
                 QPainterPath path = paths[path_id];
-                QPen pen(CreateBrush(scene.paints[current_stroke_paint_id]),
-                         (qreal)current_stroke_width);
+                QPen pen(brushes[current_stroke_paint_id], (qreal)current_stroke_width);
                 pen.setCapStyle(current_stroke_cap);
                 pen.setJoinStyle(current_stroke_join);
                 if (!dash_lengths.empty() && current_stroke_width > 0.0f) {
@@ -340,8 +346,7 @@ Status QtAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config
 
     QPainter painter(&image);
     painter.setRenderHint(QPainter::Antialiasing, true);
-
-    return ExecuteQtCommands(scene, config, prepared_paths_, painter);
+    return ExecuteQtCommands(scene, config, prepared_paths_, prepared_brushes_, painter);
 }
 
 Status QtAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
@@ -355,22 +360,27 @@ Status QtAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfi
     QPainter painter(&image);
     painter.setRenderHint(QPainter::Antialiasing, true);
 
-    // Loop 1: Create all native paths
+    // Loop 1: Create all native paths + brushes
     std::vector<QPainterPath> paths;
     paths.reserve(scene.paths.size());
     for (const auto& p : scene.paths) {
         paths.push_back(CreateQPath(p));
     }
+    std::vector<QBrush> brushes;
+    brushes.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        brushes.push_back(CreateBrush(p));
+    }
 
     // Loop 2: Draw all
-    Status s = ExecuteQtCommands(scene, config, paths, painter);
+    Status s = ExecuteQtCommands(scene, config, paths, brushes, painter);
 
     // Loop 3: Destroy all
     paths.clear();
+    brushes.clear();
 
     return s;
 }
-
 void RegisterQtAdapter() {
     AdapterRegistry::Instance().Register("qt", "Qt Raster Engine",
                                          []() { return std::make_unique<QtAdapter>(); });

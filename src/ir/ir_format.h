@@ -76,8 +76,8 @@ enum class Opcode : uint8_t {
     // by the generator). Dash state applies to subsequent kStrokePath
     // commands until the next kSetDash; every Render() starts solid.
     kSetDash = 0x32,
-    kFillPath = 0x40,      ///< Fill path at index (path_id:u16)
-    kStrokePath = 0x41,    ///< Stroke path at index (path_id:u16)
+    kFillPath = 0x40,    ///< Fill path at index (path_id:u16)
+    kStrokePath = 0x41,  ///< Stroke path at index (path_id:u16)
     // IR v1.1 (2026-08-30): clipping.
     // kClipPush args: path_id:u16, rule:u8 (FillRule). Intersects the
     // current clip region with the filled path; nesting composes by

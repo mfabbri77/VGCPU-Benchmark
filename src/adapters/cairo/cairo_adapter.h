@@ -7,7 +7,9 @@
 #pragma once
 
 #include "adapters/adapter_interface.h"
+
 #include <cairo.h>
+
 #include <vector>
 
 namespace vgcpu {
@@ -36,9 +38,11 @@ class CairoAdapter : public IBackendAdapter {
 
    private:
     void DestroyPaths();
+    void DestroyPaints();
 
     bool initialized_ = false;
     std::vector<cairo_path_t*> prepared_paths_;
+    std::vector<cairo_pattern_t*> prepared_patterns_;
 };
 
 /// Register the Cairo adapter with the global registry.

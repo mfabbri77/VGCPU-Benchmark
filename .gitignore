@@ -67,7 +67,9 @@ Thumbs.db
 # Benchmark outputs
 results.json
 results.csv
-
+out/
+out/**
+out/png/
 # Local Dependencies
 deps/
 vcpkg/

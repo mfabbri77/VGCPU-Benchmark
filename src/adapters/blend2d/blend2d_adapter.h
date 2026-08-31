@@ -7,11 +7,19 @@
 #pragma once
 
 #include "adapters/adapter_interface.h"
+#include "ir/ir_format.h"
+
 #include <blend2d/blend2d.h>
+
 #include <vector>
 namespace vgcpu {
 
-/// Blend2D backend adapter implementation.
+struct BLPaintObj {
+    ir::PaintType type = ir::PaintType::kSolid;
+    BLRgba32 solid_color;
+    BLGradient gradient;
+};
+
 class Blend2DAdapter : public IBackendAdapter {
    public:
     Blend2DAdapter() = default;
@@ -36,6 +44,7 @@ class Blend2DAdapter : public IBackendAdapter {
     bool initialized_ = false;
     uint32_t thread_count_ = 1;
     std::vector<BLPath> prepared_paths_;
+    std::vector<BLPaintObj> prepared_paints_;
 };
 
 /// Register the Blend2D adapter with the global registry.

@@ -41,72 +41,47 @@ void SetPaintColor(VGPaint paint, uint32_t rgba) {
 
 // Create an OpenVG path from IR path data
 VGPath CreatePath(const Path& path_data) {
-    VGPath path = vgCreatePath(VG_PATH_FORMAT_STANDARD, VG_PATH_DATATYPE_F, 1.0f, 0.0f, 0, 0,
-                               VG_PATH_CAPABILITY_ALL);
+    if (path_data.verbs.empty()) {
+        return vgCreatePath(VG_PATH_FORMAT_STANDARD, VG_PATH_DATATYPE_F, 1.0f, 0.0f, 0, 0,
+                            VG_PATH_CAPABILITY_ALL);
+    }
+
+    VGPath path =
+        vgCreatePath(VG_PATH_FORMAT_STANDARD, VG_PATH_DATATYPE_F, 1.0f, 0.0f,
+                     static_cast<VGint>(path_data.verbs.size()),
+                     static_cast<VGint>(path_data.points.size() / 2), VG_PATH_CAPABILITY_ALL);
 
     if (path == VG_INVALID_HANDLE)
         return VG_INVALID_HANDLE;
 
-    // Build path commands
-    std::vector<VGubyte> cmds;
-    std::vector<VGfloat> coords;
+    // Fast verb-to-command translation using thread-local buffer to avoid heap allocations
+    thread_local std::vector<VGubyte> cmds;
+    cmds.resize(path_data.verbs.size());
 
-    size_t pt_idx = 0;
-    for (auto verb : path_data.verbs) {
-        switch (verb) {
+    for (size_t i = 0; i < path_data.verbs.size(); ++i) {
+        switch (path_data.verbs[i]) {
             case ir::PathVerb::kMoveTo:
-                cmds.push_back(VG_MOVE_TO_ABS);
-                if (pt_idx * 2 + 1 < path_data.points.size()) {
-                    coords.push_back(path_data.points[pt_idx * 2]);
-                    coords.push_back(path_data.points[pt_idx * 2 + 1]);
-                }
-                pt_idx++;
+                cmds[i] = VG_MOVE_TO_ABS;
                 break;
             case ir::PathVerb::kLineTo:
-                cmds.push_back(VG_LINE_TO_ABS);
-                if (pt_idx * 2 + 1 < path_data.points.size()) {
-                    coords.push_back(path_data.points[pt_idx * 2]);
-                    coords.push_back(path_data.points[pt_idx * 2 + 1]);
-                }
-                pt_idx++;
+                cmds[i] = VG_LINE_TO_ABS;
                 break;
             case ir::PathVerb::kQuadTo:
-                cmds.push_back(VG_QUAD_TO_ABS);
-                if ((pt_idx + 1) * 2 + 1 < path_data.points.size()) {
-                    // Control point
-                    coords.push_back(path_data.points[pt_idx * 2]);
-                    coords.push_back(path_data.points[pt_idx * 2 + 1]);
-                    // End point
-                    coords.push_back(path_data.points[(pt_idx + 1) * 2]);
-                    coords.push_back(path_data.points[(pt_idx + 1) * 2 + 1]);
-                }
-                pt_idx += 2;
+                cmds[i] = VG_QUAD_TO_ABS;
                 break;
             case ir::PathVerb::kCubicTo:
-                cmds.push_back(VG_CUBIC_TO_ABS);
-                if ((pt_idx + 2) * 2 + 1 < path_data.points.size()) {
-                    // Control point 1
-                    coords.push_back(path_data.points[pt_idx * 2]);
-                    coords.push_back(path_data.points[pt_idx * 2 + 1]);
-                    // Control point 2
-                    coords.push_back(path_data.points[(pt_idx + 1) * 2]);
-                    coords.push_back(path_data.points[(pt_idx + 1) * 2 + 1]);
-                    // End point
-                    coords.push_back(path_data.points[(pt_idx + 2) * 2]);
-                    coords.push_back(path_data.points[(pt_idx + 2) * 2 + 1]);
-                }
-                pt_idx += 3;
+                cmds[i] = VG_CUBIC_TO_ABS;
                 break;
             case ir::PathVerb::kClose:
-                cmds.push_back(VG_CLOSE_PATH);
+                cmds[i] = VG_CLOSE_PATH;
+                break;
+            default:
+                cmds[i] = VG_CLOSE_PATH;
                 break;
         }
     }
 
-    if (!cmds.empty()) {
-        vgAppendPathData(path, static_cast<VGint>(cmds.size()), cmds.data(), coords.data());
-    }
-
+    vgAppendPathData(path, static_cast<VGint>(cmds.size()), cmds.data(), path_data.points.data());
     return path;
 }
 
@@ -141,8 +116,20 @@ void ApplyGradientPaint(VGPaint paint, const Paint& ir_paint) {
     }
 }
 
-}  // namespace
+VGPaint CreateOpenVGPaint(const Paint& ir_paint) {
+    VGPaint pt = vgCreatePaint();
+    if (pt == VG_INVALID_HANDLE)
+        return pt;
+    if (ir_paint.type == ir::PaintType::kSolid) {
+        vgSetParameteri(pt, VG_PAINT_TYPE, VG_PAINT_TYPE_COLOR);
+        SetPaintColor(pt, ir_paint.color);
+    } else {
+        ApplyGradientPaint(pt, ir_paint);
+    }
+    return pt;
+}
 
+}  // namespace
 Status AmanithVGAdapter::Initialize(const AdapterArgs& /*args*/) {
     // Initialize AmanithVG library
     if (vgInitializeMZT() != VG_TRUE) {
@@ -163,7 +150,7 @@ Status AmanithVGAdapter::Prepare(const PreparedScene& scene) {
     }
 
     // Bind context to a minimal offscreen surface during Prepare so we can
-    // create and populate OpenVG path objects.
+    // create and populate OpenVG path and paint objects.
     void* dummy_surface = vgPrivSurfaceCreateMZT(16, 16, VG_FALSE, VG_TRUE, VG_FALSE);
     if (!dummy_surface) {
         return Status::Fail("Failed to create temporary AmanithVG surface");
@@ -171,11 +158,18 @@ Status AmanithVGAdapter::Prepare(const PreparedScene& scene) {
     vgPrivMakeCurrentMZT(context_, dummy_surface);
 
     DestroyPaths();
+    DestroyPaints();
 
     // Pre-create all VGPath handles for the scene (proper OpenVG architecture)
     vg_paths_.reserve(scene.paths.size());
     for (const auto& ir_path : scene.paths) {
         vg_paths_.push_back(CreatePath(ir_path));
+    }
+
+    // Pre-create all VGPaint handles for the scene
+    vg_paints_.reserve(scene.paints.size());
+    for (const auto& ir_paint : scene.paints) {
+        vg_paints_.push_back(CreateOpenVGPaint(ir_paint));
     }
 
     vgPrivMakeCurrentMZT(nullptr, nullptr);
@@ -192,6 +186,15 @@ void AmanithVGAdapter::DestroyPaths() {
     vg_paths_.clear();
 }
 
+void AmanithVGAdapter::DestroyPaints() {
+    for (auto p : vg_paints_) {
+        if (p != VG_INVALID_HANDLE) {
+            vgDestroyPaint(p);
+        }
+    }
+    vg_paints_.clear();
+}
+
 void AmanithVGAdapter::Shutdown() {
     if (initialized_) {
         if (context_) {
@@ -199,6 +202,7 @@ void AmanithVGAdapter::Shutdown() {
             if (dummy_surface) {
                 vgPrivMakeCurrentMZT(context_, dummy_surface);
                 DestroyPaths();
+                DestroyPaints();
                 vgPrivMakeCurrentMZT(nullptr, nullptr);
                 vgPrivSurfaceDestroyMZT(dummy_surface);
             }
@@ -224,8 +228,8 @@ CapabilitySet AmanithVGAdapter::GetCapabilities() const {
 namespace {
 
 Status ExecuteAmanithVGCommands(const PreparedScene& scene, const SurfaceConfig& config,
-                                const std::vector<uint32_t>& paths, VGPaint fill_paint,
-                                VGPaint stroke_paint, const VGfloat flip_matrix[9]) {
+                                const std::vector<uint32_t>& paths,
+                                const std::vector<uint32_t>& paints, const VGfloat flip_matrix[9]) {
     uint16_t current_paint_id = 0;
     ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
     uint16_t current_stroke_paint_id = 0;
@@ -265,6 +269,13 @@ Status ExecuteAmanithVGCommands(const PreparedScene& scene, const SurfaceConfig&
                 current_paint_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
                 current_fill_rule = static_cast<ir::FillRule>(*cmd++);
+
+                if (current_paint_id < paints.size() &&
+                    paints[current_paint_id] != VG_INVALID_HANDLE) {
+                    vgSetPaint(paints[current_paint_id], VG_FILL_PATH);
+                }
+                vgSeti(VG_FILL_RULE,
+                       current_fill_rule == ir::FillRule::kEvenOdd ? VG_EVEN_ODD : VG_NON_ZERO);
                 break;
             }
 
@@ -278,60 +289,11 @@ Status ExecuteAmanithVGCommands(const PreparedScene& scene, const SurfaceConfig&
                 uint8_t opts = *cmd++;
                 current_stroke_cap = ir::UnpackStrokeCap(opts);
                 current_stroke_join = ir::UnpackStrokeJoin(opts);
-                break;
-            }
 
-            case ir::Opcode::kFillPath: {
-                if (cmd + 2 > end)
-                    goto done;
-                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
-                cmd += 2;
-
-                if (path_id >= paths.size() || current_paint_id >= scene.paints.size())
-                    break;
-
-                const auto& ir_paint = scene.paints[current_paint_id];
-                VGPath path = paths[path_id];
-                if (path == VG_INVALID_HANDLE)
-                    break;
-
-                if (ir_paint.type == ir::PaintType::kSolid) {
-                    vgSetParameteri(fill_paint, VG_PAINT_TYPE, VG_PAINT_TYPE_COLOR);
-                    SetPaintColor(fill_paint, ir_paint.color);
-                } else {
-                    ApplyGradientPaint(fill_paint, ir_paint);
+                if (current_stroke_paint_id < paints.size() &&
+                    paints[current_stroke_paint_id] != VG_INVALID_HANDLE) {
+                    vgSetPaint(paints[current_stroke_paint_id], VG_STROKE_PATH);
                 }
-                vgSetPaint(fill_paint, VG_FILL_PATH);
-
-                vgSeti(VG_FILL_RULE,
-                       current_fill_rule == ir::FillRule::kEvenOdd ? VG_EVEN_ODD : VG_NON_ZERO);
-
-                vgDrawPath(path, VG_FILL_PATH);
-                break;
-            }
-
-            case ir::Opcode::kStrokePath: {
-                if (cmd + 2 > end)
-                    goto done;
-                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
-                cmd += 2;
-
-                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
-                    break;
-
-                const auto& ir_paint = scene.paints[current_stroke_paint_id];
-                VGPath path = paths[path_id];
-                if (path == VG_INVALID_HANDLE)
-                    break;
-
-                if (ir_paint.type == ir::PaintType::kSolid) {
-                    vgSetParameteri(stroke_paint, VG_PAINT_TYPE, VG_PAINT_TYPE_COLOR);
-                    SetPaintColor(stroke_paint, ir_paint.color);
-                } else {
-                    ApplyGradientPaint(stroke_paint, ir_paint);
-                }
-                vgSetPaint(stroke_paint, VG_STROKE_PATH);
-
                 vgSetf(VG_STROKE_LINE_WIDTH, current_stroke_width);
 
                 VGCapStyle cap = VG_CAP_BUTT;
@@ -361,8 +323,30 @@ Status ExecuteAmanithVGCommands(const PreparedScene& scene, const SurfaceConfig&
                         break;
                 }
                 vgSeti(VG_STROKE_JOIN_STYLE, join);
+                break;
+            }
 
-                vgDrawPath(path, VG_STROKE_PATH);
+            case ir::Opcode::kFillPath: {
+                if (cmd + 2 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+
+                if (path_id < paths.size() && paths[path_id] != VG_INVALID_HANDLE) {
+                    vgDrawPath(paths[path_id], VG_FILL_PATH);
+                }
+                break;
+            }
+
+            case ir::Opcode::kStrokePath: {
+                if (cmd + 2 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+
+                if (path_id < paths.size() && paths[path_id] != VG_INVALID_HANDLE) {
+                    vgDrawPath(paths[path_id], VG_STROKE_PATH);
+                }
                 break;
             }
 
@@ -376,9 +360,7 @@ Status ExecuteAmanithVGCommands(const PreparedScene& scene, const SurfaceConfig&
                 const float* m = reinterpret_cast<const float*>(cmd);
                 cmd += 24;
 
-                VGfloat matrix[9] = {m[0], m[2], m[4],
-                                     m[1], m[3], m[5],
-                                     0.0f, 0.0f, 1.0f};
+                VGfloat matrix[9] = {m[0], m[2], m[4], m[1], m[3], m[5], 0.0f, 0.0f, 1.0f};
                 vgLoadMatrix(flip_matrix);
                 vgMultMatrix(matrix);
                 break;
@@ -460,8 +442,7 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
     if (config.width <= 0 || config.height <= 0)
         return Status::InvalidArg("Invalid surface configuration");
 
-    void* surface = vgPrivSurfaceCreateByPointerMZT(config.width, config.height,
-                                                    VG_FALSE, VG_TRUE,
+    void* surface = vgPrivSurfaceCreateByPointerMZT(config.width, config.height, VG_FALSE, VG_TRUE,
                                                     output_buffer.data(), nullptr);
     if (!surface) {
         return Status::Fail("Failed to create AmanithVG surface");
@@ -477,18 +458,11 @@ Status AmanithVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig&
     vgSetf(VG_STROKE_DASH_PHASE, 0.0f);
     vgClipPathClearMZT();
 
-    const VGfloat flip_matrix[9] = {1.0f, 0.0f, 0.0f,
-                                    0.0f, -1.0f, 0.0f,
-                                    0.0f, static_cast<VGfloat>(config.height), 1.0f};
+    const VGfloat flip_matrix[9] = {
+        1.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, static_cast<VGfloat>(config.height), 1.0f};
     vgLoadMatrix(flip_matrix);
 
-    VGPaint fill_paint = vgCreatePaint();
-    VGPaint stroke_paint = vgCreatePaint();
-
-    Status s = ExecuteAmanithVGCommands(scene, config, vg_paths_, fill_paint, stroke_paint, flip_matrix);
-
-    vgDestroyPaint(fill_paint);
-    vgDestroyPaint(stroke_paint);
+    Status s = ExecuteAmanithVGCommands(scene, config, vg_paths_, vg_paints_, flip_matrix);
     vgFinish();
 
     vgPrivMakeCurrentMZT(nullptr, nullptr);
@@ -505,8 +479,7 @@ Status AmanithVGAdapter::RenderLifecycle(const PreparedScene& scene, const Surfa
     if (config.width <= 0 || config.height <= 0)
         return Status::InvalidArg("Invalid surface configuration");
 
-    void* surface = vgPrivSurfaceCreateByPointerMZT(config.width, config.height,
-                                                    VG_FALSE, VG_TRUE,
+    void* surface = vgPrivSurfaceCreateByPointerMZT(config.width, config.height, VG_FALSE, VG_TRUE,
                                                     output_buffer.data(), nullptr);
     if (!surface) {
         return Status::Fail("Failed to create AmanithVG surface");
@@ -522,39 +495,237 @@ Status AmanithVGAdapter::RenderLifecycle(const PreparedScene& scene, const Surfa
     vgSetf(VG_STROKE_DASH_PHASE, 0.0f);
     vgClipPathClearMZT();
 
-    const VGfloat flip_matrix[9] = {1.0f, 0.0f, 0.0f,
-                                    0.0f, -1.0f, 0.0f,
-                                    0.0f, static_cast<VGfloat>(config.height), 1.0f};
+    const VGfloat flip_matrix[9] = {
+        1.0f, 0.0f, 0.0f, 0.0f, -1.0f, 0.0f, 0.0f, static_cast<VGfloat>(config.height), 1.0f};
     vgLoadMatrix(flip_matrix);
 
-    VGPaint fill_paint = vgCreatePaint();
-    VGPaint stroke_paint = vgCreatePaint();
-
-    // Loop 1: Create all native paths
-    std::vector<uint32_t> paths;
-    paths.reserve(scene.paths.size());
-    for (const auto& p : scene.paths) {
-        paths.push_back(CreatePath(p));
+    // Immediate 1-loop execution: CreateOpenVGPaint for paints, and for each drawcall
+    // create path -> draw -> destroy path immediately to test working-set cache behavior.
+    std::vector<uint32_t> paints;
+    paints.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        paints.push_back(CreateOpenVGPaint(p));
     }
 
-    // Loop 2: Draw all
-    Status s = ExecuteAmanithVGCommands(scene, config, paths, fill_paint, stroke_paint, flip_matrix);
+    uint16_t current_paint_id = 0;
+    ir::FillRule current_fill_rule = ir::FillRule::kNonZero;
+    uint16_t current_stroke_paint_id = 0;
+    float current_stroke_width = 1.0f;
+    ir::StrokeCap current_stroke_cap = ir::StrokeCap::kButt;
+    ir::StrokeJoin current_stroke_join = ir::StrokeJoin::kMiter;
 
-    // Loop 3: Destroy all
-    for (auto p : paths) {
-        if (p != VG_INVALID_HANDLE) {
-            vgDestroyPath(p);
+    const uint8_t* cmd = scene.command_stream.data();
+    const uint8_t* end = cmd + scene.command_stream.size();
+
+    while (cmd < end) {
+        ir::Opcode opcode = static_cast<ir::Opcode>(*cmd++);
+
+        switch (opcode) {
+            case ir::Opcode::kEnd:
+                goto done;
+
+            case ir::Opcode::kClear: {
+                if (cmd + 4 > end)
+                    goto done;
+                uint32_t rgba = *reinterpret_cast<const uint32_t*>(cmd);
+                cmd += 4;
+
+                VGfloat color[4];
+                color[0] = ((rgba >> 16) & 0xFF) / 255.0f;  // B fed as R
+                color[1] = ((rgba >> 8) & 0xFF) / 255.0f;
+                color[2] = ((rgba >> 0) & 0xFF) / 255.0f;  // R fed as B
+                color[3] = ((rgba >> 24) & 0xFF) / 255.0f;
+                vgSetfv(VG_CLEAR_COLOR, 4, color);
+                vgClear(0, 0, config.width, config.height);
+                break;
+            }
+
+            case ir::Opcode::kSetFill: {
+                if (cmd + 3 > end)
+                    goto done;
+                current_paint_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                current_fill_rule = static_cast<ir::FillRule>(*cmd++);
+
+                if (current_paint_id < paints.size() &&
+                    paints[current_paint_id] != VG_INVALID_HANDLE) {
+                    vgSetPaint(paints[current_paint_id], VG_FILL_PATH);
+                }
+                vgSeti(VG_FILL_RULE,
+                       current_fill_rule == ir::FillRule::kEvenOdd ? VG_EVEN_ODD : VG_NON_ZERO);
+                break;
+            }
+
+            case ir::Opcode::kSetStroke: {
+                if (cmd + 7 > end)
+                    goto done;
+                current_stroke_paint_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                current_stroke_width = *reinterpret_cast<const float*>(cmd);
+                cmd += 4;
+                uint8_t opts = *cmd++;
+                current_stroke_cap = ir::UnpackStrokeCap(opts);
+                current_stroke_join = ir::UnpackStrokeJoin(opts);
+
+                if (current_stroke_paint_id < paints.size() &&
+                    paints[current_stroke_paint_id] != VG_INVALID_HANDLE) {
+                    vgSetPaint(paints[current_stroke_paint_id], VG_STROKE_PATH);
+                }
+                vgSetf(VG_STROKE_LINE_WIDTH, current_stroke_width);
+
+                VGCapStyle cap = VG_CAP_BUTT;
+                switch (current_stroke_cap) {
+                    case ir::StrokeCap::kButt:
+                        cap = VG_CAP_BUTT;
+                        break;
+                    case ir::StrokeCap::kRound:
+                        cap = VG_CAP_ROUND;
+                        break;
+                    case ir::StrokeCap::kSquare:
+                        cap = VG_CAP_SQUARE;
+                        break;
+                }
+                vgSeti(VG_STROKE_CAP_STYLE, cap);
+
+                VGJoinStyle join = VG_JOIN_MITER;
+                switch (current_stroke_join) {
+                    case ir::StrokeJoin::kMiter:
+                        join = VG_JOIN_MITER;
+                        break;
+                    case ir::StrokeJoin::kRound:
+                        join = VG_JOIN_ROUND;
+                        break;
+                    case ir::StrokeJoin::kBevel:
+                        join = VG_JOIN_BEVEL;
+                        break;
+                }
+                vgSeti(VG_STROKE_JOIN_STYLE, join);
+                break;
+            }
+
+            case ir::Opcode::kFillPath: {
+                if (cmd + 2 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+
+                if (path_id < scene.paths.size()) {
+                    VGPath path = CreatePath(scene.paths[path_id]);
+                    if (path != VG_INVALID_HANDLE) {
+                        vgDrawPath(path, VG_FILL_PATH);
+                        vgDestroyPath(path);
+                    }
+                }
+                break;
+            }
+
+            case ir::Opcode::kStrokePath: {
+                if (cmd + 2 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+
+                if (path_id < scene.paths.size()) {
+                    VGPath path = CreatePath(scene.paths[path_id]);
+                    if (path != VG_INVALID_HANDLE) {
+                        vgDrawPath(path, VG_STROKE_PATH);
+                        vgDestroyPath(path);
+                    }
+                }
+                break;
+            }
+
+            case ir::Opcode::kSave:
+            case ir::Opcode::kRestore:
+                break;
+
+            case ir::Opcode::kSetMatrix: {
+                if (cmd + 24 > end)
+                    goto done;
+                const float* m = reinterpret_cast<const float*>(cmd);
+                cmd += 24;
+
+                VGfloat matrix[9] = {m[0], m[2], m[4], m[1], m[3], m[5], 0.0f, 0.0f, 1.0f};
+                vgLoadMatrix(flip_matrix);
+                vgMultMatrix(matrix);
+                break;
+            }
+
+            case ir::Opcode::kConcatMatrix: {
+                if (cmd + 24 > end)
+                    goto done;
+                const float* m = reinterpret_cast<const float*>(cmd);
+                cmd += 24;
+
+                VGfloat matrix[9] = {m[0], m[2], m[4], m[1], m[3], m[5], 0.0f, 0.0f, 1.0f};
+                vgMultMatrix(matrix);
+                break;
+            }
+
+            case ir::Opcode::kSetDash: {
+                if (cmd + 5 > end)
+                    goto done;
+                uint8_t count = *cmd++;
+                float phase = *reinterpret_cast<const float*>(cmd);
+                cmd += 4;
+                if (cmd + 4 * count > end)
+                    goto done;
+                const float* lengths = reinterpret_cast<const float*>(cmd);
+                cmd += 4 * count;
+                if (count > 0) {
+                    vgSetfv(VG_STROKE_DASH_PATTERN, count, lengths);
+                    vgSetf(VG_STROKE_DASH_PHASE, phase);
+                } else {
+                    vgSetfv(VG_STROKE_DASH_PATTERN, 0, nullptr);
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPush: {
+                if (cmd + 3 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+                ir::FillRule rule = static_cast<ir::FillRule>(*cmd++);
+
+                if (path_id < scene.paths.size()) {
+                    VGPath path = CreatePath(scene.paths[path_id]);
+                    if (path != VG_INVALID_HANDLE) {
+                        vgSeti(static_cast<VGParamType>(VG_CLIP_RULE_MZT),
+                               rule == ir::FillRule::kEvenOdd ? VG_EVEN_ODD : VG_NON_ZERO);
+                        vgSeti(VG_MATRIX_MODE,
+                               static_cast<VGMatrixMode>(VG_MATRIX_CLIP_USER_TO_SURFACE_MZT));
+                        vgLoadMatrix(flip_matrix);
+                        vgSeti(VG_MATRIX_MODE, VG_MATRIX_PATH_USER_TO_SURFACE);
+                        vgClipPathPushMZT(path, VG_TRUE);
+                        vgDestroyPath(path);
+                    }
+                }
+                break;
+            }
+
+            case ir::Opcode::kClipPop:
+                vgClipPathPopMZT();
+                break;
+
+            default:
+                break;
         }
     }
-    paths.clear();
 
-    vgDestroyPaint(fill_paint);
-    vgDestroyPaint(stroke_paint);
+done:
     vgFinish();
+
+    for (auto p : paints) {
+        if (p != VG_INVALID_HANDLE) {
+            vgDestroyPaint(p);
+        }
+    }
+    paints.clear();
 
     vgPrivMakeCurrentMZT(nullptr, nullptr);
     vgPrivSurfaceDestroyMZT(surface);
-    return s;
+    return Status::Ok();
 }
 
 void RegisterAmanithVGAdapter() {

@@ -3,7 +3,7 @@
 
 use vello_cpu::{RenderContext, Pixmap, PaintType};
 use vello_cpu::kurbo::{BezPath, Cap, Join, Rect, Stroke};
-use vello_cpu::peniko::{Color, ColorStop, Gradient};
+use vello_cpu::peniko::{Color, ColorStop, Gradient, Fill};
 use vello_cpu::peniko::color::DynamicColor;
 
 /// Opaque handle to Vello RenderContext
@@ -16,6 +16,114 @@ pub struct VloSurface {
 /// Helper for path construction
 pub struct VloPath {
     path: BezPath,
+}
+
+pub struct VloPaintBuf {
+    pub paint: PaintType,
+}
+
+#[no_mangle]
+pub extern "C" fn vlo_paint_create_solid(r: u8, g: u8, b: u8, a: u8) -> *mut VloPaintBuf {
+    let paint = PaintType::Solid(Color::from_rgba8(r, g, b, a));
+    Box::into_raw(Box::new(VloPaintBuf { paint }))
+}
+
+#[no_mangle]
+pub extern "C" fn vlo_paint_create_gradient(
+    kind: i32,
+    x0: f32, y0: f32, x1: f32, y1: f32,
+    offsets: *const f32,
+    colors: *const u32,
+    nstops: i32,
+) -> *mut VloPaintBuf {
+    if offsets.is_null() || colors.is_null() || nstops <= 0 { return std::ptr::null_mut(); }
+    let offsets_slice = unsafe { std::slice::from_raw_parts(offsets, nstops as usize) };
+    let colors_slice = unsafe { std::slice::from_raw_parts(colors, nstops as usize) };
+
+    let mut stops = Vec::with_capacity(nstops as usize);
+    for i in 0..nstops as usize {
+        let c = colors_slice[i];
+        let r_val = (c & 0xFF) as u8;
+        let g_val = ((c >> 8) & 0xFF) as u8;
+        let b_val = ((c >> 16) & 0xFF) as u8;
+        let a_val = ((c >> 24) & 0xFF) as u8;
+        let color = Color::from_rgba8(r_val, g_val, b_val, a_val);
+        stops.push(ColorStop {
+            offset: offsets_slice[i],
+            color: DynamicColor::from_alpha_color(color),
+        });
+    }
+
+    let gradient = if kind == 0 {
+        Gradient::new_linear((x0 as f64, y0 as f64), (x1 as f64, y1 as f64))
+    } else {
+        Gradient::new_radial((x0 as f64, y0 as f64), x1)
+    };
+    let gradient = gradient.with_stops(&stops[..]);
+    Box::into_raw(Box::new(VloPaintBuf { paint: PaintType::Gradient(gradient) }))
+}
+
+#[no_mangle]
+pub extern "C" fn vlo_paint_destroy(ptr: *mut VloPaintBuf) {
+    if ptr.is_null() { return; }
+    unsafe { drop(Box::from_raw(ptr)); }
+}
+
+#[no_mangle]
+pub extern "C" fn vlo_draw_fill_with_paint(
+    surf: *mut VloSurface,
+    path_ptr: *const VloPath,
+    paint_ptr: *const VloPaintBuf,
+    even_odd: bool
+) {
+    if surf.is_null() || path_ptr.is_null() || paint_ptr.is_null() { return; }
+    let surface = unsafe { &mut *surf };
+    let path = unsafe { &*path_ptr };
+    let paint_buf = unsafe { &*paint_ptr };
+    surface.ctx.set_fill_rule(if even_odd { Fill::EvenOdd } else { Fill::NonZero });
+    surface.ctx.set_paint(paint_buf.paint.clone());
+    surface.ctx.fill_path(&path.path);
+}
+#[no_mangle]
+pub extern "C" fn vlo_draw_stroke_with_paint(
+    surf: *mut VloSurface,
+    path_ptr: *const VloPath,
+    paint_ptr: *const VloPaintBuf,
+    width: f32,
+    cap: i32,
+    join: i32,
+    dashes: *const f32,
+    ndash: i32,
+    dash_phase: f32
+) {
+    if surf.is_null() || path_ptr.is_null() || paint_ptr.is_null() { return; }
+    let surface = unsafe { &mut *surf };
+    let path = unsafe { &*path_ptr };
+    let paint_buf = unsafe { &*paint_ptr };
+
+    let stroke = Stroke::new(width as f64)
+        .with_caps(match cap {
+            1 => Cap::Round,
+            2 => Cap::Square,
+            _ => Cap::Butt,
+        })
+        .with_join(match join {
+            1 => Join::Round,
+            2 => Join::Bevel,
+            _ => Join::Miter,
+        });
+
+    surface.ctx.set_stroke(stroke);
+    surface.ctx.set_paint(paint_buf.paint.clone());
+
+    if !dashes.is_null() && ndash > 0 {
+        let dashes_slice = unsafe { std::slice::from_raw_parts(dashes, ndash as usize) };
+        let dashes_f64: Vec<f64> = dashes_slice.iter().map(|&x| x as f64).collect();
+        let dashed_path: BezPath = vello_cpu::kurbo::dash(path.path.elements().iter().copied(), dash_phase as f64, &dashes_f64).collect();
+        surface.ctx.stroke_path(&dashed_path);
+    } else {
+        surface.ctx.stroke_path(&path.path);
+    }
 }
 
 // ============================================================================

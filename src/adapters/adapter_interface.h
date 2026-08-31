@@ -6,15 +6,15 @@
 
 #pragma once
 
+#include "common/capability_set.h"
+#include "common/status.h"
+
 #include <concepts>
 #include <cstdint>
 #include <functional>
 #include <memory>
 #include <string>
 #include <vector>
-
-#include "common/capability_set.h"
-#include "common/status.h"
 namespace vgcpu {
 
 // Forward declarations

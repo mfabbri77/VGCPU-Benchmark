@@ -3,8 +3,8 @@
 
 #include "pal/memory_tracker.h"
 
-#include <cstdlib>
 #include <atomic>
+#include <cstdlib>
 
 #if defined(__linux__) || defined(__GLIBC__)
 #include <dlfcn.h>
@@ -53,7 +53,8 @@ void InitHooks() {
 extern "C" {
 
 void* malloc(size_t size) {
-    if (!real_malloc) InitHooks();
+    if (!real_malloc)
+        InitHooks();
     void* ptr = real_malloc ? real_malloc(size) : nullptr;
     if (t_tracking && ptr) {
         size_t actual = malloc_usable_size(ptr);
@@ -68,13 +69,15 @@ void* malloc(size_t size) {
 }
 
 void free(void* ptr) {
-    if (!real_free) InitHooks();
+    if (!real_free)
+        InitHooks();
     if (t_tracking && ptr) {
         size_t actual = malloc_usable_size(ptr);
         t_stats.free_count++;
         t_stats.current_live_bytes -= actual;
     }
-    if (real_free) real_free(ptr);
+    if (real_free)
+        real_free(ptr);
 }
 
 void* calloc(size_t nmemb, size_t size) {
@@ -104,7 +107,8 @@ void* calloc(size_t nmemb, size_t size) {
 }
 
 void* realloc(void* ptr, size_t size) {
-    if (!real_realloc) InitHooks();
+    if (!real_realloc)
+        InitHooks();
     size_t old_size = (ptr && t_tracking) ? malloc_usable_size(ptr) : 0;
     void* new_ptr = real_realloc ? real_realloc(ptr, size) : nullptr;
     if (t_tracking && new_ptr) {
@@ -120,7 +124,8 @@ void* realloc(void* ptr, size_t size) {
 }
 
 int posix_memalign(void** memptr, size_t alignment, size_t size) {
-    if (!real_posix_memalign) InitHooks();
+    if (!real_posix_memalign)
+        InitHooks();
     int res = real_posix_memalign ? real_posix_memalign(memptr, alignment, size) : -1;
     if (t_tracking && res == 0 && memptr && *memptr) {
         size_t actual = malloc_usable_size(*memptr);
@@ -135,7 +140,8 @@ int posix_memalign(void** memptr, size_t alignment, size_t size) {
 }
 
 void* aligned_alloc(size_t alignment, size_t size) {
-    if (!real_aligned_alloc) InitHooks();
+    if (!real_aligned_alloc)
+        InitHooks();
     void* ptr = real_aligned_alloc ? real_aligned_alloc(alignment, size) : nullptr;
     if (t_tracking && ptr) {
         size_t actual = malloc_usable_size(ptr);

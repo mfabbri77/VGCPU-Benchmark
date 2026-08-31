@@ -56,11 +56,17 @@ CaseRun Harness::BeginCase(IBackendAdapter& adapter, const PreparedScene& scene,
     const RequiredFeatures& required = scene.required;
     std::string compat_reason = CheckCompatibility(caps, required);
     if (!compat_reason.empty()) {
-        run.result.decision = CaseDecision::kSkip;
-        run.result.reasons.push_back(compat_reason);
-        return run;
+        if (compat_reason.rfind("FALLBACK:", 0) == 0) {
+            run.result.decision = CaseDecision::kFallback;
+            run.result.reasons.push_back(compat_reason);
+        } else {
+            run.result.decision = CaseDecision::kSkip;
+            run.result.reasons.push_back(compat_reason);
+            return run;
+        }
+    } else {
+        run.result.decision = CaseDecision::kExecute;
     }
-
     // [ARCH-14-F] Preparation phase
     auto prepare_status = adapter.Prepare(scene);
     if (prepare_status.failed()) {
@@ -157,7 +163,8 @@ void Harness::MeasureRepetition(CaseRun& run, const BenchmarkPolicy& policy) {
             return;
         }
 
-        run.lifecycle_wall_samples.push_back(pal::ToNanoseconds(pal::Elapsed(wall_start, wall_end)));
+        run.lifecycle_wall_samples.push_back(
+            pal::ToNanoseconds(pal::Elapsed(wall_start, wall_end)));
         run.lifecycle_cpu_samples.push_back(pal::ToNanoseconds(cpu_end - cpu_start));
     }
 }
@@ -171,7 +178,9 @@ CaseResult Harness::FinishCase(CaseRun& run, const BenchmarkPolicy& policy) {
     // Compute statistics for both modes
     result.stats = ComputeStats(run.wall_samples, run.cpu_samples);
     result.lifecycle_stats = ComputeStats(run.lifecycle_wall_samples, run.lifecycle_cpu_samples);
-    result.decision = CaseDecision::kExecute;
+    if (result.decision != CaseDecision::kFallback) {
+        result.decision = CaseDecision::kExecute;
+    }
 
     // Artifact Generation
     if (policy.generate_png) {

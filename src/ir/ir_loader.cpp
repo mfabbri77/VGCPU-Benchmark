@@ -244,7 +244,8 @@ void ExtractRequiredFeatures(PreparedScene& scene) {
                 cmd += 24;
                 break;
             case Opcode::kSetFill: {
-                if (cmd + 3 > end) return;
+                if (cmd + 3 > end)
+                    return;
                 uint16_t paint_id = ReadLE<uint16_t>(cmd);
                 if (static_cast<FillRule>(cmd[2]) == FillRule::kEvenOdd) {
                     req.needs_evenodd = true;
@@ -256,25 +257,39 @@ void ExtractRequiredFeatures(PreparedScene& scene) {
                 break;
             }
             case Opcode::kSetStroke: {
-                if (cmd + 7 > end) return;
+                if (cmd + 7 > end)
+                    return;
                 uint16_t paint_id = ReadLE<uint16_t>(cmd);
                 uint8_t opts = cmd[6];
                 switch (UnpackStrokeCap(opts)) {
-                    case StrokeCap::kButt: req.needs_cap_butt = true; break;
-                    case StrokeCap::kRound: req.needs_cap_round = true; break;
-                    case StrokeCap::kSquare: req.needs_cap_square = true; break;
+                    case StrokeCap::kButt:
+                        req.needs_cap_butt = true;
+                        break;
+                    case StrokeCap::kRound:
+                        req.needs_cap_round = true;
+                        break;
+                    case StrokeCap::kSquare:
+                        req.needs_cap_square = true;
+                        break;
                 }
                 switch (UnpackStrokeJoin(opts)) {
-                    case StrokeJoin::kMiter: req.needs_join_miter = true; break;
-                    case StrokeJoin::kRound: req.needs_join_round = true; break;
-                    case StrokeJoin::kBevel: req.needs_join_bevel = true; break;
+                    case StrokeJoin::kMiter:
+                        req.needs_join_miter = true;
+                        break;
+                    case StrokeJoin::kRound:
+                        req.needs_join_round = true;
+                        break;
+                    case StrokeJoin::kBevel:
+                        req.needs_join_bevel = true;
+                        break;
                 }
                 paint_used(paint_id);
                 cmd += 7;
                 break;
             }
             case Opcode::kSetDash: {
-                if (cmd + 5 > end) return;
+                if (cmd + 5 > end)
+                    return;
                 uint8_t count = cmd[0];
                 if (count > 0) {
                     req.needs_dashes = true;

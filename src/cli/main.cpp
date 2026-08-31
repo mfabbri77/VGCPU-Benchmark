@@ -463,7 +463,8 @@ int HandleProfileMemory(const CliOptions& options) {
         std::string scene_id;
         std::string decision;
         std::string skip_reason;
-        pal::MemoryProfile profile;
+        pal::MemoryProfile prebaked;
+        pal::MemoryProfile lifecycle;
     };
     std::vector<MemoryCaseResult> results;
 
@@ -471,14 +472,22 @@ int HandleProfileMemory(const CliOptions& options) {
         for (auto& backend : active_backends) {
             auto caps = backend.adapter->GetCapabilities();
             std::string compat_reason = CheckCompatibility(caps, scene.required);
+            std::string decision = "EXECUTE";
+            std::string reason = "";
             if (!compat_reason.empty()) {
-                results.push_back({backend.id, scene.scene_id, "SKIP", compat_reason, {}});
-                continue;
+                if (compat_reason.rfind("FALLBACK:", 0) == 0) {
+                    decision = "FALLBACK";
+                    reason = compat_reason;
+                } else {
+                    results.push_back({backend.id, scene.scene_id, "SKIP", compat_reason, {}, {}});
+                    continue;
+                }
             }
 
             auto prep_status = backend.adapter->Prepare(scene);
             if (prep_status.failed()) {
-                results.push_back({backend.id, scene.scene_id, "FAIL", prep_status.message, {}});
+                results.push_back(
+                    {backend.id, scene.scene_id, "FAIL", prep_status.message, {}, {}});
                 continue;
             }
 
@@ -486,17 +495,21 @@ int HandleProfileMemory(const CliOptions& options) {
             config.width = static_cast<int>(scene.width);
             config.height = static_cast<int>(scene.height);
 
-            std::vector<uint8_t> output_buffer(static_cast<size_t>(config.width) * config.height * 4);
+            std::vector<uint8_t> output_buffer(static_cast<size_t>(config.width) * config.height *
+                                               4);
 
             // 1 unmeasured warmup call
             backend.adapter->Render(scene, config, output_buffer);
 
-            // Isolated memory profiling pass (1 frame)
-            pal::MemoryProfile prof = pal::TrackMemory([&]() {
-                backend.adapter->Render(scene, config, output_buffer);
-            });
+            // Isolated memory profiling pass: Pre-baked (draw only)
+            pal::MemoryProfile prof_prebaked =
+                pal::TrackMemory([&]() { backend.adapter->Render(scene, config, output_buffer); });
 
-            results.push_back({backend.id, scene.scene_id, "EXECUTE", "", prof});
+            // Isolated memory profiling pass: Full-lifecycle (create -> draw -> destroy)
+            pal::MemoryProfile prof_lifecycle = pal::TrackMemory(
+                [&]() { backend.adapter->RenderLifecycle(scene, config, output_buffer); });
+            results.push_back(
+                {backend.id, scene.scene_id, decision, reason, prof_prebaked, prof_lifecycle});
         }
     }
 
@@ -506,34 +519,38 @@ int HandleProfileMemory(const CliOptions& options) {
 
     // Print summary to console
     std::cout << "\n"
-              << "========================================================================================================\n"
-              << "VGCPU-Benchmark — Working Memory Profile (Heap allocations & Peak Live Bytes per frame)\n"
-              << "========================================================================================================\n"
-              << std::left << std::setw(14) << "Backend"
-              << std::left << std::setw(28) << "Scene"
-              << std::right << std::setw(14) << "Allocs/frame"
-              << std::right << std::setw(14) << "Frees/frame"
-              << std::right << std::setw(18) << "Peak Heap (KB)"
-              << std::right << std::setw(18) << "Total Churn (KB)"
-              << std::right << std::setw(12) << "Leaked\n"
-              << "--------------------------------------------------------------------------------------------------------\n";
+              << "================================================================================="
+                 "=======================\n"
+              << "VGCPU-Benchmark — Working Memory Profile (Heap allocations & Peak Live Bytes per "
+                 "frame)\n"
+              << "================================================================================="
+                 "=======================\n"
+              << std::left << std::setw(14) << "Backend" << std::left << std::setw(28) << "Scene"
+              << std::right << std::setw(14) << "Allocs/frame" << std::right << std::setw(14)
+              << "Frees/frame" << std::right << std::setw(18) << "Peak Heap (KB)" << std::right
+              << std::setw(18) << "Total Churn (KB)" << std::right << std::setw(12) << "Leaked\n"
+              << "---------------------------------------------------------------------------------"
+                 "-----------------------\n";
 
     for (const auto& r : results) {
-        std::cout << std::left << std::setw(14) << r.backend_id
-                  << std::left << std::setw(28) << r.scene_id;
+        std::cout << std::left << std::setw(14) << r.backend_id << std::left << std::setw(28)
+                  << r.scene_id;
         if (r.decision == "SKIP") {
             std::cout << "  SKIP (" << r.skip_reason << ")\n";
         } else if (r.decision == "FAIL") {
             std::cout << "  FAIL (" << r.skip_reason << ")\n";
         } else {
-            std::cout << std::right << std::setw(14) << r.profile.alloc_count
-                      << std::right << std::setw(14) << r.profile.free_count
-                      << std::right << std::setw(18) << std::fixed << std::setprecision(1) << (r.profile.peak_heap_bytes / 1024.0)
-                      << std::right << std::setw(18) << std::fixed << std::setprecision(1) << (r.profile.total_alloc_bytes / 1024.0)
-                      << std::right << std::setw(12) << r.profile.leaked_bytes << " B\n";
+            std::cout << std::right << std::setw(14) << r.lifecycle.alloc_count << std::right
+                      << std::setw(14) << r.lifecycle.free_count << std::right << std::setw(18)
+                      << std::fixed << std::setprecision(1)
+                      << (r.lifecycle.peak_heap_bytes / 1024.0) << std::right << std::setw(18)
+                      << std::fixed << std::setprecision(1)
+                      << (r.lifecycle.total_alloc_bytes / 1024.0) << std::right << std::setw(12)
+                      << r.lifecycle.leaked_bytes << " B\n";
         }
     }
-    std::cout << "========================================================================================================\n";
+    std::cout << "================================================================================="
+                 "=======================\n";
 
     // Write memory.json
     std::filesystem::path out_dir(options.output_dir);
@@ -558,11 +575,25 @@ int HandleProfileMemory(const CliOptions& options) {
             }
             if (r.decision == "EXECUTE") {
                 out << ",\n      \"memory\": {\n"
-                    << "        \"alloc_count\": " << r.profile.alloc_count << ",\n"
-                    << "        \"free_count\": " << r.profile.free_count << ",\n"
-                    << "        \"peak_heap_bytes\": " << r.profile.peak_heap_bytes << ",\n"
-                    << "        \"total_alloc_bytes\": " << r.profile.total_alloc_bytes << ",\n"
-                    << "        \"leaked_bytes\": " << r.profile.leaked_bytes << "\n"
+                    << "        \"alloc_count\": " << r.lifecycle.alloc_count << ",\n"
+                    << "        \"free_count\": " << r.lifecycle.free_count << ",\n"
+                    << "        \"peak_heap_bytes\": " << r.lifecycle.peak_heap_bytes << ",\n"
+                    << "        \"total_alloc_bytes\": " << r.lifecycle.total_alloc_bytes << ",\n"
+                    << "        \"leaked_bytes\": " << r.lifecycle.leaked_bytes << "\n"
+                    << "      },\n"
+                    << "      \"prebaked_memory\": {\n"
+                    << "        \"alloc_count\": " << r.prebaked.alloc_count << ",\n"
+                    << "        \"free_count\": " << r.prebaked.free_count << ",\n"
+                    << "        \"peak_heap_bytes\": " << r.prebaked.peak_heap_bytes << ",\n"
+                    << "        \"total_alloc_bytes\": " << r.prebaked.total_alloc_bytes << ",\n"
+                    << "        \"leaked_bytes\": " << r.prebaked.leaked_bytes << "\n"
+                    << "      },\n"
+                    << "      \"lifecycle_memory\": {\n"
+                    << "        \"alloc_count\": " << r.lifecycle.alloc_count << ",\n"
+                    << "        \"free_count\": " << r.lifecycle.free_count << ",\n"
+                    << "        \"peak_heap_bytes\": " << r.lifecycle.peak_heap_bytes << ",\n"
+                    << "        \"total_alloc_bytes\": " << r.lifecycle.total_alloc_bytes << ",\n"
+                    << "        \"leaked_bytes\": " << r.lifecycle.leaked_bytes << "\n"
                     << "      }\n";
             } else {
                 out << "\n";

@@ -7,7 +7,9 @@
 #pragma once
 
 #include "adapters/adapter_interface.h"
+
 #include <thorvg.h>
+
 #include <memory>
 #include <vector>
 

@@ -339,12 +339,13 @@ dialog button{margin:12px auto 0;display:block;padding:7px 22px;border-radius:6p
 .legend{font-size:15px;color:var(--muted);margin:10px 0 0}
 .footnote{font-size:15.5px;color:var(--muted)}
 code{background:var(--nabg);border-radius:4px;padding:1px 6px;font-size:15px}
-.tab-nav{display:flex;gap:10px;margin:20px 0 16px;border-bottom:1px solid var(--line);padding-bottom:12px}
-.tab-btn{background:var(--card);border:1px solid var(--line);color:var(--fg);padding:9px 20px;border-radius:8px;cursor:pointer;font-weight:600;font-size:16px;transition:all .15s ease}
-.tab-btn:hover{background:var(--nabg)}
-.tab-btn.active{background:var(--accent);color:#fff;border-color:var(--accent)}
-.tab-panel{display:none}
-.tab-panel.active{display:block}
+.controls-bar{display:flex;flex-wrap:wrap;gap:24px;align-items:center;padding:16px 22px;background:var(--card);border:1px solid var(--line);border-radius:10px;margin:20px 0 28px}
+.control-group{display:flex;align-items:center;gap:12px}
+.control-label{font-weight:700;font-size:16px;color:var(--muted);text-transform:uppercase;letter-spacing:0.5px}
+.btn-group{display:inline-flex;background:var(--nabg);border-radius:8px;padding:3px;border:1px solid var(--line)}
+.btn-pill{background:transparent;border:none;color:var(--fg);padding:8px 18px;border-radius:6px;cursor:pointer;font-weight:600;font-size:15.5px;transition:all .15s ease}
+.btn-pill:hover{color:var(--accent)}
+.btn-pill.active{background:var(--accent);color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.15)}
 """
 
 _JS = """
@@ -352,14 +353,34 @@ function zoom(id){document.getElementById(id).showModal();}
 document.addEventListener('click',e=>{
   if(e.target.tagName==='DIALOG')e.target.close();
 });
-function showTab(panelId, btn){
-  const parent = btn.closest('.tab-container');
-  parent.querySelectorAll('.tab-btn').forEach(b=>b.classList.remove('active'));
-  parent.querySelectorAll('.tab-panel').forEach(p=>p.classList.remove('active'));
-  btn.classList.add('active');
-  const target = parent.querySelector('#' + panelId);
-  if(target) target.classList.add('active');
+
+let currentProfile = 'lifecycle';
+let currentSuite = 'simple';
+
+function setFilter(type, val) {
+  if (type === 'profile') currentProfile = val;
+  if (type === 'suite') currentSuite = val;
+  
+  document.querySelectorAll('#profile-selector .btn-pill').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-val') === currentProfile);
+  });
+  document.querySelectorAll('#suite-selector .btn-pill').forEach(b => {
+    b.classList.toggle('active', b.getAttribute('data-val') === currentSuite);
+  });
+  
+  document.querySelectorAll('[data-view]').forEach(el => {
+    const prof = el.getAttribute('data-profile');
+    const suite = el.getAttribute('data-suite');
+    const matchProf = !prof || prof === currentProfile;
+    const matchSuite = !suite || suite === currentSuite;
+    el.style.display = (matchProf && matchSuite) ? 'block' : 'none';
+  });
 }
+
+document.addEventListener('DOMContentLoaded', () => {
+  setFilter('profile', 'lifecycle');
+  setFilter('suite', 'simple');
+});
 """
 
 
@@ -531,75 +552,95 @@ def build_report(results, oracle, memory, results_dir, reference, assets_dir):
         w(f"<div><b>{esc(k)}</b>{esc(v)}</div>")
     w("</div></div>")
 
+    # ---------------- Top Unified Controls Bar ----------------
+    w("<div class='controls-bar'>")
+    w("<div class='control-group'><span class='control-label'>Profile:</span>")
+    w("<div class='btn-group' id='profile-selector'>")
+    w("<button class='btn-pill active' data-val='lifecycle' onclick=\"setFilter('profile', 'lifecycle')\">Full-Lifecycle (default)</button>")
+    w("<button class='btn-pill' data-val='prebaked' onclick=\"setFilter('profile', 'prebaked')\">Pre-baked</button>")
+    w("</div></div>")
+    w("<div class='control-group'><span class='control-label'>Test-suite:</span>")
+    w("<div class='btn-group' id='suite-selector'>")
+    w("<button class='btn-pill active' data-val='simple' onclick=\"setFilter('suite', 'simple')\">Simple</button>")
+    w("<button class='btn-pill' data-val='complex' onclick=\"setFilter('suite', 'complex')\">Complex</button>")
+    w("</div></div>")
+    w("</div>")
+
+    simple_scenes = [s for s in scenes if not s.startswith("complex/")]
+    complex_scenes = [s for s in scenes if s.startswith("complex/")]
+
     # ---------------- Performance ----------------
     w("<h2>Performance</h2>")
     w(
         "<p class='sub'>Median wall-clock time per frame (p50, lower is "
-        "better); p90 alongside. Two distinct benchmarking modes below:</p>"
+        "better); p90 alongside.</p>"
     )
 
-    def render_perf_tab(stat_key, desc_text):
+    def render_perf_view(subset_scenes, stat_key, suite_type, profile_type, desc_text):
+        w(f"<div data-view data-suite='{suite_type}' data-profile='{profile_type}'>")
         w(f"<p class='sub'>{desc_text}</p>")
         w("<div class='card' style='overflow-x:auto'><table><thead><tr><th>scene \\ backend</th>")
         for b in real_backends:
             mark = " (ref)" if b == reference else ""
             w(f"<th>{esc(b)}{esc(mark)}</th>")
         w("</tr></thead><tbody>")
-        for s in scenes:
+        for s in subset_scenes:
             vals = {}
+            is_fallback = {}
             for b in real_backends:
                 c = by_key.get((b, s))
-                if c and c.get("decision") == "EXECUTE" and stat_key in c and c[stat_key].get("wall_p50_ns", 0) > 0:
+                if c and (c.get("decision") in ("EXECUTE", "FALLBACK") or (c.get("reasons") and any("FALLBACK" in r for r in c["reasons"]))) and stat_key in c and c[stat_key].get("wall_p50_ns", 0) > 0:
                     vals[b] = c[stat_key]["wall_p50_ns"]
-            best = min(vals.values()) if vals else None
+                    is_fallback[b] = (c.get("decision") == "FALLBACK" or (c.get("reasons") and any("FALLBACK" in r for r in c["reasons"])))
+            
+            non_fb_vals = {b: vals[b] for b in vals if not is_fallback.get(b)}
+            best = min(non_fb_vals.values()) if non_fb_vals else (min(vals.values()) if vals else None)
+
             w(f"<tr><td>{esc(s)}</td>")
             for b in real_backends:
                 if b in vals:
                     cell = fmt_ms(vals[b]) + " ms"
-                    if vals[b] == best:
+                    if is_fallback.get(b):
+                        c_obj = by_key.get((b, s))
+                        reasons = ", ".join(c_obj.get("reasons", [])) if c_obj else "fallback"
+                        cell = f"<span style='color:var(--warn);font-weight:600' title='Fallback mode ({esc(reasons)})'>{cell}*</span>"
+                    elif vals[b] == best:
                         cell = f"<b style='color:var(--ok)'>{cell}</b>"
                     w(f"<td class='num'>{cell}</td>")
                 else:
                     w("<td class='num'>—</td>")
             w("</tr>")
         w("</tbody></table>")
-        w("<p class='legend'>Bold green = fastest for the scene. The <code>null</code> backend is excluded.</p></div>")
+        w("<p class='legend'><b style='color:var(--ok)'>Bold green</b> = fastest for the scene. <span style='color:var(--warn);font-weight:600'>Yellow*</span> = unsupported feature (dashing/clipping), benchmark refers to fallback (solid stroke / unclipped). The <code>null</code> backend is excluded.</p></div>")
 
-        for s in scenes:
+        for s in subset_scenes:
             entries = []
             for b in real_backends:
                 c = by_key.get((b, s))
-                if c and c.get("decision") == "EXECUTE" and stat_key in c and c[stat_key].get("wall_p50_ns", 0) > 0:
-                    entries.append((b, c[stat_key]["wall_p50_ns"], c[stat_key]["wall_p90_ns"]))
+                if c and (c.get("decision") in ("EXECUTE", "FALLBACK") or (c.get("reasons") and any("FALLBACK" in r for r in c["reasons"]))) and stat_key in c and c[stat_key].get("wall_p50_ns", 0) > 0:
+                    fb = (c.get("decision") == "FALLBACK" or (c.get("reasons") and any("FALLBACK" in r for r in c["reasons"])))
+                    entries.append((b, c[stat_key]["wall_p50_ns"], c[stat_key]["wall_p90_ns"], fb))
             if not entries:
                 continue
             entries.sort(key=lambda e: e[1])
             max_ns = max(e[1] for e in entries)
             w(f"<h3>{esc(s)}</h3><div class='card'>")
-            for i, (b, p50, p90) in enumerate(entries):
+            for i, (b, p50, p90, fb) in enumerate(entries):
                 pct = 100.0 * p50 / max_ns if max_ns else 0
-                best_cls = " is-best" if i == 0 else ""
+                best_cls = " is-best" if (i == 0 and not fb) else ""
+                fb_badge = "<span class='chip warn' style='font-size:12px;padding:1px 7px;margin-left:6px'>fallback</span>" if fb else ""
                 w(
-                    f"<div class='bar-row{best_cls}'><div class='bar-name'>{esc(b)}</div>"
+                    f"<div class='bar-row{best_cls}'><div class='bar-name'>{esc(b)}{fb_badge}</div>"
                     f"<div class='bar-track'><div class='bar-fill' style='width:{pct:.1f}%'></div></div>"
                     f"<div class='bar-val'>{fmt_ms(p50)} ms <span style='opacity:.65'>(p90 {fmt_ms(p90)})</span></div></div>"
                 )
             w("</div>")
+        w("</div>")
 
-    w("<div class='tab-container'>")
-    w("<div class='tab-nav'>")
-    w("<button class='tab-btn active' onclick=\"showTab('tab-prebaked', this)\">Pre-baked (Draw time only)</button>")
-    w("<button class='tab-btn' onclick=\"showTab('tab-lifecycle', this)\">Full-lifecycle (Create + Draw + Destroy)</button>")
-    w("</div>")
-
-    w("<div id='tab-prebaked' class='tab-panel active'>")
-    render_perf_tab("stats", "<b>Mode A — Pre-baked geometry (Retained):</b> All path and geometry objects are pre-created during <code>Prepare()</code> outside the benchmark loop. The timed measurement contains <b>only the drawing/rasterization loop</b> (pure drawing throughput).")
-    w("</div>")
-
-    w("<div id='tab-lifecycle' class='tab-panel'>")
-    render_perf_tab("lifecycle_stats", "<b>Mode B — Full lifecycle:</b> Benchmark measures the complete frame lifecycle executed in 3 sequential loops: <b>Loop 1: Create all native paths</b> &rarr; <b>Loop 2: Draw all</b> &rarr; <b>Loop 3: Destroy all</b> (metric is the sum $T_{\\text{create}} + T_{\\text{draw}} + T_{\\text{destroy}}$).")
-    w("</div>")
-    w("</div>")
+    render_perf_view(simple_scenes, "lifecycle_stats", "simple", "lifecycle", "<b>Simple Test Suite — Full-lifecycle (Immediate):</b> Basic geometry rendered with immediate single-loop execution (create &rarr; draw &rarr; destroy per command).")
+    render_perf_view(simple_scenes, "stats", "simple", "prebaked", "<b>Simple Test Suite — Pre-baked (Retained):</b> Basic geometry rendered with pre-created path and paint objects (pure draw time).")
+    render_perf_view(complex_scenes, "lifecycle_stats", "complex", "lifecycle", "<b>Complex Test Suite — Full-lifecycle (Immediate):</b> High-density real-world scenes rendered with immediate single-loop execution (create &rarr; draw &rarr; destroy per drawcall).")
+    render_perf_view(complex_scenes, "stats", "complex", "prebaked", "<b>Complex Test Suite (Real-world MPVG Maps & Dense Artwork) — Pre-baked (Retained):</b> High-density paths, geographic vector maps, tiger, and complex shading with pre-created objects (pure draw time).")
     # ---------------- Gallery + SSIM ----------------
     if images:
         w("<h2>Rendering gallery — SSIM &amp; PAE (L∞)</h2>")
@@ -619,70 +660,79 @@ def build_report(results, oracle, memory, results_dir, reference, assets_dir):
         )
         dlg_id = 0
         dialogs = []
-        for s in scenes:
-            have = [(b, images.get((b, s))) for b in real_backends]
-            have = [(b, img) for b, img in have if img]
-            if not have:
-                continue
-            w(f"<h3>{esc(s)}</h3><div class='gallery'>")
-            for b, img in have:
-                dlg_id += 1
-                did = f"d{dlg_id}"
-                cmp_res = comparisons.get((b, s))
-                if b == reference:
-                    badge = "<span class='chip ref'>reference</span>"
-                elif cmp_res:
-                    badge = ssim_chip(cmp_res["ssim"]) + pae_chip(
-                        cmp_res["pae"], cmp_res["ae_pct"]
-                    )
-                else:
-                    badge = "<span class='chip na'>no compare</span>"
-                c = by_key.get((b, s))
-                ms = (
-                    fmt_ms(c["stats"]["wall_p50_ns"]) + " ms"
-                    if c and c.get("decision") == "EXECUTE"
-                    else "—"
-                )
-                # External assets (owner decision, 2026-08-30): images live in
-                # <output_dir>/png/ and are linked relatively, replacing the
-                # base64 inlining that ballooned the report to ~200 MB once
-                # the MPVG map corpus landed.
-                name = f"{b}_{s.replace('/', '_')}.png"
-                (assets_dir / name).write_bytes(img[3])
-                src = f"png/{name}"
-                w(
-                    f"<figure class='shot' style='margin:0'>"
-                    f"<img src='{src}' alt='{esc(b)} / {esc(s)}' loading='lazy' onclick=\"zoom('{did}')\">"
-                    f"<figcaption class='cap'><b>{esc(b)}</b>{badge}<br>"
-                    f"<span style='color:var(--muted)'>{ms}</span></figcaption></figure>"
-                )
-                # dialog content
-                d = [f"<dialog id='{did}'><div class='dwrap'><h4>{esc(b)} — {esc(s)}</h4>"]
-                if b == reference:
-                    d.append("<p>Reference backend for SSIM comparisons.</p>")
-                elif cmp_res:
-                    d.append(
-                        f"<p>SSIM {cmp_res['ssim']:.5f} vs {esc(reference)} · "
-                        f"PAE (L∞) {cmp_res['pae']}/255 · "
-                        f"AE@{AE_TOLERANCE}: {cmp_res['ae_pct']:.3f}% px · "
-                        f"{cmp_res['diff_pct']:.2f}% px differ at all</p>"
-                    )
-                d.append("<div class='drow'><div>")
-                d.append(f"<p>render</p><img src='{src}' alt='render'>")
-                d.append("</div>")
-                if cmp_res:
-                    diff_name = f"diff_{b}_{s.replace('/', '_')}.png"
-                    (assets_dir / diff_name).write_bytes(cmp_res["diff_png"])
-                    d.append(
-                        f"<div><p>difference ×8 vs {esc(reference)}</p>"
-                        f"<img src='png/{diff_name}' alt='diff'></div>"
-                    )
-                d.append("</div><button onclick='this.closest(\"dialog\").close()'>Close</button>")
-                d.append("</div></dialog>")
-                dialogs.append("".join(d))
-            w("</div>")
-        out.extend(dialogs)
 
+        def render_gallery_subset(subset_scenes):
+            nonlocal dlg_id
+            for s in subset_scenes:
+                have = [(b, images.get((b, s))) for b in real_backends]
+                have = [(b, img) for b, img in have if img]
+                if not have:
+                    continue
+                w(f"<h3>{esc(s)}</h3><div class='gallery'>")
+                for b, img in have:
+                    dlg_id += 1
+                    did = f"d{dlg_id}"
+                    cmp_res = comparisons.get((b, s))
+                    if b == reference:
+                        badge = "<span class='chip ref'>reference</span>"
+                    elif cmp_res:
+                        badge = ssim_chip(cmp_res["ssim"]) + pae_chip(
+                            cmp_res["pae"], cmp_res["ae_pct"]
+                        )
+                    else:
+                        badge = "<span class='chip na'>no compare</span>"
+                    c = by_key.get((b, s))
+                    ms = (
+                        fmt_ms(c["stats"]["wall_p50_ns"]) + " ms"
+                        if c and c.get("decision") == "EXECUTE"
+                        else "—"
+                    )
+                    # External assets (owner decision, 2026-08-30): images live in
+                    # <output_dir>/png/ and are linked relatively, replacing the
+                    # base64 inlining that ballooned the report to ~200 MB once
+                    # the MPVG map corpus landed.
+                    name = f"{b}_{s.replace('/', '_')}.png"
+                    (assets_dir / name).write_bytes(img[3])
+                    src = f"png/{name}"
+                    w(
+                        f"<figure class='shot' style='margin:0'>"
+                        f"<img src='{src}' alt='{esc(b)} / {esc(s)}' loading='lazy' onclick=\"zoom('{did}')\">"
+                        f"<figcaption class='cap'><b>{esc(b)}</b>{badge}<br>"
+                        f"<span style='color:var(--muted)'>{ms}</span></figcaption></figure>"
+                    )
+                    # dialog content
+                    d = [f"<dialog id='{did}'><div class='dwrap'><h4>{esc(b)} — {esc(s)}</h4>"]
+                    if b == reference:
+                        d.append("<p>Reference backend for SSIM comparisons.</p>")
+                    elif cmp_res:
+                        d.append(
+                            f"<p>SSIM {cmp_res['ssim']:.5f} vs {esc(reference)} · "
+                            f"PAE (L∞) {cmp_res['pae']}/255 · "
+                            f"AE@{AE_TOLERANCE}: {cmp_res['ae_pct']:.3f}% px · "
+                            f"{cmp_res['diff_pct']:.2f}% px differ at all</p>"
+                        )
+                    d.append("<div class='drow'><div>")
+                    d.append(f"<p>render</p><img src='{src}' alt='render'>")
+                    d.append("</div>")
+                    if cmp_res:
+                        diff_name = f"diff_{b}_{s.replace('/', '_')}.png"
+                        (assets_dir / diff_name).write_bytes(cmp_res["diff_png"])
+                        d.append(
+                            f"<div><p>difference ×8 vs {esc(reference)}</p>"
+                            f"<img src='png/{diff_name}' alt='diff'></div>"
+                        )
+                    d.append("</div><button onclick='this.closest(\"dialog\").close()'>Close</button>")
+                    d.append("</div></dialog>")
+                    dialogs.append("".join(d))
+                w("</div>")
+
+        w("<div data-view data-suite='simple'>")
+        render_gallery_subset(simple_scenes)
+        w("</div>")
+        w("<div data-view data-suite='complex'>")
+        render_gallery_subset(complex_scenes)
+        w("</div>")
+        out.extend(dialogs)
     # ---------------- Correctness census ----------------
     if oracle:
         w("<h2>Correctness census — self-overlap coverage oracle</h2>")
@@ -736,35 +786,88 @@ def build_report(results, oracle, memory, results_dir, reference, assets_dir):
             "timing contamination on the performance benchmarks): <b>allocs/frame</b> is "
             "the count of dynamic allocation calls (malloc/new) during a single render pass; "
             "<b>peak heap</b> is the maximum live working heap memory; <b>total churn</b> "
-            "is the cumulative memory requested.</p>"
+            "is the cumulative memory requested. Organized into <b>4 tabs</b> matching the performance suites:</p>"
         )
         mem_cases = memory.get("cases", [])
         by_mem = {(c["backend_id"], c["scene_id"]): c for c in mem_cases}
-
-        w("<div class='card' style='overflow-x:auto'><table><thead><tr><th>scene \\ backend</th>")
-        for b in real_backends:
-            w(f"<th>{esc(b)}</th>")
-        w("</tr></thead><tbody>")
-        for s in scenes:
-            w(f"<tr><td>{esc(s)}</td>")
+        def render_memory_view(subset_scenes, mem_key, suite_type, profile_type, desc_text):
+            w(f"<div data-view data-suite='{suite_type}' data-profile='{profile_type}'>")
+            w(f"<p class='sub'>{desc_text}</p>")
+            w("<div class='card' style='overflow-x:auto'><table><thead><tr><th>scene \\ backend</th>")
             for b in real_backends:
-                mc = by_mem.get((b, s))
-                if mc and mc.get("decision") == "EXECUTE" and "memory" in mc:
-                    m = mc["memory"]
-                    allocs = m.get("alloc_count", 0)
-                    peak = m.get("peak_heap_bytes", 0)
-                    churn = m.get("total_alloc_bytes", 0)
-                    w(
-                        f"<td class='num'><b>{fmt_kb(peak)}</b><br><span style='color:var(--muted);font-size:12px'>"
-                        f"{allocs:,} allocs<br>{fmt_kb(churn)} churn</span></td>"
-                    )
-                elif mc and mc.get("decision") == "SKIP":
-                    w("<td class='num'><span class='chip na'>skip</span></td>")
-                else:
-                    w("<td class='num'>—</td>")
-            w("</tr>")
-        w("</tbody></table></div>")
+                w(f"<th>{esc(b)}</th>")
+            w("</tr></thead><tbody>")
+            for s in subset_scenes:
+                scene_allocs = {}
+                scene_peaks = {}
+                scene_churns = {}
+                for b in real_backends:
+                    mc = by_mem.get((b, s))
+                    if mc and (mc.get("decision") in ("EXECUTE", "FALLBACK") or (mc.get("reason") and "FALLBACK" in mc["reason"])):
+                        m = mc.get(mem_key) or mc.get("memory")
+                        if m:
+                            scene_allocs[b] = m.get("alloc_count", 0)
+                            scene_peaks[b] = m.get("peak_heap_bytes", 0)
+                            scene_churns[b] = m.get("total_alloc_bytes", 0)
+                
+                best_alloc = min(scene_allocs.values()) if scene_allocs else None
+                best_peak = min(scene_peaks.values()) if scene_peaks else None
+                best_churn = min(scene_churns.values()) if scene_churns else None
 
+                w(f"<tr><td>{esc(s)}</td>")
+                for b in real_backends:
+                    mc = by_mem.get((b, s))
+                    if mc and (mc.get("decision") in ("EXECUTE", "FALLBACK") or (mc.get("reason") and "FALLBACK" in mc["reason"])):
+                        m = mc.get(mem_key) or mc.get("memory")
+                        if m:
+                            is_fb = (mc.get("decision") == "FALLBACK" or (mc.get("reason") and "FALLBACK" in mc["reason"]))
+                            allocs = m.get("alloc_count", 0)
+                            peak = m.get("peak_heap_bytes", 0)
+                            churn = m.get("total_alloc_bytes", 0)
+                            
+                            peak_str = fmt_kb(peak)
+                            if is_fb:
+                                peak_html = f"<span style='color:var(--warn);font-weight:600'>{peak_str}*</span>"
+                            elif peak == best_peak:
+                                peak_html = f"<b style='color:var(--ok)'>{peak_str}</b>"
+                            else:
+                                peak_html = f"<b>{peak_str}</b>"
+                            
+                            alloc_str = f"{allocs:,} allocs"
+                            if is_fb:
+                                alloc_html = f"<span style='color:var(--warn)'>{alloc_str}</span>"
+                            elif allocs == best_alloc:
+                                alloc_html = f"<span style='color:var(--ok);font-weight:600'>{alloc_str}</span>"
+                            else:
+                                alloc_html = f"<span>{alloc_str}</span>"
+                            
+                            churn_str = f"{fmt_kb(churn)} churn"
+                            if is_fb:
+                                churn_html = f"<span style='color:var(--warn)'>{churn_str} (fallback)</span>"
+                            elif churn == best_churn:
+                                churn_html = f"<span style='color:var(--ok);font-weight:600'>{churn_str}</span>"
+                            else:
+                                churn_html = f"<span>{churn_str}</span>"
+
+                            w(
+                                f"<td class='num'>{peak_html}<br><span style='color:var(--muted);font-size:12px'>"
+                                f"{alloc_html}<br>{churn_html}</span></td>"
+                            )
+                        else:
+                            w("<td class='num'>—</td>")
+                    elif mc and mc.get("decision") == "SKIP":
+                        w("<td class='num'><span class='chip na'>skip</span></td>")
+                    else:
+                        w("<td class='num'>—</td>")
+                w("</tr>")
+            w("</tbody></table>")
+            w("<p class='legend'><b style='color:var(--ok)'>Bold green</b> = lowest peak working set, fewest allocations, or lowest memory churn for the scene. <span style='color:var(--warn);font-weight:600'>Yellow*</span> = unsupported feature fallback (dashing/clipping).</p></div>")
+            w("</div>")
+
+        render_memory_view(simple_scenes, "lifecycle_memory", "simple", "lifecycle", "<b>Simple Test Suite — Full-lifecycle Memory Profile:</b> Heap memory allocations and peak working set during immediate create &rarr; draw &rarr; destroy on basic geometry.")
+        render_memory_view(simple_scenes, "prebaked_memory", "simple", "prebaked", "<b>Simple Test Suite — Pre-baked Memory Profile:</b> Heap memory allocations and peak working set during the pure drawing pass on basic geometry.")
+        render_memory_view(complex_scenes, "lifecycle_memory", "complex", "lifecycle", "<b>Complex Test Suite — Full-lifecycle Memory Profile:</b> Heap memory allocations and peak working set during immediate create &rarr; draw &rarr; destroy on high-density real-world scenes.")
+        render_memory_view(complex_scenes, "prebaked_memory", "complex", "prebaked", "<b>Complex Test Suite (Real-world MPVG Maps & Dense Artwork) — Pre-baked Memory Profile:</b> Heap memory allocations and peak working set during the pure drawing pass on complex scenes (up to 50k+ path).")
     # Footer
     w(
         "<p class='footnote' style='margin-top:36px'>Generated by "

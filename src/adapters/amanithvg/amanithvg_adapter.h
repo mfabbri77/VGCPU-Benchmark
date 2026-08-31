@@ -23,12 +23,15 @@ class AmanithVGAdapter : public IBackendAdapter {
                   std::vector<uint8_t>& output_buffer) override;
     Status RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
                            std::vector<uint8_t>& output_buffer) override;
+
    private:
     void DestroyPaths();
+    void DestroyPaints();
 
     bool initialized_ = false;
     void* context_ = nullptr;
-    std::vector<uint32_t> vg_paths_;  // VGPath handles created in Prepare()
+    std::vector<uint32_t> vg_paths_;   // VGPath handles created in Prepare()
+    std::vector<uint32_t> vg_paints_;  // VGPaint handles created in Prepare()
 };
 
 /// Register AmanithVG adapter with the adapter registry.

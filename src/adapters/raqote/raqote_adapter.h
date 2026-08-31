@@ -7,6 +7,7 @@
 
 extern "C" {
 struct RqtPathBuf;
+struct RqtSourceBuf;
 }
 
 #include <memory>
@@ -27,10 +28,13 @@ class RaqoteAdapter : public IBackendAdapter {
 
    private:
     void DestroyPaths();
+    void DestroyPaints();
 
     bool initialized_ = false;
     std::vector<RqtPathBuf*> prepared_paths_;
+    std::vector<RqtSourceBuf*> prepared_sources_;
 };
+
 void RegisterRaqoteAdapter();
 
 }  // namespace vgcpu

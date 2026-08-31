@@ -4,19 +4,16 @@
 // Blueprint Reference: [ARCH-10-07] Backend Adapters (Chapter 3) / [API-07] Rust FFI (Chapter 4) /
 // [DEC-API-06] Raqote/Vello FFI (Chapter 4)
 
-#include <concepts>
-#include <cstdint>
-#include <memory>
-#include <string>
-#include <vector>
-
 #include "adapters/vello/vello_adapter.h"
 
 #include "adapters/adapter_registry.h"
 #include "ir/ir_format.h"
 #include "ir/prepared_scene.h"
 
+#include <concepts>
 #include <cstdint>
+#include <memory>
+#include <string>
 #include <vector>
 
 // ============================================================================
@@ -25,7 +22,7 @@
 extern "C" {
 struct VloSurface;
 struct VloPath;
-
+struct VloPaintBuf;
 // Surface management
 VloSurface* vlo_create(int32_t width, int32_t height);
 void vlo_destroy(VloSurface* ptr);
@@ -54,6 +51,17 @@ void vlo_clip_push(VloSurface* surf, VloPath* path);
 void vlo_clip_pop(VloSurface* surf);
 void vlo_fill_rect(VloSurface* surf, float x, float y, float w, float h, uint8_t r, uint8_t g,
                    uint8_t b, uint8_t a);
+
+VloPaintBuf* vlo_paint_create_solid(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+VloPaintBuf* vlo_paint_create_gradient(int32_t kind, float x0, float y0, float x1, float y1,
+                                       const float* offsets, const uint32_t* colors,
+                                       int32_t nstops);
+void vlo_paint_destroy(VloPaintBuf* ptr);
+void vlo_draw_fill_with_paint(VloSurface* surf, const VloPath* path, const VloPaintBuf* paint,
+                              bool even_odd);
+void vlo_draw_stroke_with_paint(VloSurface* surf, const VloPath* path, const VloPaintBuf* paint,
+                                float width, int32_t cap, int32_t join, const float* dashes,
+                                int32_t ndash, float dash_phase);
 }
 
 namespace vgcpu {
@@ -105,6 +113,32 @@ VloPath* CreateVelloPath(const Path& path_data) {
     }
     return path;
 }
+VloPaintBuf* CreateVelloPaint(const Paint& paint) {
+    if (paint.type == ir::PaintType::kSolid) {
+        uint8_t r = (paint.color >> 0) & 0xFF;
+        uint8_t g = (paint.color >> 8) & 0xFF;
+        uint8_t b = (paint.color >> 16) & 0xFF;
+        uint8_t a = (paint.color >> 24) & 0xFF;
+        return vlo_paint_create_solid(r, g, b, a);
+    }
+    std::vector<float> offsets;
+    std::vector<uint32_t> colors;
+    offsets.reserve(paint.stops.size());
+    colors.reserve(paint.stops.size());
+    for (const auto& s : paint.stops) {
+        offsets.push_back(s.offset);
+        colors.push_back(s.color);
+    }
+    if (paint.type == ir::PaintType::kLinear) {
+        return vlo_paint_create_gradient(0, paint.linear_start_x, paint.linear_start_y,
+                                         paint.linear_end_x, paint.linear_end_y, offsets.data(),
+                                         colors.data(), static_cast<int32_t>(offsets.size()));
+    } else {
+        return vlo_paint_create_gradient(1, paint.radial_center_x, paint.radial_center_y,
+                                         paint.radial_radius, 0.0f, offsets.data(), colors.data(),
+                                         static_cast<int32_t>(offsets.size()));
+    }
+}
 
 }  // namespace
 
@@ -118,9 +152,14 @@ Status VelloAdapter::Prepare(const PreparedScene& scene) {
         return Status::Fail("VelloAdapter not initialized");
     }
     DestroyPaths();
+    DestroyPaints();
     prepared_paths_.reserve(scene.paths.size());
     for (const auto& p : scene.paths) {
         prepared_paths_.push_back(CreateVelloPath(p));
+    }
+    prepared_paints_.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        prepared_paints_.push_back(CreateVelloPaint(p));
     }
     return Status::Ok();
 }
@@ -133,8 +172,17 @@ void VelloAdapter::DestroyPaths() {
     prepared_paths_.clear();
 }
 
+void VelloAdapter::DestroyPaints() {
+    for (auto p : prepared_paints_) {
+        if (p)
+            vlo_paint_destroy(p);
+    }
+    prepared_paints_.clear();
+}
+
 void VelloAdapter::Shutdown() {
     DestroyPaths();
+    DestroyPaints();
     initialized_ = false;
 }
 
@@ -149,7 +197,7 @@ CapabilitySet VelloAdapter::GetCapabilities() const {
     // vello_cpu 0.0.4 through our FFI bridge (rust_bridge/vello_ffi).
     CapabilitySet caps;
     caps.supports_nonzero = true;
-    caps.supports_evenodd = false;         // vlo_fill_path ignores the even_odd flag
+    caps.supports_evenodd = true;
     caps.supports_linear_gradient = true;  // vlo_fill_path_gradient (2026-08-30)
     caps.supports_radial_gradient = true;
     caps.supports_clipping = true;
@@ -160,7 +208,8 @@ CapabilitySet VelloAdapter::GetCapabilities() const {
 namespace {
 
 Status ExecuteVelloCommands(const PreparedScene& scene, const SurfaceConfig& /*config*/,
-                           const std::vector<VloPath*>& paths, VloSurface* surf) {
+                            const std::vector<VloPath*>& paths,
+                            const std::vector<VloPaintBuf*>& paints, VloSurface* surf) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
@@ -223,41 +272,13 @@ Status ExecuteVelloCommands(const PreparedScene& scene, const SurfaceConfig& /*c
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= paths.size() || current_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || paths[path_id] == nullptr)
                     break;
-                if (paths[path_id] == nullptr)
+                if (current_paint_id >= paints.size() || paints[current_paint_id] == nullptr)
                     break;
 
-                const auto& paint = scene.paints[current_paint_id];
-                uint8_t r = (paint.color >> 0) & 0xFF;
-                uint8_t g = (paint.color >> 8) & 0xFF;
-                uint8_t b = (paint.color >> 16) & 0xFF;
-                uint8_t a = (paint.color >> 24) & 0xFF;
                 bool even_odd = (current_fill_rule == ir::FillRule::kEvenOdd);
-
-                if (paint.type == ir::PaintType::kSolid) {
-                    vlo_fill_path(surf, paths[path_id], r, g, b, a, even_odd);
-                } else {
-                    std::vector<float> offsets;
-                    std::vector<uint32_t> colors;
-                    offsets.reserve(paint.stops.size());
-                    colors.reserve(paint.stops.size());
-                    for (const auto& s : paint.stops) {
-                        offsets.push_back(s.offset);
-                        colors.push_back(s.color);
-                    }
-                    if (paint.type == ir::PaintType::kLinear) {
-                        vlo_fill_path_gradient(surf, paths[path_id], 0, paint.linear_start_x,
-                                               paint.linear_start_y, paint.linear_end_x,
-                                               paint.linear_end_y, offsets.data(), colors.data(),
-                                               static_cast<int32_t>(offsets.size()), even_odd);
-                    } else {
-                        vlo_fill_path_gradient(surf, paths[path_id], 1, paint.radial_center_x,
-                                               paint.radial_center_y, paint.radial_radius, 0.0f,
-                                               offsets.data(), colors.data(),
-                                               static_cast<int32_t>(offsets.size()), even_odd);
-                    }
-                }
+                vlo_draw_fill_with_paint(surf, paths[path_id], paints[current_paint_id], even_odd);
                 break;
             }
 
@@ -267,21 +288,17 @@ Status ExecuteVelloCommands(const PreparedScene& scene, const SurfaceConfig& /*c
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || paths[path_id] == nullptr)
                     break;
-                if (paths[path_id] == nullptr)
+                if (current_stroke_paint_id >= paints.size() ||
+                    paints[current_stroke_paint_id] == nullptr)
                     break;
 
-                const auto& paint = scene.paints[current_stroke_paint_id];
-                uint8_t r = (paint.color >> 0) & 0xFF;
-                uint8_t g = (paint.color >> 8) & 0xFF;
-                uint8_t b = (paint.color >> 16) & 0xFF;
-                uint8_t a = (paint.color >> 24) & 0xFF;
-
-                vlo_stroke_path(surf, paths[path_id], r, g, b, a, current_stroke_width,
-                                (int)current_stroke_cap, (int)current_stroke_join,
-                                dash_lengths.empty() ? nullptr : dash_lengths.data(),
-                                static_cast<int32_t>(dash_lengths.size()), dash_phase);
+                vlo_draw_stroke_with_paint(surf, paths[path_id], paints[current_stroke_paint_id],
+                                           current_stroke_width, (int)current_stroke_cap,
+                                           (int)current_stroke_join,
+                                           dash_lengths.empty() ? nullptr : dash_lengths.data(),
+                                           static_cast<int32_t>(dash_lengths.size()), dash_phase);
                 break;
             }
 
@@ -349,7 +366,7 @@ Status VelloAdapter::Render(const PreparedScene& scene, const SurfaceConfig& con
     if (!surf)
         return Status::Fail("Failed to create Vello surface");
 
-    Status s = ExecuteVelloCommands(scene, config, prepared_paths_, surf);
+    Status s = ExecuteVelloCommands(scene, config, prepared_paths_, prepared_paints_, surf);
 
     vlo_get_pixels(surf, reinterpret_cast<uint32_t*>(output_buffer.data()));
     vlo_destroy(surf);
@@ -369,22 +386,33 @@ Status VelloAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceCo
     if (!surf)
         return Status::Fail("Failed to create Vello surface");
 
-    // Loop 1: Create all native paths
+    // Loop 1: Create all native paths + paints
     std::vector<VloPath*> paths;
     paths.reserve(scene.paths.size());
     for (const auto& p : scene.paths) {
         paths.push_back(CreateVelloPath(p));
     }
+    std::vector<VloPaintBuf*> paints;
+    paints.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        paints.push_back(CreateVelloPaint(p));
+    }
 
     // Loop 2: Draw all
-    Status s = ExecuteVelloCommands(scene, config, paths, surf);
+    Status s = ExecuteVelloCommands(scene, config, paths, paints, surf);
 
-    // Loop 3: Destroy all
+    // Loop 3: Destroy all paths + paints
     for (auto p : paths) {
         if (p)
             vlo_path_destroy(p);
     }
     paths.clear();
+
+    for (auto p : paints) {
+        if (p)
+            vlo_paint_destroy(p);
+    }
+    paints.clear();
 
     vlo_get_pixels(surf, reinterpret_cast<uint32_t*>(output_buffer.data()));
     vlo_destroy(surf);

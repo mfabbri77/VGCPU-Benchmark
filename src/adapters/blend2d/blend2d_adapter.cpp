@@ -50,6 +50,21 @@ BLGradient CreateGradient(const Paint& paint) {
 
     return gradient;
 }
+BLPaintObj CreateBLPaintObj(const Paint& paint) {
+    BLPaintObj obj;
+    obj.type = paint.type;
+    if (paint.type == ir::PaintType::kSolid) {
+        uint8_t r = (paint.color >> 0) & 0xFF;
+        uint8_t g = (paint.color >> 8) & 0xFF;
+        uint8_t b = (paint.color >> 16) & 0xFF;
+        uint8_t a = (paint.color >> 24) & 0xFF;
+        obj.solid_color = BLRgba32(b, g, r, a);  // R<->B swap: PRGB32 output
+    } else {
+        obj.gradient = CreateGradient(paint);
+    }
+    return obj;
+}
+
 void BuildBLPath(const Path& path_data, BLPath& out_path) {
     size_t pt_idx = 0;
     for (auto verb : path_data.verbs) {
@@ -70,8 +85,7 @@ void BuildBLPath(const Path& path_data, BLPath& out_path) {
                 break;
             case ir::PathVerb::kQuadTo:
                 if (pt_idx + 2 <= path_data.points.size() / 2) {
-                    out_path.quad_to(path_data.points[pt_idx * 2],
-                                     path_data.points[pt_idx * 2 + 1],
+                    out_path.quad_to(path_data.points[pt_idx * 2], path_data.points[pt_idx * 2 + 1],
                                      path_data.points[(pt_idx + 1) * 2],
                                      path_data.points[(pt_idx + 1) * 2 + 1]);
                     pt_idx += 2;
@@ -79,12 +93,10 @@ void BuildBLPath(const Path& path_data, BLPath& out_path) {
                 break;
             case ir::PathVerb::kCubicTo:
                 if (pt_idx + 3 <= path_data.points.size() / 2) {
-                    out_path.cubic_to(path_data.points[pt_idx * 2],
-                                      path_data.points[pt_idx * 2 + 1],
-                                      path_data.points[(pt_idx + 1) * 2],
-                                      path_data.points[(pt_idx + 1) * 2 + 1],
-                                      path_data.points[(pt_idx + 2) * 2],
-                                      path_data.points[(pt_idx + 2) * 2 + 1]);
+                    out_path.cubic_to(
+                        path_data.points[pt_idx * 2], path_data.points[pt_idx * 2 + 1],
+                        path_data.points[(pt_idx + 1) * 2], path_data.points[(pt_idx + 1) * 2 + 1],
+                        path_data.points[(pt_idx + 2) * 2], path_data.points[(pt_idx + 2) * 2 + 1]);
                     pt_idx += 3;
                 }
                 break;
@@ -114,14 +126,19 @@ Status Blend2DAdapter::Prepare(const PreparedScene& scene) {
     for (size_t i = 0; i < scene.paths.size(); ++i) {
         BuildBLPath(scene.paths[i], prepared_paths_[i]);
     }
+    prepared_paints_.clear();
+    prepared_paints_.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        prepared_paints_.push_back(CreateBLPaintObj(p));
+    }
     return Status::Ok();
 }
 
 void Blend2DAdapter::Shutdown() {
     prepared_paths_.clear();
+    prepared_paints_.clear();
     initialized_ = false;
 }
-
 AdapterInfo Blend2DAdapter::GetInfo() const {
     BLRuntimeBuildInfo buildInfo;
     BLRuntime::query_build_info(&buildInfo);
@@ -149,8 +166,10 @@ CapabilitySet Blend2DAdapter::GetCapabilities() const {
 
 namespace {
 
+template <typename PathGetter>
 Status ExecuteBlend2DCommands(const PreparedScene& scene, const SurfaceConfig& /*config*/,
-                             const std::vector<BLPath>& paths, BLContext& ctx) {
+                              PathGetter&& get_path, const std::vector<BLPaintObj>& paints,
+                              BLContext& ctx) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
@@ -159,26 +178,19 @@ Status ExecuteBlend2DCommands(const PreparedScene& scene, const SurfaceConfig& /
     uint16_t current_stroke_paint_id = 0;
 
     auto apply_paint_to_ctx = [&](uint16_t paint_id, bool is_stroke) {
-        if (paint_id >= scene.paints.size())
+        if (paint_id >= paints.size())
             return;
-        const auto& paint = scene.paints[paint_id];
-
+        const auto& paint = paints[paint_id];
         if (paint.type == ir::PaintType::kSolid) {
-            uint8_t r = (paint.color >> 0) & 0xFF;
-            uint8_t g = (paint.color >> 8) & 0xFF;
-            uint8_t b = (paint.color >> 16) & 0xFF;
-            uint8_t a = (paint.color >> 24) & 0xFF;
-            BLRgba32 c(b, g, r, a);
             if (is_stroke)
-                ctx.set_stroke_style(c);
+                ctx.set_stroke_style(paint.solid_color);
             else
-                ctx.set_fill_style(c);
+                ctx.set_fill_style(paint.solid_color);
         } else {
-            BLGradient grad = CreateGradient(paint);
             if (is_stroke)
-                ctx.set_stroke_style(grad);
+                ctx.set_stroke_style(paint.gradient);
             else
-                ctx.set_fill_style(grad);
+                ctx.set_fill_style(paint.gradient);
         }
     };
 
@@ -261,14 +273,15 @@ Status ExecuteBlend2DCommands(const PreparedScene& scene, const SurfaceConfig& /
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= paths.size())
+                const BLPath* path = get_path(path_id);
+                if (!path)
                     break;
 
                 apply_paint_to_ctx(current_paint_id, false);
                 ctx.set_fill_rule(current_fill_rule == ir::FillRule::kEvenOdd
                                       ? BL_FILL_RULE_EVEN_ODD
                                       : BL_FILL_RULE_NON_ZERO);
-                ctx.fill_path(paths[path_id]);
+                ctx.fill_path(*path);
                 break;
             }
 
@@ -278,14 +291,14 @@ Status ExecuteBlend2DCommands(const PreparedScene& scene, const SurfaceConfig& /
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= paths.size())
+                const BLPath* path = get_path(path_id);
+                if (!path)
                     break;
 
                 apply_paint_to_ctx(current_stroke_paint_id, true);
-                ctx.stroke_path(paths[path_id]);
+                ctx.stroke_path(*path);
                 break;
             }
-
             case ir::Opcode::kSave:
                 ctx.save();
                 break;
@@ -353,7 +366,10 @@ Status Blend2DAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
     cci.thread_count = thread_count_ > 1 ? static_cast<uint32_t>(thread_count_) : 0u;
     BLContext ctx(img, cci);
 
-    return ExecuteBlend2DCommands(scene, config, prepared_paths_, ctx);
+    auto get_path = [&](uint16_t id) -> const BLPath* {
+        return (id < prepared_paths_.size()) ? &prepared_paths_[id] : nullptr;
+    };
+    return ExecuteBlend2DCommands(scene, config, get_path, prepared_paints_, ctx);
 }
 
 Status Blend2DAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
@@ -377,18 +393,23 @@ Status Blend2DAdapter::RenderLifecycle(const PreparedScene& scene, const Surface
     cci.thread_count = thread_count_ > 1 ? static_cast<uint32_t>(thread_count_) : 0u;
     BLContext ctx(img, cci);
 
-    // Loop 1: Create all native paths
-    std::vector<BLPath> paths(scene.paths.size());
-    for (size_t i = 0; i < scene.paths.size(); ++i) {
-        BuildBLPath(scene.paths[i], paths[i]);
+    std::vector<BLPaintObj> paints;
+    paints.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        paints.push_back(CreateBLPaintObj(p));
     }
 
-    // Loop 2: Draw all
-    Status s = ExecuteBlend2DCommands(scene, config, paths, ctx);
+    thread_local BLPath scratch_path;
+    auto get_path = [&](uint16_t id) -> const BLPath* {
+        if (id >= scene.paths.size())
+            return nullptr;
+        scratch_path.clear();
+        BuildBLPath(scene.paths[id], scratch_path);
+        return &scratch_path;
+    };
 
-    // Loop 3: Destroy all
-    paths.clear();
-
+    Status s = ExecuteBlend2DCommands(scene, config, get_path, paints, ctx);
+    paints.clear();
     return s;
 }
 

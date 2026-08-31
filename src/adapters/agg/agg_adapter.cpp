@@ -2,6 +2,10 @@
  * Copyright (c) 2025 Michele Fabbri (fabbri.michele@gmail.com)
  * SPDX-License-Identifier: MIT
  */
+#include "adapters/agg/agg_adapter.h"
+
+#include "adapters/adapter_registry.h"
+
 #include <algorithm>
 #include <cmath>
 #include <concepts>
@@ -12,9 +16,6 @@
 #include <optional>
 #include <string>
 #include <vector>
-
-#include "adapters/agg/agg_adapter.h"
-#include "adapters/adapter_registry.h"
 #if defined(_MSC_VER)
 #pragma warning(push)
 #pragma warning(disable : 4244 5054 5055)
@@ -48,6 +49,15 @@
 
 namespace vgcpu::adapters::agg_backend {
 
+using AggLut = agg::gradient_lut<agg::color_interpolator<agg::rgba8>, 256>;
+
+struct AggPaint {
+    ir::PaintType type = ir::PaintType::kSolid;
+    agg::rgba8 color;
+    float x0 = 0.0f, y0 = 0.0f, x1 = 0.0f, y1 = 0.0f, r = 0.0f;
+    std::unique_ptr<AggLut> lut;
+};
+
 namespace {
 template <typename T>
 T ReadLE(const uint8_t*& ptr) {
@@ -56,55 +66,79 @@ T ReadLE(const uint8_t*& ptr) {
     ptr += sizeof(T);
     return val;
 }
-
-// Render the already-rasterized path with a gradient span generator.
-// AGG has no "set gradient" call: gradients are span generators wired into
-// render_scanlines_aa (LUT of 256 interpolated stop colors + a device->
-// gradient-space affine). No R<->B swap here: pixfmt_rgba32 is true RGBA.
-template <typename Rasterizer, typename Scanline, typename RenBase>
-void RenderGradientFill(Rasterizer& ras, Scanline& sl, RenBase& ren_base,
-                        const vgcpu::Paint& paint) {
-    using LutType = agg::gradient_lut<agg::color_interpolator<agg::rgba8>, 256>;
-    LutType lut;
-    for (const auto& s : paint.stops) {
-        lut.add_color(s.offset, agg::rgba8(s.color & 0xFF, (s.color >> 8) & 0xFF,
-                                           (s.color >> 16) & 0xFF, (s.color >> 24) & 0xFF));
+std::shared_ptr<AggPaint> CreateAggPaint(const vgcpu::Paint& p) {
+    auto ap = std::make_shared<AggPaint>();
+    ap->type = p.type;
+    if (p.type == ir::PaintType::kSolid) {
+        uint32_t c = p.color;
+        ap->color = agg::rgba8(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF, (c >> 24) & 0xFF);
+    } else if (p.type == ir::PaintType::kLinear) {
+        ap->x0 = p.linear_start_x;
+        ap->y0 = p.linear_start_y;
+        ap->x1 = p.linear_end_x;
+        ap->y1 = p.linear_end_y;
+        ap->lut = std::make_unique<AggLut>();
+        for (const auto& s : p.stops) {
+            ap->lut->add_color(
+                s.offset, agg::rgba8(s.color & 0xFF, (s.color >> 8) & 0xFF, (s.color >> 16) & 0xFF,
+                                     (s.color >> 24) & 0xFF));
+        }
+        ap->lut->build_lut();
+    } else if (p.type == ir::PaintType::kRadial) {
+        ap->x0 = p.radial_center_x;
+        ap->y0 = p.radial_center_y;
+        ap->r = p.radial_radius;
+        ap->lut = std::make_unique<AggLut>();
+        for (const auto& s : p.stops) {
+            ap->lut->add_color(
+                s.offset, agg::rgba8(s.color & 0xFF, (s.color >> 8) & 0xFF, (s.color >> 16) & 0xFF,
+                                     (s.color >> 24) & 0xFF));
+        }
+        ap->lut->build_lut();
     }
-    lut.build_lut();
+    return ap;
+}
+
+template <typename Rasterizer, typename Scanline, typename RenBase>
+void RenderGradientFill(Rasterizer& ras, Scanline& sl, RenBase& ren_base, const AggPaint& paint,
+                        const agg::trans_affine& ctm) {
     agg::span_allocator<agg::rgba8> alloc;
+    using LutType = AggLut;
+    const LutType& lut = *paint.lut;
 
     if (paint.type == ir::PaintType::kLinear) {
-        double dx = static_cast<double>(paint.linear_end_x) - paint.linear_start_x;
-        double dy = static_cast<double>(paint.linear_end_y) - paint.linear_start_y;
+        double dx = static_cast<double>(paint.x1) - paint.x0;
+        double dy = static_cast<double>(paint.y1) - paint.y0;
         double len = std::sqrt(dx * dx + dy * dy);
         if (len < 1e-6) {
             len = 1e-6;
         }
-        agg::trans_affine mtx;  // device -> gradient space (inverse of rotate+translate)
+        agg::trans_affine mtx;
         mtx *= agg::trans_affine_rotation(std::atan2(dy, dx));
-        mtx *= agg::trans_affine_translation(paint.linear_start_x, paint.linear_start_y);
+        mtx *= agg::trans_affine_translation(paint.x0, paint.y0);
+        mtx *= ctm;
         mtx.invert();
         agg::span_interpolator_linear<> inter(mtx);
         agg::gradient_x gfunc;
         agg::span_gradient<agg::rgba8, agg::span_interpolator_linear<>, agg::gradient_x, LutType>
-            sg(inter, gfunc, lut, 0.0, len);
+            sg(inter, gfunc, const_cast<LutType&>(lut), 0.0, len);
         agg::render_scanlines_aa(ras, sl, ren_base, alloc, sg);
     } else {
-        double radius = paint.radial_radius > 1e-6f ? paint.radial_radius : 1e-6;
+        double radius = paint.r > 1e-6f ? paint.r : 1e-6;
         agg::trans_affine mtx;
-        mtx *= agg::trans_affine_translation(paint.radial_center_x, paint.radial_center_y);
+        mtx *= agg::trans_affine_translation(paint.x0, paint.y0);
+        mtx *= ctm;
         mtx.invert();
         agg::span_interpolator_linear<> inter(mtx);
         agg::gradient_radial_d gfunc;
         agg::span_gradient<agg::rgba8, agg::span_interpolator_linear<>, agg::gradient_radial_d,
                            LutType>
-            sg(inter, gfunc, lut, 0.0, radius);
+            sg(inter, gfunc, const_cast<LutType&>(lut), 0.0, radius);
         agg::render_scanlines_aa(ras, sl, ren_base, alloc, sg);
     }
 }
 
-agg::path_storage CreateAggPath(const Path& ir_path) {
-    agg::path_storage p;
+void PopulateAggPath(const Path& ir_path, agg::path_storage& p) {
     size_t pt_idx = 0;
     for (auto verb : ir_path.verbs) {
         switch (verb) {
@@ -132,12 +166,18 @@ agg::path_storage CreateAggPath(const Path& ir_path) {
                 break;
         }
     }
+}
+
+agg::path_storage CreateAggPath(const Path& ir_path) {
+    agg::path_storage p;
+    PopulateAggPath(ir_path, p);
     return p;
 }
 
-template <typename RenBase>
+template <typename PathGetter, typename RenBase>
 Status ExecuteAggCommands(const PreparedScene& scene, const SurfaceConfig& config,
-                          const std::vector<agg::path_storage>& paths, RenBase& ren_base) {
+                          PathGetter&& get_path,
+                          const std::vector<std::shared_ptr<AggPaint>>& paints, RenBase& ren_base) {
     uint32_t width = config.width;
     uint32_t height = config.height;
 
@@ -156,7 +196,9 @@ Status ExecuteAggCommands(const PreparedScene& scene, const SurfaceConfig& confi
     std::vector<float> dash_lengths;
     float dash_phase = 0.0f;
 
-    struct RectClip { float x1, y1, x2, y2; };
+    struct RectClip {
+        float x1, y1, x2, y2;
+    };
     std::vector<RectClip> clip_stack;
     ras.clip_box(0, 0, width, height);
 
@@ -214,27 +256,19 @@ Status ExecuteAggCommands(const PreparedScene& scene, const SurfaceConfig& confi
             case ir::Opcode::kFillPath:
             case ir::Opcode::kStrokePath: {
                 uint16_t path_id = ReadLE<uint16_t>(ptr);
-                if (path_id >= paths.size())
+                const agg::path_storage* path_ptr = get_path(path_id);
+                if (!path_ptr)
                     break;
 
                 agg::conv_curve<agg::path_storage> curved_path(
-                    const_cast<agg::path_storage&>(paths[path_id]));
+                    const_cast<agg::path_storage&>(*path_ptr));
                 agg::conv_transform<agg::conv_curve<agg::path_storage>> trans_path(curved_path,
                                                                                    ctm);
                 uint16_t paint_id =
                     (op == ir::Opcode::kFillPath) ? current_paint_id : current_stroke_paint_id;
-                agg::rgba8 color(0, 0, 0, 255);
-                const vgcpu::Paint* gradient_paint = nullptr;
-                if (paint_id < scene.paints.size()) {
-                    const auto& paint = scene.paints[paint_id];
-                    if (paint.type == ir::PaintType::kSolid) {
-                        uint32_t c = paint.color;
-                        color = agg::rgba8(c & 0xFF, (c >> 8) & 0xFF, (c >> 16) & 0xFF,
-                                           (c >> 24) & 0xFF);
-                    } else {
-                        gradient_paint = &paint;
-                    }
-                }
+                if (paint_id >= paints.size() || !paints[paint_id])
+                    break;
+                const auto& cur_paint = *paints[paint_id];
 
                 if (op == ir::Opcode::kFillPath) {
                     ras.add_path(trans_path);
@@ -243,10 +277,10 @@ Status ExecuteAggCommands(const PreparedScene& scene, const SurfaceConfig& confi
                     else
                         ras.filling_rule(agg::fill_non_zero);
 
-                    if (gradient_paint != nullptr) {
-                        RenderGradientFill(ras, sl, ren_base, *gradient_paint);
+                    if (cur_paint.type != ir::PaintType::kSolid && cur_paint.lut) {
+                        RenderGradientFill(ras, sl, ren_base, cur_paint, ctm);
                     } else {
-                        agg::render_scanlines_aa_solid(ras, sl, ren_base, color);
+                        agg::render_scanlines_aa_solid(ras, sl, ren_base, cur_paint.color);
                     }
                 } else {
                     if (!dash_lengths.empty()) {
@@ -311,7 +345,11 @@ Status ExecuteAggCommands(const PreparedScene& scene, const SurfaceConfig& confi
                         }
                         ras.add_path(stroke);
                     }
-                    agg::render_scanlines_aa_solid(ras, sl, ren_base, color);
+                    if (cur_paint.type != ir::PaintType::kSolid && cur_paint.lut) {
+                        RenderGradientFill(ras, sl, ren_base, cur_paint, ctm);
+                    } else {
+                        agg::render_scanlines_aa_solid(ras, sl, ren_base, cur_paint.color);
+                    }
                 }
                 ras.reset();
                 break;
@@ -336,24 +374,32 @@ Status ExecuteAggCommands(const PreparedScene& scene, const SurfaceConfig& confi
                     return Status::Ok();
                 uint16_t path_id = ReadLE<uint16_t>(ptr);
                 ptr += 1;
-                if (path_id < paths.size()) {
-                    const auto& cp = paths[path_id];
+                const agg::path_storage* cp = get_path(path_id);
+                if (cp) {
                     double x1 = 1e9, y1 = 1e9, x2 = -1e9, y2 = -1e9;
-                    for (unsigned vi = 0; vi < cp.total_vertices(); ++vi) {
+                    for (unsigned vi = 0; vi < cp->total_vertices(); ++vi) {
                         double px = 0, py = 0;
-                        cp.vertex(vi, &px, &py);
-                        if (px < x1) x1 = px;
-                        if (px > x2) x2 = px;
-                        if (py < y1) y1 = py;
-                        if (py > y2) y2 = py;
+                        cp->vertex(vi, &px, &py);
+                        if (px < x1)
+                            x1 = px;
+                        if (px > x2)
+                            x2 = px;
+                        if (py < y1)
+                            y1 = py;
+                        if (py > y2)
+                            y2 = py;
                     }
                     float fx1 = (float)x1, fy1 = (float)y1, fx2 = (float)x2, fy2 = (float)y2;
                     if (!clip_stack.empty()) {
                         const auto& top = clip_stack.back();
-                        if (top.x1 > fx1) fx1 = top.x1;
-                        if (top.y1 > fy1) fy1 = top.y1;
-                        if (top.x2 < fx2) fx2 = top.x2;
-                        if (top.y2 < fy2) fy2 = top.y2;
+                        if (top.x1 > fx1)
+                            fx1 = top.x1;
+                        if (top.y1 > fy1)
+                            fy1 = top.y1;
+                        if (top.x2 < fx2)
+                            fx2 = top.x2;
+                        if (top.y2 < fy2)
+                            fy2 = top.y2;
                     }
                     clip_stack.push_back({fx1, fy1, fx2, fy2});
                     ras.clip_box(fx1, fy1, fx2, fy2);
@@ -385,47 +431,60 @@ Status ExecuteAggCommands(const PreparedScene& scene, const SurfaceConfig& confi
 Status AggAdapter::Render(const PreparedScene& scene, const SurfaceConfig& config,
                           std::vector<uint8_t>& output_buffer) {
     if (!initialized_)
-        return Status::Fail("Not initialized");
+        return Status::Fail("AggAdapter not initialized");
     if (!scene.IsValid())
         return Status::InvalidArg("Invalid scene");
+    if (config.width <= 0 || config.height <= 0)
+        return Status::InvalidArg("Invalid surface configuration");
 
-    uint32_t width = config.width;
-    uint32_t height = config.height;
-    uint32_t stride = width * 4;
+    using PixFmt = agg::pixfmt_rgba32_plain;
+    using RenBase = agg::renderer_base<PixFmt>;
 
-    agg::rendering_buffer rbuf(output_buffer.data(), width, height, stride);
-    agg::pixfmt_rgba32 pixf(rbuf);
-    agg::renderer_base<agg::pixfmt_rgba32> ren_base(pixf);
+    agg::rendering_buffer rbuf(output_buffer.data(), config.width, config.height, config.width * 4);
+    PixFmt pixf(rbuf);
+    RenBase ren_base(pixf);
 
-    return ExecuteAggCommands(scene, config, prepared_paths_, ren_base);
+    auto get_path = [&](uint16_t id) -> const agg::path_storage* {
+        return (id < prepared_paths_.size()) ? &prepared_paths_[id] : nullptr;
+    };
+    return ExecuteAggCommands(scene, config, get_path, prepared_paints_, ren_base);
 }
-
 Status AggAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
                                    std::vector<uint8_t>& output_buffer) {
-    if (!initialized_)
-        return Status::Fail("Not initialized");
-    if (!scene.IsValid())
+    if (!initialized_) {
+        return Status::Fail("AggAdapter not initialized");
+    }
+    if (!scene.IsValid()) {
         return Status::InvalidArg("Invalid scene");
-
-    uint32_t width = config.width;
-    uint32_t height = config.height;
-    uint32_t stride = width * 4;
-
-    agg::rendering_buffer rbuf(output_buffer.data(), width, height, stride);
-    agg::pixfmt_rgba32 pixf(rbuf);
-    agg::renderer_base<agg::pixfmt_rgba32> ren_base(pixf);
-    // Loop 1: Create all native paths
-    std::vector<agg::path_storage> paths;
-    paths.reserve(scene.paths.size());
-    for (const auto& p : scene.paths) {
-        paths.push_back(CreateAggPath(p));
+    }
+    if (config.width <= 0 || config.height <= 0) {
+        return Status::InvalidArg("Invalid surface configuration");
     }
 
-    // Loop 2: Draw all
-    Status s = ExecuteAggCommands(scene, config, paths, ren_base);
+    using PixFmt = agg::pixfmt_rgba32_plain;
+    using RenBase = agg::renderer_base<PixFmt>;
 
-    // Loop 3: Destroy all
-    paths.clear();
+    agg::rendering_buffer rbuf(output_buffer.data(), config.width, config.height, config.width * 4);
+    PixFmt pixf(rbuf);
+    RenBase ren_base(pixf);
+
+    std::vector<std::shared_ptr<AggPaint>> paints;
+    paints.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        paints.push_back(CreateAggPaint(p));
+    }
+
+    thread_local agg::path_storage scratch_path;
+    auto get_path = [&](uint16_t id) -> const agg::path_storage* {
+        if (id >= scene.paths.size())
+            return nullptr;
+        scratch_path.remove_all();
+        PopulateAggPath(scene.paths[id], scratch_path);
+        return &scratch_path;
+    };
+
+    Status s = ExecuteAggCommands(scene, config, get_path, paints, ren_base);
+    paints.clear();
     return s;
 }
 
@@ -447,11 +506,17 @@ Status AggAdapter::Prepare(const PreparedScene& scene) {
     for (const auto& p : scene.paths) {
         prepared_paths_.push_back(CreateAggPath(p));
     }
+    prepared_paints_.clear();
+    prepared_paints_.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        prepared_paints_.push_back(CreateAggPaint(p));
+    }
     return Status::Ok();
 }
 
 void AggAdapter::Shutdown() {
     prepared_paths_.clear();
+    prepared_paints_.clear();
     initialized_ = false;
 }
 AdapterInfo AggAdapter::GetInfo() const {
@@ -464,7 +529,6 @@ AdapterInfo AggAdapter::GetInfo() const {
 CapabilitySet AggAdapter::GetCapabilities() const {
     return CapabilitySet::All();  // AGG supports most things
 }
-
 
 void RegisterAggAdapter() {
     AdapterRegistry::Instance().Register("agg", "Anti-Grain Geometry 2.6",

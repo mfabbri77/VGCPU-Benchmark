@@ -85,46 +85,49 @@ SkPath CreatePath(const Path& irGraph) {
     return path;
 }
 
-void ApplyPaint(SkPaint& skPaint, const Paint& irPaint) {
-    skPaint.setAntiAlias(true);
-
+SkiaPaintObj CreateSkiaPaint(const Paint& irPaint) {
+    SkiaPaintObj obj;
+    obj.type = irPaint.type;
     if (irPaint.type == ir::PaintType::kSolid) {
-        skPaint.setColor(ConvertColor(irPaint.color));
-        skPaint.setShader(nullptr);
+        obj.solid_color = SkColor4f::FromColor(ConvertColor(irPaint.color));
     } else if (irPaint.type == ir::PaintType::kLinear) {
-        std::vector<SkColor> colors;
+        std::vector<SkColor4f> colors;
         std::vector<SkScalar> pos;
         colors.reserve(irPaint.stops.size());
         pos.reserve(irPaint.stops.size());
-
         for (const auto& s : irPaint.stops) {
-            colors.push_back(ConvertColor(s.color));
+            colors.push_back(SkColor4f::FromColor(ConvertColor(s.color)));
             pos.push_back(s.offset);
         }
-
         SkPoint pts[2] = {SkPoint::Make(irPaint.linear_start_x, irPaint.linear_start_y),
                           SkPoint::Make(irPaint.linear_end_x, irPaint.linear_end_y)};
-
-        sk_sp<SkShader> shader = SkGradientShader::MakeLinear(
-            pts, colors.data(), pos.data(), static_cast<int>(colors.size()), SkTileMode::kClamp);
-        skPaint.setShader(shader);
+        obj.shader =
+            SkGradientShader::MakeLinear(pts, colors.data(), nullptr, pos.data(),
+                                         static_cast<int>(colors.size()), SkTileMode::kClamp);
     } else if (irPaint.type == ir::PaintType::kRadial) {
-        std::vector<SkColor> colors;
+        std::vector<SkColor4f> colors;
         std::vector<SkScalar> pos;
         colors.reserve(irPaint.stops.size());
         pos.reserve(irPaint.stops.size());
-
         for (const auto& s : irPaint.stops) {
-            colors.push_back(ConvertColor(s.color));
+            colors.push_back(SkColor4f::FromColor(ConvertColor(s.color)));
             pos.push_back(s.offset);
         }
-
         SkPoint center = SkPoint::Make(irPaint.radial_center_x, irPaint.radial_center_y);
+        obj.shader = SkGradientShader::MakeRadial(
+            center, irPaint.radial_radius, colors.data(), nullptr, pos.data(),
+            static_cast<int>(colors.size()), SkTileMode::kClamp);
+    }
+    return obj;
+}
 
-        sk_sp<SkShader> shader =
-            SkGradientShader::MakeRadial(center, irPaint.radial_radius, colors.data(), pos.data(),
-                                         static_cast<int>(colors.size()), SkTileMode::kClamp);
-        skPaint.setShader(shader);
+void ApplyPrebakedPaint(SkPaint& skPaint, const SkiaPaintObj& obj) {
+    skPaint.setAntiAlias(true);
+    if (obj.type == ir::PaintType::kSolid) {
+        skPaint.setColor4f(obj.solid_color);
+        skPaint.setShader(nullptr);
+    } else {
+        skPaint.setShader(obj.shader);
     }
 }
 
@@ -144,11 +147,17 @@ Status SkiaAdapter::Prepare(const PreparedScene& scene) {
     for (const auto& p : scene.paths) {
         prepared_paths_.push_back(CreatePath(p));
     }
+    prepared_paints_.clear();
+    prepared_paints_.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        prepared_paints_.push_back(CreateSkiaPaint(p));
+    }
     return Status::Ok();
 }
 
 void SkiaAdapter::Shutdown() {
     prepared_paths_.clear();
+    prepared_paints_.clear();
     initialized_ = false;
 }
 
@@ -166,7 +175,8 @@ CapabilitySet SkiaAdapter::GetCapabilities() const {
 namespace {
 
 Status ExecuteSkiaCommands(const PreparedScene& scene, const SurfaceConfig& /*config*/,
-                           const std::vector<SkPath>& paths, SkCanvas* canvas) {
+                           const std::vector<SkPath>& paths,
+                           const std::vector<SkiaPaintObj>& paints, SkCanvas* canvas) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
@@ -256,7 +266,7 @@ Status ExecuteSkiaCommands(const PreparedScene& scene, const SurfaceConfig& /*co
 
                 SkPaint paint;
                 paint.setStyle(SkPaint::kFill_Style);
-                ApplyPaint(paint, scene.paints[current_paint_id]);
+                ApplyPrebakedPaint(paint, paints[current_paint_id]);
 
                 SkPath path = paths[path_id];
                 path.setFillType(current_fill_rule == ir::FillRule::kEvenOdd
@@ -286,7 +296,7 @@ Status ExecuteSkiaCommands(const PreparedScene& scene, const SurfaceConfig& /*co
                         dash_intervals.data(), static_cast<int>(dash_intervals.size()),
                         dash_phase));
                 }
-                ApplyPaint(paint, scene.paints[current_stroke.paint_id]);
+                ApplyPrebakedPaint(paint, paints[current_stroke.paint_id]);
 
                 canvas->drawPath(paths[path_id], paint);
                 break;
@@ -365,7 +375,8 @@ Status SkiaAdapter::Render(const PreparedScene& scene, const SurfaceConfig& conf
         return Status::Fail("Failed to create SkSurface");
     }
 
-    return ExecuteSkiaCommands(scene, config, prepared_paths_, surface->getCanvas());
+    return ExecuteSkiaCommands(scene, config, prepared_paths_, prepared_paints_,
+                               surface->getCanvas());
 }
 
 Status SkiaAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceConfig& config,
@@ -382,18 +393,24 @@ Status SkiaAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceCon
         return Status::Fail("Failed to create SkSurface");
     }
 
-    // Loop 1: Create all native paths
+    // Loop 1: Create all native paths + paints
     std::vector<SkPath> paths;
     paths.reserve(scene.paths.size());
     for (const auto& p : scene.paths) {
         paths.push_back(CreatePath(p));
     }
+    std::vector<SkiaPaintObj> paints;
+    paints.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        paints.push_back(CreateSkiaPaint(p));
+    }
 
     // Loop 2: Draw all
-    Status s = ExecuteSkiaCommands(scene, config, paths, surface->getCanvas());
+    Status s = ExecuteSkiaCommands(scene, config, paths, paints, surface->getCanvas());
 
     // Loop 3: Destroy all
     paths.clear();
+    paints.clear();
 
     return s;
 }

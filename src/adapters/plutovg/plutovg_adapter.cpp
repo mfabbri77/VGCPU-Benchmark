@@ -21,14 +21,13 @@ namespace {
 // Set the canvas paint from an IR paint. Gradient stop colors get the same
 // R<->B swap as solids (ARGB32 output; interpolation is channel-symmetric,
 // so the relabeling stays exact).
-void SetPaintOnCanvas(plutovg_canvas_t* canvas, const Paint& paint) {
+plutovg_paint_t* CreatePlutoPaint(const Paint& paint) {
     if (paint.type == ir::PaintType::kSolid) {
         float r = static_cast<float>((paint.color >> 0) & 0xFF) / 255.0f;
         float g = static_cast<float>((paint.color >> 8) & 0xFF) / 255.0f;
         float b = static_cast<float>((paint.color >> 16) & 0xFF) / 255.0f;
         float a = static_cast<float>((paint.color >> 24) & 0xFF) / 255.0f;
-        plutovg_canvas_set_rgba(canvas, b, g, r, a);  // R<->B swap: ARGB32 output
-        return;
+        return plutovg_paint_create_rgba(b, g, r, a);  // R<->B swap: ARGB32 output
     }
     std::vector<plutovg_gradient_stop_t> gstops;
     gstops.reserve(paint.stops.size());
@@ -42,15 +41,14 @@ void SetPaintOnCanvas(plutovg_canvas_t* canvas, const Paint& paint) {
         gstops.push_back(gs);
     }
     if (paint.type == ir::PaintType::kLinear) {
-        plutovg_canvas_set_linear_gradient(canvas, paint.linear_start_x, paint.linear_start_y,
-                                           paint.linear_end_x, paint.linear_end_y,
-                                           PLUTOVG_SPREAD_METHOD_PAD, gstops.data(),
-                                           static_cast<int>(gstops.size()), nullptr);
+        return plutovg_paint_create_linear_gradient(
+            paint.linear_start_x, paint.linear_start_y, paint.linear_end_x, paint.linear_end_y,
+            PLUTOVG_SPREAD_METHOD_PAD, gstops.data(), static_cast<int>(gstops.size()), nullptr);
     } else {
-        plutovg_canvas_set_radial_gradient(canvas, paint.radial_center_x, paint.radial_center_y,
-                                           paint.radial_radius, paint.radial_center_x,
-                                           paint.radial_center_y, 0.0f, PLUTOVG_SPREAD_METHOD_PAD,
-                                           gstops.data(), static_cast<int>(gstops.size()), nullptr);
+        return plutovg_paint_create_radial_gradient(
+            paint.radial_center_x, paint.radial_center_y, paint.radial_radius,
+            paint.radial_center_x, paint.radial_center_y, 0.0f, PLUTOVG_SPREAD_METHOD_PAD,
+            gstops.data(), static_cast<int>(gstops.size()), nullptr);
     }
 }
 
@@ -73,9 +71,9 @@ plutovg_path_t* CreatePlutoPath(const Path& path) {
                 break;
             case ir::PathVerb::kQuadTo:
                 if (pt_idx + 2 <= path.points.size() / 2) {
-                    plutovg_path_quad_to(
-                        p, path.points[pt_idx * 2], path.points[pt_idx * 2 + 1],
-                        path.points[(pt_idx + 1) * 2], path.points[(pt_idx + 1) * 2 + 1]);
+                    plutovg_path_quad_to(p, path.points[pt_idx * 2], path.points[pt_idx * 2 + 1],
+                                         path.points[(pt_idx + 1) * 2],
+                                         path.points[(pt_idx + 1) * 2 + 1]);
                     pt_idx += 2;
                 }
                 break;
@@ -109,9 +107,14 @@ Status PlutoVGAdapter::Prepare(const PreparedScene& scene) {
         return Status::Fail("PlutoVGAdapter not initialized");
     }
     DestroyPaths();
+    DestroyPaints();
     prepared_paths_.reserve(scene.paths.size());
     for (const auto& p : scene.paths) {
         prepared_paths_.push_back(CreatePlutoPath(p));
+    }
+    prepared_paints_.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        prepared_paints_.push_back(CreatePlutoPaint(p));
     }
     return Status::Ok();
 }
@@ -124,8 +127,17 @@ void PlutoVGAdapter::DestroyPaths() {
     prepared_paths_.clear();
 }
 
+void PlutoVGAdapter::DestroyPaints() {
+    for (auto p : prepared_paints_) {
+        if (p)
+            plutovg_paint_destroy(p);
+    }
+    prepared_paints_.clear();
+}
+
 void PlutoVGAdapter::Shutdown() {
     DestroyPaths();
+    DestroyPaints();
     initialized_ = false;
 }
 
@@ -144,7 +156,9 @@ CapabilitySet PlutoVGAdapter::GetCapabilities() const {
 namespace {
 
 Status ExecutePlutoVGCommands(const PreparedScene& scene, const SurfaceConfig& config,
-                             const std::vector<plutovg_path_t*>& paths, plutovg_canvas_t* canvas) {
+                              const std::vector<plutovg_path_t*>& paths,
+                              const std::vector<plutovg_paint_t*>& paints,
+                              plutovg_canvas_t* canvas) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
@@ -186,13 +200,19 @@ Status ExecutePlutoVGCommands(const PreparedScene& scene, const SurfaceConfig& c
                 plutovg_canvas_set_operator(canvas, PLUTOVG_OPERATOR_SRC_OVER);
                 break;
             }
-
             case ir::Opcode::kSetFill: {
                 if (cmd + 3 > end)
                     goto done;
                 current_paint_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
                 current_fill_rule = static_cast<ir::FillRule>(*cmd++);
+                if (current_paint_id < paints.size() && paints[current_paint_id] != nullptr) {
+                    plutovg_canvas_set_paint(canvas, paints[current_paint_id]);
+                }
+                plutovg_fill_rule_t rule = (current_fill_rule == ir::FillRule::kEvenOdd)
+                                               ? PLUTOVG_FILL_RULE_EVEN_ODD
+                                               : PLUTOVG_FILL_RULE_NON_ZERO;
+                plutovg_canvas_set_fill_rule(canvas, rule);
                 break;
             }
 
@@ -206,41 +226,11 @@ Status ExecutePlutoVGCommands(const PreparedScene& scene, const SurfaceConfig& c
                 uint8_t opts = *cmd++;
                 current_stroke_cap = ir::UnpackStrokeCap(opts);
                 current_stroke_join = ir::UnpackStrokeJoin(opts);
-                break;
-            }
 
-            case ir::Opcode::kFillPath: {
-                if (cmd + 2 > end)
-                    goto done;
-                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
-                cmd += 2;
-
-                if (path_id >= paths.size() || current_paint_id >= scene.paints.size())
-                    break;
-                if (paths[path_id] == nullptr)
-                    break;
-
-                SetPaintOnCanvas(canvas, scene.paints[current_paint_id]);
-                plutovg_fill_rule_t rule = (current_fill_rule == ir::FillRule::kEvenOdd)
-                                               ? PLUTOVG_FILL_RULE_EVEN_ODD
-                                               : PLUTOVG_FILL_RULE_NON_ZERO;
-                plutovg_canvas_set_fill_rule(canvas, rule);
-                plutovg_canvas_fill_path(canvas, paths[path_id]);
-                break;
-            }
-
-            case ir::Opcode::kStrokePath: {
-                if (cmd + 2 > end)
-                    goto done;
-                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
-                cmd += 2;
-
-                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
-                    break;
-                if (paths[path_id] == nullptr)
-                    break;
-
-                SetPaintOnCanvas(canvas, scene.paints[current_stroke_paint_id]);
+                if (current_stroke_paint_id < paints.size() &&
+                    paints[current_stroke_paint_id] != nullptr) {
+                    plutovg_canvas_set_paint(canvas, paints[current_stroke_paint_id]);
+                }
                 plutovg_canvas_set_line_width(canvas, current_stroke_width);
                 plutovg_line_cap_t cap = PLUTOVG_LINE_CAP_BUTT;
                 switch (current_stroke_cap) {
@@ -268,10 +258,33 @@ Status ExecutePlutoVGCommands(const PreparedScene& scene, const SurfaceConfig& c
                         break;
                 }
                 plutovg_canvas_set_line_join(canvas, join);
-                plutovg_canvas_set_dash(canvas, dash_phase,
-                                        dash_lengths.empty() ? nullptr : dash_lengths.data(),
-                                        static_cast<int>(dash_lengths.size()));
-                plutovg_canvas_stroke_path(canvas, paths[path_id]);
+                break;
+            }
+
+            case ir::Opcode::kFillPath: {
+                if (cmd + 2 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+
+                if (path_id < paths.size() && paths[path_id] != nullptr) {
+                    plutovg_canvas_fill_path(canvas, paths[path_id]);
+                }
+                break;
+            }
+
+            case ir::Opcode::kStrokePath: {
+                if (cmd + 2 > end)
+                    goto done;
+                uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
+                cmd += 2;
+
+                if (path_id < paths.size() && paths[path_id] != nullptr) {
+                    plutovg_canvas_set_dash(canvas, dash_phase,
+                                            dash_lengths.empty() ? nullptr : dash_lengths.data(),
+                                            static_cast<int>(dash_lengths.size()));
+                    plutovg_canvas_stroke_path(canvas, paths[path_id]);
+                }
                 break;
             }
 
@@ -360,8 +373,8 @@ Status PlutoVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
     if (config.width <= 0 || config.height <= 0)
         return Status::InvalidArg("Invalid surface configuration");
 
-    plutovg_surface_t* surface = plutovg_surface_create_for_data(
-        output_buffer.data(), config.width, config.height, config.width * 4);
+    plutovg_surface_t* surface = plutovg_surface_create_for_data(output_buffer.data(), config.width,
+                                                                 config.height, config.width * 4);
     if (!surface) {
         return Status::Fail("Failed to create PlutoVG surface");
     }
@@ -372,7 +385,7 @@ Status PlutoVGAdapter::Render(const PreparedScene& scene, const SurfaceConfig& c
         return Status::Fail("Failed to create PlutoVG canvas");
     }
 
-    Status s = ExecutePlutoVGCommands(scene, config, prepared_paths_, canvas);
+    Status s = ExecutePlutoVGCommands(scene, config, prepared_paths_, prepared_paints_, canvas);
 
     plutovg_canvas_destroy(canvas);
     plutovg_surface_destroy(surface);
@@ -388,8 +401,8 @@ Status PlutoVGAdapter::RenderLifecycle(const PreparedScene& scene, const Surface
     if (config.width <= 0 || config.height <= 0)
         return Status::InvalidArg("Invalid surface configuration");
 
-    plutovg_surface_t* surface = plutovg_surface_create_for_data(
-        output_buffer.data(), config.width, config.height, config.width * 4);
+    plutovg_surface_t* surface = plutovg_surface_create_for_data(output_buffer.data(), config.width,
+                                                                 config.height, config.width * 4);
     if (!surface) {
         return Status::Fail("Failed to create PlutoVG surface");
     }
@@ -400,22 +413,34 @@ Status PlutoVGAdapter::RenderLifecycle(const PreparedScene& scene, const Surface
         return Status::Fail("Failed to create PlutoVG canvas");
     }
 
-    // Loop 1: Create all native paths
+    // Loop 1: Create all native paths + paints
     std::vector<plutovg_path_t*> paths;
     paths.reserve(scene.paths.size());
     for (const auto& p : scene.paths) {
         paths.push_back(CreatePlutoPath(p));
     }
 
-    // Loop 2: Draw all
-    Status s = ExecutePlutoVGCommands(scene, config, paths, canvas);
+    std::vector<plutovg_paint_t*> paints;
+    paints.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        paints.push_back(CreatePlutoPaint(p));
+    }
 
-    // Loop 3: Destroy all
+    // Loop 2: Draw all
+    Status s = ExecutePlutoVGCommands(scene, config, paths, paints, canvas);
+
+    // Loop 3: Destroy all paths + paints
     for (auto p : paths) {
         if (p)
             plutovg_path_destroy(p);
     }
     paths.clear();
+
+    for (auto p : paints) {
+        if (p)
+            plutovg_paint_destroy(p);
+    }
+    paints.clear();
 
     plutovg_canvas_destroy(canvas);
     plutovg_surface_destroy(surface);

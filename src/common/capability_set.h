@@ -98,13 +98,10 @@ inline std::string CheckCompatibility(const CapabilitySet& caps, const RequiredF
         return "UNSUPPORTED_FEATURE:join_bevel";
     }
     if (required.needs_dashes && !caps.supports_dashes) {
-        return "UNSUPPORTED_FEATURE:dashes";
-    }
-    if (required.needs_radial_gradient && !caps.supports_radial_gradient) {
-        return "UNSUPPORTED_FEATURE:radial_gradient";
+        return "FALLBACK:dashes";
     }
     if (required.needs_clipping && !caps.supports_clipping) {
-        return "UNSUPPORTED_FEATURE:clipping";
+        return "FALLBACK:clipping";
     }
     return "";  // Compatible
 }

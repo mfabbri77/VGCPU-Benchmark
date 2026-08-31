@@ -5,6 +5,7 @@
 
 #include "adapters/adapter_registry.h"
 
+#include <QBrush>
 #include <QPainterPath>
 #include <memory>
 #include <vector>
@@ -26,6 +27,7 @@ class QtAdapter : public IBackendAdapter {
    private:
     bool initialized_ = false;
     std::vector<QPainterPath> prepared_paths_;
+    std::vector<QBrush> prepared_brushes_;
 };
 void RegisterQtAdapter();
 

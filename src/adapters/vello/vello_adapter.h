@@ -3,15 +3,16 @@
 
 #pragma once
 
+#include "adapters/adapter_interface.h"
+
 #include <concepts>
 #include <memory>
 #include <string>
 #include <vector>
 
-#include "adapters/adapter_interface.h"
-
 extern "C" {
 struct VloPath;
+struct VloPaintBuf;
 }
 namespace vgcpu {
 
@@ -29,9 +30,11 @@ class VelloAdapter : public IBackendAdapter {
 
    private:
     void DestroyPaths();
+    void DestroyPaints();
 
     bool initialized_ = false;
     std::vector<VloPath*> prepared_paths_;
+    std::vector<VloPaintBuf*> prepared_paints_;
 };
 void RegisterVelloAdapter();
 

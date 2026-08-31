@@ -7,7 +7,9 @@
 #pragma once
 
 #include "adapters/adapter_interface.h"
+
 #include <plutovg.h>
+
 #include <vector>
 
 namespace vgcpu {
@@ -36,9 +38,11 @@ class PlutoVGAdapter : public IBackendAdapter {
 
    private:
     void DestroyPaths();
+    void DestroyPaints();
 
     bool initialized_ = false;
     std::vector<plutovg_path_t*> prepared_paths_;
+    std::vector<plutovg_paint_t*> prepared_paints_;
 };
 
 /// Register the PlutoVG adapter with the global registry.

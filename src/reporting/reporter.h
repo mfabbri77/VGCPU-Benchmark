@@ -6,16 +6,16 @@
 
 #pragma once
 
+#include "common/status.h"
+#include "harness/harness.h"
+#include "pal/environment.h"
+#include "vgcpu/internal/version.h"
+
 #include <concepts>
 #include <filesystem>
 #include <memory>
 #include <string>
 #include <vector>
-
-#include "common/status.h"
-#include "harness/harness.h"
-#include "pal/environment.h"
-#include "vgcpu/internal/version.h"
 
 namespace vgcpu {
 

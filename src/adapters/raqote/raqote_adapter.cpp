@@ -20,7 +20,7 @@ extern "C" {
 struct RqtSurface;
 struct RqtPath;
 struct RqtPathBuf;
-
+struct RqtSourceBuf;
 // Surface management
 RqtSurface* rqt_create(int32_t width, int32_t height);
 void rqt_destroy(RqtSurface* ptr);
@@ -57,13 +57,23 @@ void rqt_fill_rect(RqtSurface* surf, float x, float y, float w, float h, uint8_t
 void rqt_draw_fill_path_buf(RqtSurface* surf, const RqtPathBuf* path, uint8_t r, uint8_t g,
                             uint8_t b, uint8_t a, int32_t fill_rule);
 void rqt_draw_fill_path_buf_gradient(RqtSurface* surf, const RqtPathBuf* path, int32_t kind,
-                                     float x0, float y0, float x1, float y1,
-                                     const float* offsets, const uint32_t* colors,
-                                     int32_t nstops, int32_t fill_rule);
+                                     float x0, float y0, float x1, float y1, const float* offsets,
+                                     const uint32_t* colors, int32_t nstops, int32_t fill_rule);
 void rqt_draw_stroke_path_buf(RqtSurface* surf, const RqtPathBuf* path, uint8_t r, uint8_t g,
                               uint8_t b, uint8_t a, float width, int32_t cap, int32_t join,
                               const float* dashes, int32_t ndash, float dash_phase);
 void rqt_clip_push_buf(RqtSurface* surf, const RqtPathBuf* path);
+
+RqtSourceBuf* rqt_source_create_solid(uint8_t r, uint8_t g, uint8_t b, uint8_t a);
+RqtSourceBuf* rqt_source_create_gradient(int32_t kind, float x0, float y0, float x1, float y1,
+                                         const float* offsets, const uint32_t* colors,
+                                         int32_t nstops);
+void rqt_source_destroy(RqtSourceBuf* ptr);
+void rqt_draw_fill_with_source(RqtSurface* surf, const RqtPathBuf* path, const RqtSourceBuf* src,
+                               int32_t fill_rule);
+void rqt_draw_stroke_with_source(RqtSurface* surf, const RqtPathBuf* path, const RqtSourceBuf* src,
+                                 float width, int32_t cap, int32_t join, const float* dashes,
+                                 int32_t ndash, float dash_phase);
 }
 
 namespace vgcpu {
@@ -120,6 +130,35 @@ RqtPathBuf* BuildRaqotePathBuf(const Path& path_data) {
     return rqt_path_build(pb);
 }
 
+RqtSourceBuf* CreateRaqoteSource(const Paint& paint) {
+    if (paint.type == ir::PaintType::kSolid) {
+        uint8_t r = (paint.color >> 0) & 0xFF;
+        uint8_t g = (paint.color >> 8) & 0xFF;
+        uint8_t b = (paint.color >> 16) & 0xFF;
+        uint8_t a = (paint.color >> 24) & 0xFF;
+        return rqt_source_create_solid(b, g, r, a);
+    }
+    std::vector<float> offsets;
+    std::vector<uint32_t> colors;
+    offsets.reserve(paint.stops.size());
+    colors.reserve(paint.stops.size());
+    for (const auto& s : paint.stops) {
+        offsets.push_back(s.offset);
+        uint32_t c = s.color;
+        uint32_t swapped = (c & 0xFF00FF00u) | ((c & 0xFFu) << 16) | ((c >> 16) & 0xFFu);
+        colors.push_back(swapped);
+    }
+    if (paint.type == ir::PaintType::kLinear) {
+        return rqt_source_create_gradient(0, paint.linear_start_x, paint.linear_start_y,
+                                          paint.linear_end_x, paint.linear_end_y, offsets.data(),
+                                          colors.data(), static_cast<int32_t>(offsets.size()));
+    } else {
+        return rqt_source_create_gradient(1, paint.radial_center_x, paint.radial_center_y,
+                                          paint.radial_radius, 0.0f, offsets.data(), colors.data(),
+                                          static_cast<int32_t>(offsets.size()));
+    }
+}
+
 }  // namespace
 
 Status RaqoteAdapter::Initialize(const AdapterArgs& /*args*/) {
@@ -132,9 +171,14 @@ Status RaqoteAdapter::Prepare(const PreparedScene& scene) {
         return Status::Fail("RaqoteAdapter not initialized");
     }
     DestroyPaths();
+    DestroyPaints();
     prepared_paths_.reserve(scene.paths.size());
     for (const auto& p : scene.paths) {
         prepared_paths_.push_back(BuildRaqotePathBuf(p));
+    }
+    prepared_sources_.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        prepared_sources_.push_back(CreateRaqoteSource(p));
     }
     return Status::Ok();
 }
@@ -147,8 +191,17 @@ void RaqoteAdapter::DestroyPaths() {
     prepared_paths_.clear();
 }
 
+void RaqoteAdapter::DestroyPaints() {
+    for (auto p : prepared_sources_) {
+        if (p)
+            rqt_source_destroy(p);
+    }
+    prepared_sources_.clear();
+}
+
 void RaqoteAdapter::Shutdown() {
     DestroyPaths();
+    DestroyPaints();
     initialized_ = false;
 }
 
@@ -162,11 +215,11 @@ AdapterInfo RaqoteAdapter::GetInfo() const {
 CapabilitySet RaqoteAdapter::GetCapabilities() const {
     return CapabilitySet::All();
 }
-
 namespace {
 
 Status ExecuteRaqoteCommands(const PreparedScene& scene, const SurfaceConfig& /*config*/,
-                             const std::vector<RqtPathBuf*>& paths, RqtSurface* surf) {
+                             const std::vector<RqtPathBuf*>& paths,
+                             const std::vector<RqtSourceBuf*>& sources, RqtSurface* surf) {
     const uint8_t* cmd = scene.command_stream.data();
     const uint8_t* end = cmd + scene.command_stream.size();
 
@@ -241,32 +294,9 @@ Status ExecuteRaqoteCommands(const PreparedScene& scene, const SurfaceConfig& /*
                 uint8_t a = (paint.color >> 24) & 0xFF;
 
                 int32_t fill_rule = (current_fill_rule == ir::FillRule::kEvenOdd) ? 1 : 0;
-
-                if (paint.type == ir::PaintType::kSolid) {
-                    rqt_draw_fill_path_buf(surf, paths[path_id], b, g, r, a, fill_rule);
-                } else {
-                    std::vector<float> offsets;
-                    std::vector<uint32_t> colors;
-                    offsets.reserve(paint.stops.size());
-                    colors.reserve(paint.stops.size());
-                    for (const auto& s : paint.stops) {
-                        offsets.push_back(s.offset);
-                        uint32_t c = s.color;
-                        uint32_t swapped =
-                            (c & 0xFF00FF00u) | ((c & 0xFFu) << 16) | ((c >> 16) & 0xFFu);
-                        colors.push_back(swapped);
-                    }
-                    if (paint.type == ir::PaintType::kLinear) {
-                        rqt_draw_fill_path_buf_gradient(
-                            surf, paths[path_id], 0, paint.linear_start_x, paint.linear_start_y,
-                            paint.linear_end_x, paint.linear_end_y, offsets.data(), colors.data(),
-                            static_cast<int32_t>(offsets.size()), fill_rule);
-                    } else {
-                        rqt_draw_fill_path_buf_gradient(
-                            surf, paths[path_id], 1, paint.radial_center_x,
-                            paint.radial_center_y, paint.radial_radius, 0.0f, offsets.data(),
-                            colors.data(), static_cast<int32_t>(offsets.size()), fill_rule);
-                    }
+                if (current_paint_id < sources.size() && sources[current_paint_id] != nullptr) {
+                    rqt_draw_fill_with_source(surf, paths[path_id], sources[current_paint_id],
+                                              fill_rule);
                 }
                 break;
             }
@@ -277,16 +307,11 @@ Status ExecuteRaqoteCommands(const PreparedScene& scene, const SurfaceConfig& /*
                 uint16_t path_id = *reinterpret_cast<const uint16_t*>(cmd);
                 cmd += 2;
 
-                if (path_id >= paths.size() || current_stroke_paint_id >= scene.paints.size())
+                if (path_id >= paths.size() || paths[path_id] == nullptr)
                     break;
-                if (paths[path_id] == nullptr)
+                if (current_stroke_paint_id >= sources.size() ||
+                    sources[current_stroke_paint_id] == nullptr)
                     break;
-
-                const auto& paint = scene.paints[current_stroke_paint_id];
-                uint8_t r = (paint.color >> 0) & 0xFF;
-                uint8_t g = (paint.color >> 8) & 0xFF;
-                uint8_t b = (paint.color >> 16) & 0xFF;
-                uint8_t a = (paint.color >> 24) & 0xFF;
 
                 int32_t cap = 0;
                 switch (current_stroke_cap) {
@@ -314,10 +339,10 @@ Status ExecuteRaqoteCommands(const PreparedScene& scene, const SurfaceConfig& /*
                         break;
                 }
 
-                rqt_draw_stroke_path_buf(surf, paths[path_id], b, g, r, a, current_stroke_width,
-                                        cap, join,
-                                        dash_lengths.empty() ? nullptr : dash_lengths.data(),
-                                        static_cast<int32_t>(dash_lengths.size()), dash_phase);
+                rqt_draw_stroke_with_source(surf, paths[path_id], sources[current_stroke_paint_id],
+                                            current_stroke_width, cap, join,
+                                            dash_lengths.empty() ? nullptr : dash_lengths.data(),
+                                            static_cast<int32_t>(dash_lengths.size()), dash_phase);
                 break;
             }
 
@@ -384,8 +409,7 @@ Status RaqoteAdapter::Render(const PreparedScene& scene, const SurfaceConfig& co
     RqtSurface* surf = rqt_create(config.width, config.height);
     if (!surf)
         return Status::Fail("Failed to create Raqote surface");
-
-    Status s = ExecuteRaqoteCommands(scene, config, prepared_paths_, surf);
+    Status s = ExecuteRaqoteCommands(scene, config, prepared_paths_, prepared_sources_, surf);
 
     rqt_get_pixels(surf, reinterpret_cast<uint32_t*>(output_buffer.data()));
     rqt_destroy(surf);
@@ -405,22 +429,33 @@ Status RaqoteAdapter::RenderLifecycle(const PreparedScene& scene, const SurfaceC
     if (!surf)
         return Status::Fail("Failed to create Raqote surface");
 
-    // Loop 1: Create all native paths
+    // Loop 1: Create all native paths + sources
     std::vector<RqtPathBuf*> paths;
     paths.reserve(scene.paths.size());
     for (const auto& p : scene.paths) {
         paths.push_back(BuildRaqotePathBuf(p));
     }
+    std::vector<RqtSourceBuf*> sources;
+    sources.reserve(scene.paints.size());
+    for (const auto& p : scene.paints) {
+        sources.push_back(CreateRaqoteSource(p));
+    }
 
     // Loop 2: Draw all
-    Status s = ExecuteRaqoteCommands(scene, config, paths, surf);
+    Status s = ExecuteRaqoteCommands(scene, config, paths, sources, surf);
 
-    // Loop 3: Destroy all
+    // Loop 3: Destroy all paths + sources
     for (auto p : paths) {
         if (p)
             rqt_path_buf_destroy(p);
     }
     paths.clear();
+
+    for (auto p : sources) {
+        if (p)
+            rqt_source_destroy(p);
+    }
+    sources.clear();
 
     rqt_get_pixels(surf, reinterpret_cast<uint32_t*>(output_buffer.data()));
     rqt_destroy(surf);

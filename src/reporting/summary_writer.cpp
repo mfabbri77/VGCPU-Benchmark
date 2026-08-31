@@ -4,13 +4,13 @@
 // Blueprint Reference: [ARCH-10-10] Reporting (Chapter 3) / [API-06-07] WriteSummaryToStdout
 // (Chapter 4)
 
+#include "reporting/reporter.h"
+
 #include <concepts>
 #include <iomanip>
 #include <iostream>
 #include <string>
 #include <vector>
-
-#include "reporting/reporter.h"
 
 namespace vgcpu {
 
