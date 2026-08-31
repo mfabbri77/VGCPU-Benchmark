@@ -1213,51 +1213,145 @@ def create_noop_scene() -> Tuple[bytes, dict]:
     }
 
 def create_subpixel_morton_scene() -> Tuple[bytes, dict]:
-    """Subpixel Precision & Lattice Correctness Test (Even-Odd Fill).
-    A single continuous closed polygon with 262,144 vertices (512x512 subpixel lattice)
-    spanning a 256x256 pixel area (2x2 subpixels per pixel = 4 subpixel cells/pixel,
-    subpixel step = 0.5px, center offset = 0.25px).
+    """Definitive Visual Test: Exact-Union vs. Sum-Then-Saturate Coverage.
     
-    The path traverses all 262,144 lattice centers in global 2D Morton (Z-order)
-    space-filling order and closes by connecting the last point back to the start.
-    Rendered with solid black fill and EvenOdd fill rule on an opaque white canvas.
+    Exposes the fundamental mathematical divergence in subpixel coverage
+    between Exact-Union rasterizers (Skia, Cairo, AmanithVG, Raqote) and
+    Sum-Then-Saturate rasterizers (Blend2D, Vello CPU, AGG, ThorVG, PlutoVG, Qt)
+    when rendering multiple overlapping / coincident contours within a single
+    Path filled with FillRule::kNonZero.
+
+    Contains 4 visual test panels:
+    1. Coincident Contour Stacks: 1x, 2x, 4x, 8x identical coincident fractional
+       rectangles in 1 path. (Exact-Union: all 4 are identical 50% gray;
+       Sum-then-Saturate: 1 is gray, 2/4/8 blow up to 100% pitch black).
+    2. Sub-Saturation Overlap Wedge: Overlapping fractional contours testing
+       uncapped linear area addition (0.5 union vs 0.7 sum).
+    3. Overlapping Petals Rosette: 16 overlapping cubic-bezier petals in 1 path.
+       (Exact-Union: smooth flat solid silhouette; Sum-then-Saturate: internal
+       spiderweb of dark seam lines and edge halos).
+    4. Shared-Edge Tessellation Mesh: Adjacent triangles sharing fractional
+       diagonals in 1 path. (Exact-Union: internal seams vanish; Sum-then-Saturate:
+       visible dark diagonal seam lines).
     """
     builder = IrBuilder(800, 600)
     black = builder.add_paint(Paint.solid(0, 0, 0))
     builder.clear(255, 255, 255)
-    
-    N = 262144  # 512 * 512 = 2^18
-    ox = 272.0  # (800 - 256) / 2
-    oy = 172.0  # (600 - 256) / 2
-    
-    morton_path = Path()
-    morton_path.verbs = [PathVerb.MOVE_TO] + [PathVerb.LINE_TO] * (N - 1) + [PathVerb.CLOSE]
-    
-    points = []
-    for i in range(N):
-        x_sub = 0
-        y_sub = 0
-        for b in range(9):
-            x_sub |= ((i >> (2 * b)) & 1) << b
-            y_sub |= ((i >> (2 * b + 1)) & 1) << b
-        px = ox + (x_sub + 0.5) * 0.5
-        py = oy + (y_sub + 0.5) * 0.5
-        points.append(px)
-        points.append(py)
-    
-    morton_path.points = points
-    
-    pid = builder.add_path(morton_path)
-    builder.set_fill(black, FillRule.EVEN_ODD)
+
+    path = Path()
+
+    # ------------------------------------------------------------------------
+    # Panel 1 (Top-Left): Coincident Contour Stacks (1x, 2x, 4x, 8x)
+    # ------------------------------------------------------------------------
+    # Column 1: 1 rectangle (width 0.5px from x=70.0 to 70.5, y=50 to 230)
+    path.rect(70.0, 50.0, 0.5, 180.0)
+
+    # Column 2: 2 coincident rectangles at x=140.0 to 140.5
+    for _ in range(2):
+        path.rect(140.0, 50.0, 0.5, 180.0)
+
+    # Column 3: 4 coincident rectangles at x=210.0 to 210.5
+    for _ in range(4):
+        path.rect(210.0, 50.0, 0.5, 180.0)
+
+    # Column 4: 8 coincident rectangles at x=280.0 to 280.5
+    for _ in range(8):
+        path.rect(280.0, 50.0, 0.5, 180.0)
+
+    # ------------------------------------------------------------------------
+    # Panel 2 (Top-Right): Sub-Saturation Partial Overlap Step Wedge
+    # ------------------------------------------------------------------------
+    # Case 1: 1 single rect (baseline 0.5 coverage) at x=450.0 to 450.5
+    path.rect(450.0, 50.0, 0.5, 180.0)
+
+    # Case 2: 2 overlapping rects (0.4 + 0.3 with 0.2 overlap -> Union 0.5 vs Sum 0.7)
+    path.rect(520.0, 50.0, 0.4, 180.0)
+    path.rect(520.2, 50.0, 0.3, 180.0)
+
+    # Case 3: 2 overlapping rects (0.3 + 0.3 with 0.1 overlap -> Union 0.5 vs Sum 0.6)
+    path.rect(590.0, 50.0, 0.3, 180.0)
+    path.rect(590.2, 50.0, 0.3, 180.0)
+
+    # Case 4: 2 adjacent non-overlapping rects (0.3 + 0.3 touching at 660.3 -> Union = Sum = 0.6)
+    path.rect(660.0, 50.0, 0.3, 180.0)
+    path.rect(660.3, 50.0, 0.3, 180.0)
+
+    # ------------------------------------------------------------------------
+    # Panel 3 (Bottom-Left): Overlapping Petals Rosette (16 Petals in 1 Path)
+    # ------------------------------------------------------------------------
+    cx, cy = 180.0, 420.0
+    num_petals = 16
+    a_radius, b_radius = 110.0, 40.0
+    kappa = 0.5522847498307935
+
+    for k in range(num_petals):
+        angle = k * (2.0 * math.pi / num_petals)
+        cos_a = math.cos(angle)
+        sin_a = math.sin(angle)
+
+        def transform_pt(x, y):
+            rx = x * cos_a - y * sin_a + cx
+            ry = x * sin_a + y * cos_a + cy
+            return rx, ry
+
+        # Standard 4-cubic ellipse centered at (0, 0)
+        p0x, p0y = transform_pt(a_radius, 0.0)
+        path.move_to(p0x, p0y)
+
+        c1x, c1y = transform_pt(a_radius, b_radius * kappa)
+        c2x, c2y = transform_pt(a_radius * kappa, b_radius)
+        p1x, p1y = transform_pt(0.0, b_radius)
+        path.cubic_to(c1x, c1y, c2x, c2y, p1x, p1y)
+
+        c1x, c1y = transform_pt(-a_radius * kappa, b_radius)
+        c2x, c2y = transform_pt(-a_radius, b_radius * kappa)
+        p2x, p2y = transform_pt(-a_radius, 0.0)
+        path.cubic_to(c1x, c1y, c2x, c2y, p2x, p2y)
+
+        c1x, c1y = transform_pt(-a_radius, -b_radius * kappa)
+        c2x, c2y = transform_pt(-a_radius * kappa, -b_radius)
+        p3x, p3y = transform_pt(0.0, -b_radius)
+        path.cubic_to(c1x, c1y, c2x, c2y, p3x, p3y)
+
+        c1x, c1y = transform_pt(a_radius * kappa, -b_radius)
+        c2x, c2y = transform_pt(a_radius, -b_radius * kappa)
+        path.cubic_to(c1x, c1y, c2x, c2y, p0x, p0y)
+        path.close()
+
+    # ------------------------------------------------------------------------
+    # Panel 4 (Bottom-Right): Shared-Edge Tessellated Triangle Mesh
+    # ------------------------------------------------------------------------
+    grid_ox, grid_oy = 440.0, 310.0
+    cols, rows = 12, 10
+    cell_w, cell_h = 22.5, 22.5  # fractional subpixel step
+
+    for r in range(rows):
+        for c in range(cols):
+            x0 = grid_ox + c * cell_w
+            y0 = grid_oy + r * cell_h
+            x1 = x0 + cell_w
+            y1 = y0 + cell_h
+            # Triangle 1 (Top-Left)
+            path.move_to(x0, y0)
+            path.line_to(x1, y0)
+            path.line_to(x0, y1)
+            path.close()
+            # Triangle 2 (Bottom-Right, sharing diagonal (x1, y0) -> (x0, y1))
+            path.move_to(x1, y0)
+            path.line_to(x1, y1)
+            path.line_to(x0, y1)
+            path.close()
+
+    pid = builder.add_path(path)
+    builder.set_fill(black, FillRule.NON_ZERO)
     builder.fill_path(pid)
-    
+
     return builder.build(), {
         "scene_id": "validation/subpixel_morton",
-        "description": "Subpixel Correctness: Single closed 262k-point Morton polygon (2x2 subpixels in 256x256px, Even-Odd fill)",
+        "description": "Coverage Subpixel Oracle: Exact-Union vs Sum-Then-Saturate (Coincident Stacks, Rosette Petals, Tessellation Seams)",
         "default_width": 800, "default_height": 600,
-        "required_features": {"needs_evenodd": True}
+        "required_features": {"needs_nonzero": True}
     }
-
 def main():
     scenes_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     scenes_dir = os.path.join(scenes_dir, 'assets', 'scenes')

@@ -298,14 +298,14 @@
     {
       "scene_id": "validation/subpixel_morton",
       "ir_path": "validation/subpixel_morton.irbin",
-      "scene_hash": "7b9fafe9",
+      "scene_hash": "5e6a182a",
       "ir_version": "1.1.0",
       "default_width": 800,
       "default_height": 600,
       "required_features": {
-        "needs_evenodd": true
+        "needs_nonzero": true
       },
-      "description": "Subpixel Correctness: Single closed 262k-point Morton polygon (2x2 subpixels in 256x256px, Even-Odd fill)"
+      "description": "Coverage Subpixel Oracle: Exact-Union vs Sum-Then-Saturate (Coincident Stacks, Rosette Petals, Tessellation Seams)"
     },
     {
       "scene_id": "validation/noop",
