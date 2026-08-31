@@ -165,34 +165,34 @@ bool ParsePathSection(const uint8_t* data, size_t len, std::vector<vgcpu::Path>&
     len -= 2;
 
     for (uint16_t i = 0; i < count; ++i) {
-        if (len < 4)
-            return false;  // verb_count(2) + point_count(2)
+        if (len < 8)
+            return false;  // verb_count(4) + point_count(4)
 
-        uint16_t verb_count = ReadLE<uint16_t>(data);
-        uint16_t point_count = ReadLE<uint16_t>(data + 2);
-        data += 4;
-        len -= 4;
+        uint32_t verb_count = ReadLE<uint32_t>(data);
+        uint32_t point_count = ReadLE<uint32_t>(data + 4);
+        data += 8;
+        len -= 8;
 
         vgcpu::Path path;
+        path.verbs.reserve(verb_count);
 
         // Read verbs
-        for (uint16_t v = 0; v < verb_count; ++v) {
-            if (len < 1)
-                return false;
-            path.verbs.push_back(static_cast<PathVerb>(data[0]));
-            data += 1;
-            len -= 1;
+        if (len < verb_count)
+            return false;
+        for (uint32_t v = 0; v < verb_count; ++v) {
+            path.verbs.push_back(static_cast<PathVerb>(data[v]));
         }
+        data += verb_count;
+        len -= verb_count;
 
         // Read points
-        for (uint16_t p = 0; p < point_count; ++p) {
-            if (len < 4)
-                return false;
-            float pt = ReadLE<float>(data);
-            path.points.push_back(pt);
-            data += 4;
-            len -= 4;
-        }
+        size_t points_bytes = static_cast<size_t>(point_count) * sizeof(float);
+        if (len < points_bytes)
+            return false;
+        path.points.resize(point_count);
+        std::memcpy(path.points.data(), data, points_bytes);
+        data += points_bytes;
+        len -= points_bytes;
 
         paths.push_back(std::move(path));
     }

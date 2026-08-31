@@ -276,11 +276,10 @@ class IrBuilder:
     def _build_path_section(self) -> bytes:
         chunks = [struct.pack('<H', len(self.paths))]
         for path in self.paths:
-            chunks.append(struct.pack('<HH', len(path.verbs), len(path.points)))
+            chunks.append(struct.pack('<II', len(path.verbs), len(path.points)))
             chunks.append(bytes(bytearray(int(v) for v in path.verbs)))
             chunks.append(struct.pack(f'<{len(path.points)}f', *path.points))
         return b''.join(chunks)
-
     def _build_command_section(self) -> bytes:
         chunks = []
         for cmd in self.commands:
@@ -1214,109 +1213,49 @@ def create_noop_scene() -> Tuple[bytes, dict]:
     }
 
 def create_subpixel_morton_scene() -> Tuple[bytes, dict]:
-    """Subpixel Precision & Lattice Correctness Visual Test.
-    Constructs a single continuous path traversing a dense Morton (Z-order)
-    space-filling curve through the exact centers of a 16x16 subpixel lattice
-    (256 subpixel points per pixel, step = 1/16 = 0.0625).
+    """Subpixel Precision & Lattice Correctness Test (Even-Odd Fill).
+    A single continuous closed polygon with 262,144 vertices (512x512 subpixel lattice)
+    spanning a 256x256 pixel area (2x2 subpixels per pixel = 4 subpixel cells/pixel,
+    subpixel step = 0.5px, center offset = 0.25px).
     
-    Includes:
-    1. Large 16x16 macro Morton fractal path (460x460) showing analytical
-       curve connectivity and continuous antialiased rendering across the lattice.
-    2. Dense multi-pixel subpixel Morton array (8x8 pixels, 16x16 subpixels each = 16,384 points)
-       in a single continuous path, demonstrating subpixel resolution, lattice snapping,
-       and coverage integration.
-    3. Fractional subpixel phase sweeps (shifts of 0, 1/16, 2/16, ... 7/16 px) testing
-       subpixel translation invariance and fractional lattice quantization.
+    The path traverses all 262,144 lattice centers in global 2D Morton (Z-order)
+    space-filling order and closes by connecting the last point back to the start.
+    Rendered with solid black fill and EvenOdd fill rule on an opaque white canvas.
     """
     builder = IrBuilder(800, 600)
+    black = builder.add_paint(Paint.solid(0, 0, 0))
+    builder.clear(255, 255, 255)
     
-    cyan = builder.add_paint(Paint.solid(0, 220, 255))
-    gold = builder.add_paint(Paint.solid(255, 195, 45))
-    lime = builder.add_paint(Paint.solid(85, 245, 125))
+    N = 262144  # 512 * 512 = 2^18
+    ox = 272.0  # (800 - 256) / 2
+    oy = 172.0  # (600 - 256) / 2
     
-    builder.clear(18, 22, 28)
+    morton_path = Path()
+    morton_path.verbs = [PathVerb.MOVE_TO] + [PathVerb.LINE_TO] * (N - 1) + [PathVerb.CLOSE]
     
-    # Precompute standard 16x16 Morton normalized cell coordinates
-    morton_uv = []
-    for i in range(256):
-        x = 0
-        y = 0
-        for b in range(4):
-            x |= ((i >> (2 * b)) & 1) << b
-            y |= ((i >> (2 * b + 1)) & 1) << b
-        u = (x + 0.5) / 16.0
-        v = (y + 0.5) / 16.0
-        morton_uv.append((u, v))
+    points = []
+    for i in range(N):
+        x_sub = 0
+        y_sub = 0
+        for b in range(9):
+            x_sub |= ((i >> (2 * b)) & 1) << b
+            y_sub |= ((i >> (2 * b + 1)) & 1) << b
+        px = ox + (x_sub + 0.5) * 0.5
+        py = oy + (y_sub + 0.5) * 0.5
+        points.append(px)
+        points.append(py)
     
-    # 1. Macro 16x16 Morton Curve (460x460 px, centered at x=50, y=70)
-    macro_path = Path()
-    ox, oy = 50.0, 70.0
-    scale = 460.0
-    for i, (u, v) in enumerate(morton_uv):
-        px = ox + u * scale
-        py = oy + v * scale
-        if i == 0:
-            macro_path.move_to(px, py)
-        else:
-            macro_path.line_to(px, py)
+    morton_path.points = points
     
-    pid_macro = builder.add_path(macro_path)
-    
-    # 2. Dense Subpixel Morton Array (8x8 pixels at x=540, y=70, scale 24px/pixel)
-    dense_path = Path()
-    d_ox, d_oy = 540.0, 70.0
-    cell_sz = 26.0
-    first_pt = True
-    for gy in range(8):
-        for gx in range(8):
-            cell_x = d_ox + gx * cell_sz
-            cell_y = d_oy + gy * cell_sz
-            for u, v in morton_uv:
-                px = cell_x + u * cell_sz
-                py = cell_y + v * cell_sz
-                if first_pt:
-                    dense_path.move_to(px, py)
-                    first_pt = False
-                else:
-                    dense_path.line_to(px, py)
-    
-    pid_dense = builder.add_path(dense_path)
-    
-    # 3. Fractional Subpixel Phase Sweep (8 rows at x=540, y=310..530)
-    sweep_path = Path()
-    first_sweep = True
-    for row in range(8):
-        shift = row * (1.0 / 16.0)
-        box_w = 208.0
-        box_h = 24.0
-        row_x = 540.0 + shift
-        row_y = 310.0 + row * 28.0 + shift
-        for u, v in morton_uv:
-            px = row_x + u * box_w
-            py = row_y + v * box_h
-            if first_sweep:
-                sweep_path.move_to(px, py)
-                first_sweep = False
-            else:
-                sweep_path.line_to(px, py)
-    
-    pid_sweep = builder.add_path(sweep_path)
-    
-    # Render strokes
-    builder.set_stroke(cyan, 2.0, StrokeCap.ROUND, StrokeJoin.ROUND)
-    builder.stroke_path(pid_macro)
-    
-    builder.set_stroke(gold, 0.75, StrokeCap.BUTT, StrokeJoin.MITER)
-    builder.stroke_path(pid_dense)
-    
-    builder.set_stroke(lime, 1.25, StrokeCap.ROUND, StrokeJoin.ROUND)
-    builder.stroke_path(pid_sweep)
+    pid = builder.add_path(morton_path)
+    builder.set_fill(black, FillRule.EVEN_ODD)
+    builder.fill_path(pid)
     
     return builder.build(), {
         "scene_id": "validation/subpixel_morton",
-        "description": "Subpixel Precision Test: Dense 16x16 Morton space-filling curve connecting all subpixel lattice centers",
+        "description": "Subpixel Correctness: Single closed 262k-point Morton polygon (2x2 subpixels in 256x256px, Even-Odd fill)",
         "default_width": 800, "default_height": 600,
-        "required_features": {"needs_stroke": True}
+        "required_features": {"needs_evenodd": True}
     }
 
 def main():
